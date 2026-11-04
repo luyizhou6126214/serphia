@@ -1,0 +1,366 @@
+<div align="center">
+
+<img src="./build/icon.png" width="112" alt="serphia icon" />
+
+# serphia
+
+**Turn Pi Coding Agent into a full desktop workspace.**
+
+Local-first · No internal server · Cross-platform
+
+[![Desktop Build](https://github.com/DLYZZT/pi-desktop/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/DLYZZT/pi-desktop/actions/workflows/build-desktop.yml)
+![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=0B1F2A)
+![macOS, Windows & Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
+![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
+
+**English** · [简体中文](./README.md)
+
+[Download v0.4.3](https://github.com/DLYZZT/pi-desktop/releases/tag/v0.4.3) · [Screenshots](#screenshots) · [Features](#features) · [Quick start](#quick-start) · [Architecture](#architecture) · [Changelog](https://github.com/DLYZZT/pi-desktop/releases) · [Roadmap](#roadmap)
+
+</div>
+
+## Screenshots
+
+The workspace and key settings. Click an image to view it at full size.
+
+[![serphia workspace with the session sidebar, Auto model picker, tool presets, and browser panel](./images/app-main.png)](./images/app-main.png)
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="./images/app-models.png">
+        <img src="./images/app-models.png" width="100%" alt="Auto routing settings with fast and capable models, thinking levels, and the TypeSafe Jev decision model" />
+      </a>
+      <br />
+      <sub>Models and Auto routing: fast, capable, and decision models</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="./images/app-mcp.png">
+        <img src="./images/app-mcp.png" width="100%" alt="MCP service settings with configuration scope, HTTP connection details, connection testing, and sign-in controls" />
+      </a>
+      <br />
+      <sub>MCP services: configuration, connection tests, and sign-in</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="./images/app-browser.png">
+        <img src="./images/app-browser.png" width="100%" alt="Built-in browser settings for profiles, tab limits, timeouts, and network access" />
+      </a>
+      <br />
+      <sub>Browser settings: profiles, tabs, and network access</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="./images/app-herdr.png">
+        <img src="./images/app-herdr.png" width="100%" alt="Herdr settings showing connection state, runtime information, and Agent CLI diagnostics" />
+      </a>
+      <br />
+      <sub>Herdr: connection state and Agent CLI diagnostics</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="./images/app-skill.png">
+        <img src="./images/app-skill.png" width="100%" alt="Skill management with the skill list, enable switch, and SKILL.md editor" />
+      </a>
+      <br />
+      <sub>Skills: enable controls and SKILL.md editing</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="./images/app-dev-tools.png">
+        <img src="./images/app-dev-tools.png" width="100%" alt="Developer Tools showing system tool discovery, source selection, and the managed Node.js runtime" />
+      </a>
+      <br />
+      <sub>Discover system tools and manage private runtimes</sub>
+    </td>
+  </tr>
+</table>
+
+## Features
+
+### A complete agent workspace
+
+- Create, switch, rename, and delete sessions with continuously streamed responses
+- Automatically generate a short background title from a new session's first meaningful message; the setting is optional and manual names always win
+- Search and browse sessions by date while using stable titles in both the sidebar and conversation header
+- Inspect tool calls, execution progress, and context compaction status
+- Queue messages and use Steer or Follow-up interaction modes
+- Quickly switch models, reasoning levels, tool presets, and notification sounds
+- Attach images, run slash commands, and reference project files with `@`
+- Keep chat and composer content aligned to one reading width, with a mouse- and keyboard-resizable file panel that remembers its width
+
+### Session tools and execution history
+
+- Manage Codemode, tool search, and tool presets from the session tools menu; Full access includes Codemode and tool search
+- Control model-visible entry points, tools available for nested discovery, and execution grants separately; nested calls follow the current session's tool permissions
+- Inspect direct and nested calls in a parent/child execution tree, including state, duration, and original arguments/results, with history filtered to the current session branch
+- Read large results and persisted temporary output in pages; after reopening or compacting a session, the Agent can retrieve original content with `tool_history_get`
+- Retain completed child calls after a Host interruption, mark unconfirmed outcomes as interrupted/unknown, and recover without automatically replaying operations
+
+### A built-in browser shared by the user and Agent
+
+- Run real Chromium pages in a right-side Electron `WebContentsView`, with multiple tabs, temporary or persistent profiles, signed-in state, downloads, uploads, and proxy support
+- Give the Agent separate Browser read/interact grants for navigation, structured snapshots, screenshots, clicks, typing, keys, and waits; the main window prompts on first use, and coding permissions never enable browsing implicitly
+- Let the user and Agent operate the same page, with immediate user takeover and local policy or confirmation for submissions, downloads, uploads, permissions, and external protocols
+- Manage global and per-session permanent permissions in Settings while authorization dialogs create temporary grants only for the current session; one local, launch-only switch controls Advanced Browser Mode
+- Advanced Browser Mode combines consistent UA/Client Hints identity, trusted input, full CDP network capture and confirmed write replay, the JavaScript experience library, and dedicated advanced Profiles; Agent tools neither accept nor return cookie values
+- Label private-network protection as best-effort; Strict mode fails closed until an enforcing network sandbox is deployed
+
+### Observable, user-controlled development processes
+
+- On supported platforms, let the Agent use explicit `process_*` tools to keep Vite, React, Three.js, Storybook, Flask, Spring Boot, mock APIs, and watch builds running; short commands still use Bash
+- Inspect ownership, state, readiness, redacted logs, loopback endpoints, and exit reasons in the right-side Processes panel, with controls for line-oriented stdin, stop, force stop, restart, copy, and log export
+- Debug framework pages through a managed localhost service and the built-in Browser while keeping process permission separate from Browser authorization; cold starts reuse a log cursor instead of shell `&`, nohup, or an external terminal
+- Use POSIX process groups on macOS/Linux and an integrity-verified Rust helper with Windows Job Objects on Windows x64; missing helper, reaper, or owner identity readiness fails closed
+- Keep the feature off by default and treat it as lifecycle control, not a security sandbox: child processes have the same local file, network, and environment access as Agent Bash; common LAN binds require confirmation, and Host/App failure or exit triggers bounded process-tree cleanup
+
+Managed background processes support macOS, Linux, and Windows 11 x64. Windows ARM64, Windows Server, and 32-bit Windows are not supported.
+
+### Conversational Herdr control from Pi
+
+- Optionally connect to a local Herdr instance and use the original main conversation to inspect the Fleet; create, focus, or rename workspaces, tabs, and panes; explain Agent states; inspect sanitized process details; wait for output; and start, prompt, or wait for Agents.
+- The Pi Session sidebar and main conversation remain the primary surface. The Agent Fleet indicator stays in the title bar's right-side action area on both the initial page and active sessions; the right-side ANSI terminal remains a supporting view for status, troubleshooting, and explicit keyboard takeover.
+- Closing a workspace, pane, or Agent requires an interactive local Pi confirmation whose complete copy follows the current UI language. Herdr v0.8.2 has no `agent.stop`, so Agent close explicitly closes its containing pane rather than pretending to stop only the Agent.
+- Herdr is bundled with macOS, Linux, and Windows x64 builds. Developer Tools owns installation, version, update, repair, and removal; Managed mode activates the verified bundled copy without a separate runtime download. Windows supports Fleet and Agent control plus live ANSI observation and explicit keyboard takeover with native Job Object containment.
+- Attach connects only to a user-started system Herdr and never stops it. Managed mode starts, monitors, restarts, and closes only serphia's private server.
+- Pi Sessions and Herdr Sessions remain separate. Closing the serphia terminal view does not close a Herdr pane or Agent, and unknown protocols fail closed.
+- In Settings, Herdr sits between Browser and Channels; installation, update, repair, and removal remain centralized under Developer Tools.
+
+### MCP services and tools
+
+- Add, edit, or import global and project-scoped stdio or Streamable HTTP services in Settings → MCP, inspect connection status, test connections, and reconnect
+- Use MCP OAuth sign-in, cancellation, credential refresh, and provider credential references; browse tools, resources, and resource templates, and preview resource content
+- Project configuration overrides global entries with the same name; extension sources and pending changes are shown separately, and tools still require session authorization after configuration is saved
+- Expose MCP tools directly to the model or discover and call them through tool search or Codemode; original results and complete structured content are retained in execution history
+
+### A project-focused file experience
+
+- Select project directories natively and manage Git branches and worktrees
+- Browse project files, open multiple tabs, download files, or reference them in prompts
+- Render syntax-highlighted code, Mermaid, and KaTeX in Agent responses and Markdown files, and preview Word (`.docx`) documents
+- Keep sessions aligned with the project through file watching and Git status awareness
+
+### Unified model and extension management
+
+- On main, new Windows sessions default to PowerShell; choose Bash in Settings → General → Default Agent shell.
+- Prefer the local model directory when sessions start; explicitly refresh the remote directory when needed while preserving cached models across offline, timeout, or partial-provider failures
+- Use API keys, subscriptions, or OAuth as supported by each provider, with guided credential setup, confirmation before replacing existing credentials, and migration of older Azure configuration
+- Configure sampling parameters, sampling by thinking level, image/request input limits, and per-model overrides; select `max` reasoning on models that support it
+- Adjust automatic compaction, token reserves, retries, timeouts, and SSE/WebSocket transport in Settings → Models → Advanced model settings; these global Pi settings are shared with the CLI and require reloading existing sessions to take effect
+- Detect external configuration changes when saving model and advanced settings to avoid overwriting edits made through the CLI or an editor
+- Search for, install, and configure Skills; normal installs keep npm's default concurrency, with one isolated-cache retry for network, timeout, or cache-lock failures
+- Manage Plugins while continuing to use the Pi Agent extension ecosystem
+
+On the development branch, run `npm run check:models-config` for a read-only configuration preflight. Invalid fields disable the whole custom configuration; Models settings preserve its content for repair. OpenRouter's personalized catalog shares the Pi CLI cache without credential or endpoint partitioning. With different credentials, especially offline, the list may reflect another runtime; it is not proof of authorization for the current key.
+
+### Auto virtual model and routing
+
+Enable Auto in Settings → Models → Auto routing, choose a fast model, a capable model, and their thinking levels, then save and select **Auto** in the chat model picker.
+
+- Route by thinking level: `high` and above use the capable model, while lower levels use the fast model; alternatively, configure a decision model to judge the complexity of each new user request
+- Choose a model once per new user turn and keep it for tool continuations; optionally try the other configured model on an automatic retry
+- Decision requests add latency and usage, and failure or unavailability falls back to the capable model; actual model usage is included in session totals
+- Show the last actual model and thinking level beside **Auto** below the composer, with usage also available by actual model
+
+Routing changes take effect in new or reloaded sessions, or when Auto is selected again.
+
+### Codemode image generation and decision models
+
+Enable Codemode from the session tools menu (included in Full access) to let the Agent generate images or call decision models for classification, yes/no questions, and scoring. Image-capable classifiers can also judge screenshots and images. Models are discovered using the provider's existing credentials; classifiers are auxiliary capabilities outside the chat model picker.
+
+Each model call follows Codemode permission, supports cancellation, and retains original inputs, results, and execution states. Usage counts toward session totals, and calls appear in the existing tool history. OpenAI decisions require an API key; ChatGPT subscription login does not provide this capability. To configure TypeSafe Jev, open Settings → Models → Add provider, search for TypeSafe or Jev, and enter its API key; the provider details list `jev-latest`. Ask the Agent to classify items with an available decision model.
+
+Generated images appear in final replies and remain viewable when session history is reopened. Provider details list available image and decision models and offer test requests; tests use the configured provider credentials and may incur usage charges.
+
+### Cross-platform developer tool management
+
+- Discover and verify the user's existing Node.js/npm, Python, uv, Git/Bash, Bun, and jq installations, including common locations missing from a GUI launch PATH
+- Give Skills, Plugins, Agent Bash, Git/worktree operations, and search tools one consistent set of absolute paths and per-process environments
+- With explicit user confirmation, install Node.js LTS, CPython, uv, PortableGit, Bun, and jq into private application storage without changing the system PATH, shell profile, or registry
+- Bundle manifest-verified ripgrep and fd binaries for the target platform so basic search remains available offline
+
+### WeChat, Telegram, and Feishu/Lark channels
+
+- Connect personal WeChat with QR login, Telegram with a BotFather token, or Feishu/Lark by creating a new bot through the official QR flow or supplying an existing app's App ID and App Secret
+- Protect direct messages with pairing and Telegram or Feishu/Lark groups with allowlists and mention requirements; WeChat groups are not enabled yet, and remote tools are disabled by default
+- Give each external conversation an isolated Pi Session by default, or bind it from the active desktop session to share history and context with the UI; the binding list stays within the window and scrolls internally when long
+- Use an account's default tool grant for new dedicated channel sessions and synchronize saved changes to sessions already bound to that account; tool grants are Pi Session-scoped, so every channel entry point sharing one Session also shares one grant
+- Send only the user's actual IM text as the model's user prompt; the desktop distinguishes sources with black local, green WeChat, blue Telegram, and orange Feishu/Lark user bubbles
+- Receive images, files, and voice messages from WeChat, Telegram, and Feishu/Lark, plus Feishu/Lark video resources; images enter the model as multimodal input, while other attachments use an isolated staging area and WeChat SILK audio is converted to WAV when possible
+- Stream previews in Telegram private chats and collapse reasoning and tool details
+- Receive Feishu/Lark DMs, controlled groups, and threads through the official SDK long connection; Cards render Markdown, stream thinking and tool progress, and fold process details into the final response
+- Show turn-status reactions on the source message in Telegram and Feishu/Lark; Feishu DMs can invoke `/help`, `/status`, `/new`, `/compact`, and `/reload` from a native bot menu
+
+### Designed for long-running desktop use
+
+- Single-instance behavior, system tray, desktop notifications, and Dock/taskbar badges
+- Window-state persistence, system theme integration, and custom protocol handling
+- Agent Host crash recovery, crash reports, and diagnostic exports
+- Distinguish completed turns from user-stopped turns: show Stopped in the conversation and reopened history, without playing a completion sound or sending a background completion notification
+- Periodic or manual stable-release checks on enabled platforms, with user-approved downloads and restart installation after active tasks finish
+- Electron `sandbox: true`, a strict Content Security Policy, and typed IPC contracts
+
+## Quick start
+
+### Use a desktop build
+
+The latest stable version is [v0.4.3](https://github.com/DLYZZT/pi-desktop/releases/tag/v0.4.3), with builds for macOS Apple Silicon and Intel, Windows x64, and Linux x64.
+
+Version 0.4.3 bundles Pi Coding Agent 1.4.0, improves context compaction, tool calls, and code orchestration across sessions, adds model configuration compatibility notices, and streamlines API key setup for standard providers. You can also [run from source](#run-locally) using the steps below.
+
+Regular users do not need to install the Pi CLI, Pi Coding Agent, Node.js, or npm just to use the Agent. When a Skill, Plugin, or Agent script needs additional developer tools, the application first reuses healthy system installations and can install private runtimes after explicit user confirmation.
+
+The application reads sessions and configuration from `~/.pi/agent/`. If you already use the Pi CLI, your existing data is available without migration. The desktop application also works if you have never used the CLI.
+
+serphia first discovers and verifies the user's existing Node.js/npm, Python, Git, Bash, uv, jq, and Bun installations; bundled `rg` and `fd` keep search available offline.
+
+### Desktop system requirements
+
+- macOS 12 Monterey or later, on Apple Silicon (arm64) or Intel (x64)
+- 64-bit Windows 10 or Windows 11 on x64
+- A 64-bit Linux x64 AppImage on a modern glibc distribution with a graphical desktop session; updates are currently installed manually
+- Windows 32-bit (x86) and Windows ARM64 installers are not currently provided
+
+### Development requirements
+
+- Node.js 22.x, version 22.19 or later (`>=22.19.0 <23`)
+- npm, included with Node.js
+- macOS, Windows, or Linux
+
+### Run locally
+
+```bash
+git clone https://github.com/DLYZZT/pi-desktop.git
+cd pi-desktop
+npm ci
+npm run dev
+```
+
+### Builds
+
+- macOS Apple Silicon (arm64): DMG and ZIP
+- macOS Intel (x64): DMG and ZIP
+- Windows (x64): NSIS installer
+- Linux (x64): AppImage
+
+## Architecture
+
+serphia uses a three-process Electron architecture to isolate privileged desktop capabilities, the Agent runtime, and the UI.
+
+```mermaid
+flowchart LR
+    Main["Electron Main<br/>Window · tray · protocol · Host supervision"]
+    Host["Agent Host / utilityProcess<br/>Pi Agent · sessions · files · configuration"]
+    UI["Renderer<br/>React 19 · Vite"]
+    Browser["Main-owned WebContentsView<br/>Remote pages · profiles · network policy"]
+    Processes["Managed project processes<br/>dev server · watcher · mock API"]
+    Data["~/.pi/agent/<br/>Sessions · models · configuration"]
+
+    Main --> Host
+    Main --> UI
+    Main --> Browser
+    Host -->|"Revisioned Browser RPC"| Main
+    Host -->|"POSIX worker / Windows Job helper"| Processes
+    Main -.->|"Crash reaper"| Processes
+    Browser -->|"Separately authorized localhost access"| Processes
+    UI <-->|"Typed MessagePort IPC"| Host
+    Host <--> Data
+```
+
+- **Main** manages the window lifecycle, menus, tray, notifications, software updates, custom protocols, and Agent Host supervision
+- **Agent Host** runs Pi Coding Agent in an isolated `utilityProcess` and handles sessions, files, configuration, and extensions
+- **Renderer** hosts the React UI and communicates only through controlled preload bridges
+- **Browser View** loads remote sites and localhost project pages only in sandboxed `WebContentsView` instances created by Main, without the app preload, Node.js, or the main Renderer bridge
+- **No internal local service** means the app does not use TCP for its UI or control plane; user-started managed project services may listen on loopback
+
+## Data, security, and privacy
+
+- Sessions and Pi configuration remain in `~/.pi/agent/` by default
+- Desktop tool permissions and execution records are stored separately in the application data directory; include its `tool-executions` logs and content files when backing up complete tool history
+- The application does not open an additional local network port for UI communication
+- The Renderer runs in the Electron sandbox with a strict Content Security Policy
+- Preload exposes only controlled bridge APIs, and TypeScript contracts constrain Host RPC
+- Agent Browser tools and Advanced Browser Mode are off by default; Main validates the persistent policy, temporary session grant, lease, and policy revision before any target-tool side effect
+- Managed background processes are off by default and require a supported platform and architecture, project trust, Session cwd containment, a healthy crash reaper, and bounded resource policies; Windows x64 also verifies the Rust helper's fixed path, version, and integrity. This is lifecycle control, not a container or sandbox
+- The update client uses only the public GitHub Release configuration embedded in production builds; it accepts neither update URLs nor release credentials from the Renderer
+- WeChat and Telegram use outbound-only long polling, while Feishu/Lark uses an outbound WebSocket; none opens a webhook or local listener
+- Model providers determine how model request data is processed; review the privacy policy of every provider you configure
+
+## Contributing
+
+### Common commands
+
+| Command                                                                         | Description                                                          |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `npm run dev`                                                                   | Start Vite, Main process build watch, and Electron                   |
+| `npm run typecheck`                                                             | Run TypeScript type checking                                         |
+| `npm run test`                                                                  | Run the automated test suite                                         |
+| `npm run check:contract`                                                        | Verify coverage between API methods and Host handlers                |
+| `npm run check:architecture`                                                    | Check process boundaries and code structure constraints              |
+| `npm run smoke`                                                                 | Run Electron smoke tests                                             |
+| `npm run test:execution-recovery`                                               | Verify tool execution history recovery after a Host crash            |
+| `npm run test:browser-electron`                                                 | Run the local Browser Electron integration suite                     |
+| `npm run test:managed-process-workflows`                                        | Test managed-process lifecycle and cleanup                           |
+| `npm run test:herdr-e2e`                                                        | Run the isolated upstream Herdr E2E with an official binary          |
+| `npm run test:herdr-desktop-e2e`                                                | Run the production Electron/Renderer Herdr integration E2E           |
+| `npm run test:windows-managed-helper`                                           | Validate the Rust helper and Job Objects on Windows x64              |
+| `npm run test:windows-nsis-upgrade -- <previous-installer> <current-installer>` | Verify Windows x64 installation, upgrade, rollback, and uninstall    |
+| `npm run verify`                                                                | Run the complete pre-commit quality gate                             |
+| `npm run build`                                                                 | Build Main, preload, and Renderer                                    |
+| `npm run pack`                                                                  | Generate the unpacked application directory                          |
+| `npm run dist`                                                                  | Build every configured architecture for this platform                |
+| `npm run dist:mac:signed`                                                       | Build a Developer ID-signed package for the current Mac architecture |
+| `npm run dist:mac:notarized`                                                    | Build a signed and Apple-notarized macOS package                     |
+
+### Project structure
+
+```text
+src/
+├── contract/      # IPC type contracts and RPC layer
+├── main/          # Electron Main process and crash reaper
+├── preload/       # Secure bridge APIs
+├── agent-host/    # Agent, sessions, files, configuration, and managed processes
+├── renderer/      # React desktop UI
+└── shared/        # Testable pure functions and shared modules
+native/
+└── windows-managed-process-helper/  # Windows x64 Rust / Job Object helper
+```
+
+Use [Issues](https://github.com/DLYZZT/pi-desktop/issues) for bug reports and suggestions. Pull requests are also welcome. Before submitting code, run at least:
+
+```bash
+npm run verify
+```
+
+## Roadmap
+
+- [x] Electron three-process architecture and typed IPC
+- [x] Sessions, project files, models, Skills, Plugins, and OAuth
+- [x] Pi 1.1.0 runtime, provider authentication flows, and expanded model and advanced settings
+- [x] MCP service management, OAuth, resource previews, and session tool authorization
+- [x] Codemode/tool search, nested calls, execution trees, and durable original tool history
+- [x] Image generation, decision models, Auto routing, and `max` reasoning
+- [x] Personal WeChat, Telegram, and Feishu/Lark text, image, file, and voice channels, plus Feishu/Lark video resources
+- [x] Tray, notifications, system theme, crash recovery, and diagnostic exports
+- [x] Linux, macOS, and Windows CI tests plus the production release build matrix
+- [x] Local macOS signing/notarization tooling and the `v*` tag release workflow
+- [x] First end-to-end `v*` tag signing, notarization, and production Release validation
+- [x] Production Windows x64 Release asset pipeline (currently without code signing)
+- [x] Validate the first Release containing both macOS and Windows production assets (v0.1.1)
+- [x] Implement Main-process stable-release checks, user-approved downloads, restart installation, and update settings
+- [x] Implement the Main-owned WebContentsView browser, demand-driven Agent session authorization, and unified Advanced Browser Mode
+- [x] Implement macOS/Linux managed background processes, Agent tools, the Processes UI, log cursors, and crash reaping
+- [x] Implement the Windows x64 Rust helper, Job Object containment, packaging gates, and Windows 11 acceptance
+- [x] Validate updater-enabled baseline-to-target upgrades end to end on macOS and Windows
+- [x] Production-startup E2E and pre-release checks for macOS arm64/x64, Windows x64, and Linux x64 packages
+
+## Relationship to the Pi ecosystem
+
+serphia is a desktop workspace for Pi Coding Agent. It continues to use sessions and configuration from `~/.pi/agent/`, so it can be used alongside the CLI.
+
+Plugins continue to load through Pi's package manager and runtime. Extension APIs that only make sense in the terminal TUI, such as custom terminal components or raw key listeners, cannot be represented equivalently in the desktop Renderer. The application reports an explicit compatibility message instead of silently ignoring them.
+
+## License
+
+[Apache License 2.0](./LICENSE)

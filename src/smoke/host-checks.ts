@@ -1,0 +1,751 @@
+import type { BrowserWindow } from "electron";
+import path from "path";
+import type { HostManager } from "../main/host-manager";
+import { appendMainLog } from "../main/logger";
+import { runMcpUiChecks } from "./mcp-ui-checks";
+import { runExecutionRecoveryChecks } from "./execution-recovery-checks";
+
+export async function runSmokeHostChecks(
+  manager: HostManager,
+  createWindow: (onConsoleError: (message: string) => void) => BrowserWindow,
+): Promise<void> {
+  let rendererSecurityViolation: string | null = null;
+  const { port1 } = manager.createRendererChannel();
+  let requestId = 0;
+  const pending = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  const eventWaiters = new Map<
+    string,
+    {
+      topic: string;
+      key: string;
+      predicate: (data: unknown) => boolean;
+      resolve: (data: unknown) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  port1.on("message", (event) => {
+    const message = event.data as {
+      kind?: string;
+      id?: string;
+      ok?: boolean;
+      result?: unknown;
+      error?: { code?: string; message?: string; detail?: unknown };
+      topic?: string;
+      key?: string;
+      data?: unknown;
+    };
+    if (message.kind === "event") {
+      for (const [id, waiter] of eventWaiters) {
+        if (waiter.topic !== message.topic || waiter.key !== message.key || !waiter.predicate(message.data)) continue;
+        eventWaiters.delete(id);
+        clearTimeout(waiter.timer);
+        port1.postMessage({ kind: "unsubscribe", id, topic: waiter.topic, key: waiter.key });
+        waiter.resolve(message.data);
+      }
+      return;
+    }
+    if (message.kind !== "response" || !message.id) return;
+    const entry = pending.get(message.id);
+    if (!entry) return;
+    pending.delete(message.id);
+    clearTimeout(entry.timer);
+    if (message.ok) entry.resolve(message.result);
+    else {
+      const error = new Error(message.error?.message ?? "Smoke RPC failed") as Error & {
+        code?: string;
+        detail?: unknown;
+      };
+      error.code = message.error?.code;
+      error.detail = message.error?.detail;
+      entry.reject(error);
+    }
+  });
+  port1.start();
+
+  const call = <T>(method: string, params?: unknown): Promise<T> => {
+    const id = `smoke-${++requestId}`;
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`Smoke RPC timed out: ${method}`));
+      }, 10_000);
+      pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
+      port1.postMessage({ kind: "request", id, method, params });
+    });
+  };
+
+  const waitForEvent = (topic: string, key: string, predicate: (data: unknown) => boolean): Promise<unknown> => {
+    const id = `smoke-event-${++requestId}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        eventWaiters.delete(id);
+        port1.postMessage({ kind: "unsubscribe", id, topic, key });
+        reject(new Error(`Smoke event timed out: ${topic}:${key}`));
+      }, 10_000);
+      eventWaiters.set(id, { topic, key, predicate, resolve, reject, timer });
+      port1.postMessage({ kind: "subscribe", id, topic, key });
+    });
+  };
+
+  try {
+    await call("host.ping");
+    const ackDeadline = Date.now() + 5_000;
+    while (
+      (manager.getToolchainAckRevision() < 0 ||
+        (process.platform === "win32" && !manager.getManagedProcessOwnerState().ready)) &&
+      Date.now() < ackDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const acknowledgedRevision = manager.getToolchainAckRevision();
+    if (acknowledgedRevision < 0) throw new Error("Agent Host did not acknowledge its toolchain snapshot");
+    if (process.platform === "win32" && !manager.getManagedProcessOwnerState().ready)
+      throw new Error("Agent Host did not acknowledge its Windows process owner identity");
+    const runtime = await call<{
+      openaiOAuthLoaded?: boolean;
+      mcpLoaded?: boolean;
+      codemodeMcpRoundTrip?: boolean;
+      codemodeCancellation?: boolean;
+      mcpStdioRoundTrip?: boolean;
+    }>("host.runtimeProbe");
+    if (
+      !runtime.openaiOAuthLoaded ||
+      !runtime.mcpLoaded ||
+      !runtime.codemodeMcpRoundTrip ||
+      !runtime.codemodeCancellation ||
+      !runtime.mcpStdioRoundTrip
+    )
+      throw new Error("Pi packaged runtime modules or tool round-trip did not pass");
+    const hostToolchain = await call<{
+      inventoryRevision?: number;
+      resolutionId?: string;
+      capabilities?: Record<string, { provider?: string; version?: string }>;
+    }>("host.toolchain", { cwd: process.cwd() });
+    if (
+      hostToolchain.inventoryRevision !== acknowledgedRevision ||
+      !hostToolchain.resolutionId ||
+      !hostToolchain.capabilities?.["vcs.git"]?.provider
+    ) {
+      throw new Error(`Agent Host toolchain snapshot mismatch: ${JSON.stringify(hostToolchain)}`);
+    }
+    await call("sessions.list");
+    const smokeRoot = process.env.PI_DESKTOP_SMOKE_USER_DATA;
+    const smokeAgentDir = process.env.PI_CODING_AGENT_DIR;
+    if (!smokeRoot || !smokeAgentDir || !smokeAgentDir.startsWith(smokeRoot + path.sep)) {
+      throw new Error("Smoke Pi settings must be isolated under temporary user data");
+    }
+    const initialWarming = await call<{ mode?: string; scope?: string }>("settings.getCacheWarming");
+    if (initialWarming.mode !== "streaming" || initialWarming.scope !== "global") {
+      throw new Error("Pi cache warming default did not load from isolated global settings");
+    }
+    const updatedWarming = await call<{ mode?: string; pendingSessionCount?: number }>("settings.setCacheWarming", {
+      mode: "off",
+    });
+    if (updatedWarming.mode !== "off" || updatedWarming.pendingSessionCount !== 0) {
+      throw new Error("Pi cache warming change did not persist before active sessions were opened");
+    }
+    if ((await call<{ mode?: string }>("settings.getCacheWarming")).mode !== "off") {
+      throw new Error("Pi cache warming setting did not round-trip over Host RPC");
+    }
+    const channels = await call<{ accounts?: unknown[]; statuses?: unknown[]; bindings?: unknown[] }>("channels.list");
+    if (!Array.isArray(channels.accounts) || !Array.isArray(channels.statuses) || !Array.isArray(channels.bindings)) {
+      throw new Error("channels.list returned an invalid shape");
+    }
+    await call("system.allowRoot", { path: process.cwd() });
+    const status = await call<{ isGit?: boolean }>("git.status", { path: process.cwd() });
+    if (typeof status.isGit !== "boolean") throw new Error("git.status returned an invalid shape");
+    const fs = await import("fs");
+    const savedWarming = JSON.parse(fs.readFileSync(path.join(smokeAgentDir, "settings.json"), "utf8")) as {
+      cacheWarming?: string;
+    };
+    if (savedWarming.cacheWarming !== "off") {
+      throw new Error("Pi cache warming setting did not reach the isolated settings.json");
+    }
+    const packagePath = path.join(process.cwd(), "package.json");
+    const download = await call<{ base64?: string; size?: number }>("files.download", { path: packagePath });
+    const expected = fs.readFileSync(packagePath);
+    if (
+      !download.base64 ||
+      download.size !== expected.length ||
+      !Buffer.from(download.base64, "base64").equals(expected)
+    ) {
+      throw new Error("files.download did not preserve exact bytes");
+    }
+    const os = await import("os");
+    const { execFileSync } = await import("child_process");
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "pi-desktop-smoke-"));
+    const worktreeParent = `${repo}-worktrees`;
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      fs.writeFileSync(path.join(repo, "README.md"), "smoke\n");
+      execFileSync("git", ["-C", repo, "add", "README.md"]);
+      execFileSync("git", [
+        "-C",
+        repo,
+        "-c",
+        "user.name=serphia",
+        "-c",
+        "user.email=smoke@example.invalid",
+        "commit",
+        "-qm",
+        "initial",
+      ]);
+      await call("system.allowRoot", { path: repo });
+      const suggestionDirectory = path.join(repo, "Desktop");
+      const suggestionFile = path.join(suggestionDirectory, "issue-26-smoke-target.txt");
+      fs.mkdirSync(suggestionDirectory);
+      fs.writeFileSync(suggestionFile, "candidate smoke\n");
+      const browsedSuggestions = await call<{
+        matches?: Array<{ path?: string; isDir?: boolean }>;
+        truncated?: boolean;
+      }>("files.index", { root: repo, query: "" });
+      if (!browsedSuggestions.matches?.some((entry) => entry.path === "Desktop" && entry.isDir === true)) {
+        throw new Error("files.index direct browse did not return the Desktop directory");
+      }
+      const searchedSuggestions = await call<{
+        files?: string[];
+        matches?: Array<{ path?: string; isDir?: boolean }>;
+        degradedReason?: string;
+      }>("files.index", { root: repo, query: "issue-26-smoke-target" });
+      if (
+        searchedSuggestions.degradedReason ||
+        !searchedSuggestions.matches?.some(
+          (entry) => entry.path === "Desktop/issue-26-smoke-target.txt" && entry.isDir !== true,
+        ) ||
+        !searchedSuggestions.files?.includes("Desktop/issue-26-smoke-target.txt")
+      ) {
+        throw new Error(
+          `files.index managed search returned an invalid result: ${JSON.stringify(searchedSuggestions)}`,
+        );
+      }
+      const skillDir = path.join(repo, ".pi", "skills", "smoke-skill");
+      const skillPath = path.join(skillDir, "SKILL.md");
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(skillPath, "---\nname: smoke-skill\ndescription: smoke\n---\n\nOriginal body.\n");
+      const skills = await call<{ skills?: Array<{ name?: string; filePath?: string }> }>("skills.list", { cwd: repo });
+      const smokeSkill = skills.skills?.find((skill) => skill.name === "smoke-skill");
+      if (!smokeSkill?.filePath) throw new Error("skills.list did not load the project smoke skill");
+      const updatedSkill = "---\nname: smoke-skill\ndescription: edited smoke\n---\n\nEdited body.\n";
+      await call("skills.set", { cwd: repo, filePath: smokeSkill.filePath, content: updatedSkill });
+      const skillContent = await call<{ content?: string }>("skills.getContent", {
+        cwd: repo,
+        filePath: smokeSkill.filePath,
+      });
+      if (skillContent.content !== updatedSkill) throw new Error("skills.set did not persist exact content");
+      await call("files.watchStart", { path: repo });
+      const changeEvent = waitForEvent(
+        "files.changed",
+        repo,
+        (data) => (data as { event?: string } | null)?.event === "change",
+      );
+      // A ping on the same port is a barrier ensuring the subscription was processed.
+      await call("host.ping");
+      fs.writeFileSync(path.join(repo, "watch-change.txt"), "changed\n");
+      await changeEvent;
+      await call("files.watchStop", { path: repo });
+      const repoStatus = await call<{ isGit?: boolean; untracked?: number }>("git.status", { path: repo });
+      if (!repoStatus.isGit || !repoStatus.untracked) throw new Error("git.status did not report project changes");
+      const created = await call<{ worktree?: { path?: string } }>("worktrees.create", {
+        projectRoot: repo,
+        cwd: repo,
+        branch: "smoke-worktree",
+      });
+      const worktreePath = created.worktree?.path;
+      if (!worktreePath || !fs.existsSync(worktreePath)) throw new Error("worktrees.create returned an invalid path");
+      fs.writeFileSync(path.join(worktreePath, "dirty.txt"), "dirty\n");
+      let dirtyConflict = false;
+      try {
+        await call("worktrees.remove", { cwd: repo, path: worktreePath, force: false });
+      } catch (error) {
+        dirtyConflict = (error as { detail?: { dirty?: boolean } }).detail?.dirty === true;
+      }
+      if (!dirtyConflict) throw new Error("dirty worktree removal did not return structured conflict detail");
+      await call("worktrees.remove", { cwd: repo, path: worktreePath, force: true });
+    } finally {
+      const cleanupOptions = { recursive: true, force: true, maxRetries: 10, retryDelay: 200 } as const;
+      for (const directory of [repo, worktreeParent]) {
+        try {
+          fs.rmSync(directory, cleanupOptions);
+        } catch (error) {
+          // Antivirus and git processes can briefly retain handles on Windows.
+          // The smoke assertions have already completed, and the OS owns these
+          // temporary directories, so a deferred cleanup must not mask them.
+          appendMainLog(`smoke: temporary cleanup deferred: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+
+    const statsSessionId = "pi-smoke-usage";
+    const statsSessionTitle = "Smoke usage stats";
+    const statsSessionDir = path.join(smokeAgentDir, "sessions", "smoke-usage");
+    fs.mkdirSync(statsSessionDir, { recursive: true });
+    const statsTimestamp = new Date().toISOString();
+    const statsFile = path.join(statsSessionDir, `${statsTimestamp.replace(/[:.]/g, "-")}_${statsSessionId}.jsonl`);
+    const initialUsage = {
+      input: 10,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 12,
+      cost: { input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+    };
+    fs.writeFileSync(
+      statsFile,
+      [
+        { type: "session", version: 3, id: statsSessionId, timestamp: statsTimestamp, cwd: process.cwd() },
+        {
+          type: "message",
+          id: "smoke-user",
+          parentId: null,
+          timestamp: statsTimestamp,
+          message: { role: "user", content: statsSessionTitle, timestamp: Date.now() },
+        },
+        {
+          type: "message",
+          id: "smoke-assistant",
+          parentId: "smoke-user",
+          timestamp: statsTimestamp,
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Ready" }],
+            api: "anthropic-messages",
+            provider: "anthropic",
+            model: "smoke-fixture",
+            stopReason: "stop",
+            timestamp: Date.now(),
+            usage: initialUsage,
+          },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n") + "\n",
+      { flag: "wx" },
+    );
+    const indexedSessions = await call<{ sessions?: Array<{ id?: string }> }>("sessions.list", { cwd: process.cwd() });
+    if (!indexedSessions.sessions?.some((session) => session.id === statsSessionId)) {
+      throw new Error("Smoke usage session was not indexed before Renderer load");
+    }
+
+    const smokeWindow = createWindow((message) => {
+      if (/Content Security Policy/i.test(message)) rendererSecurityViolation = message;
+    });
+    smokeWindow.setBounds({ x: 0, y: 0, width: 1440, height: 900 });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Renderer smoke load timed out")), 15_000);
+        const loaded = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        if (!smokeWindow.webContents.isLoadingMainFrame()) loaded();
+        else smokeWindow.webContents.once("did-finish-load", loaded);
+      });
+      const rendererResult = (await smokeWindow.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const deadline = Date.now() + 10000;
+          const check = async () => {
+            try {
+              const root = document.getElementById("root");
+              if (window.piBridge && root && root.childElementCount > 0) {
+                const findButton = (text) => Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === text);
+                const settingsButton = document.querySelector('button[title="Settings"],button[title="设置"]');
+                if (!settingsButton) {
+                  if (Date.now() >= deadline) throw new Error("Settings button is unavailable");
+                  setTimeout(check, 50);
+                  return;
+                }
+                settingsButton.click();
+                const settingsDeadline = Date.now() + 3000;
+                let channelsButton;
+                let chatFontSizeSelect;
+                let chatLayoutSelect;
+                let chatAssistantWidthSelect;
+                while ((!channelsButton || !chatFontSizeSelect || !chatLayoutSelect || !chatAssistantWidthSelect) && Date.now() < settingsDeadline) {
+                  channelsButton = findButton("Channels") || findButton("消息渠道");
+                  const labels = Array.from(document.querySelectorAll("label"));
+                  const fontLabel = labels.find((label) => ["Chat text size", "聊天字号"].includes(label.textContent?.trim() || ""));
+                  const layoutLabel = labels.find((label) => ["Conversation width", "对话宽度"].includes(label.textContent?.trim() || ""));
+                  const assistantWidthLabel = labels.find((label) => ["Model reply width", "模型回复宽度"].includes(label.textContent?.trim() || ""));
+                  chatFontSizeSelect = fontLabel?.htmlFor ? document.getElementById(fontLabel.htmlFor) : undefined;
+                  chatLayoutSelect = layoutLabel?.htmlFor ? document.getElementById(layoutLabel.htmlFor) : undefined;
+                  chatAssistantWidthSelect = assistantWidthLabel?.htmlFor ? document.getElementById(assistantWidthLabel.htmlFor) : undefined;
+                  if (!channelsButton || !chatFontSizeSelect || !chatLayoutSelect || !chatAssistantWidthSelect) {
+                    await new Promise((wait) => setTimeout(wait, 25));
+                  }
+                }
+                if (!channelsButton) throw new Error("Channels settings tab is unavailable");
+                if (!(chatFontSizeSelect instanceof HTMLSelectElement) || !(chatLayoutSelect instanceof HTMLSelectElement) || !(chatAssistantWidthSelect instanceof HTMLSelectElement)) {
+                  throw new Error("Chat appearance settings are unavailable or unlabeled");
+                }
+                const expectedFontOptions = ["small", "standard", "large", "extra-large"];
+                const expectedLayoutOptions = ["fixed", "wide"];
+                if (JSON.stringify(Array.from(chatAssistantWidthSelect.options, (option) => option.value)) !== JSON.stringify(["comfortable", "full"])) {
+                  throw new Error("Model reply width options do not match the public contract");
+                }
+                if (JSON.stringify(Array.from(chatFontSizeSelect.options, (option) => option.value)) !== JSON.stringify(expectedFontOptions)) {
+                  throw new Error("Chat font-size options do not match the public contract");
+                }
+                if (JSON.stringify(Array.from(chatLayoutSelect.options, (option) => option.value)) !== JSON.stringify(expectedLayoutOptions)) {
+                  throw new Error("Chat layout options do not match the public contract");
+                }
+                let chatFixture;
+                let chatScope = document.querySelector(".chat-appearance-scope");
+                let chatColumn = document.querySelector(".chat-content-column");
+                let chatInput = document.querySelector("textarea");
+                if (!(chatScope instanceof HTMLElement) || !(chatColumn instanceof HTMLElement) || !(chatInput instanceof HTMLElement)) {
+                  chatFixture = document.createElement("div");
+                  chatFixture.className = "chat-appearance-scope";
+                  Object.assign(chatFixture.style, {
+                    position: "absolute",
+                    visibility: "hidden",
+                    width: "100%",
+                    pointerEvents: "none",
+                  });
+                  chatColumn = document.createElement("div");
+                  chatColumn.className = "chat-content-column";
+                  chatInput = document.createElement("textarea");
+                  chatInput.style.fontSize = "calc(14px * var(--chat-font-scale))";
+                  chatColumn.appendChild(chatInput);
+                  chatFixture.appendChild(chatColumn);
+                  document.body.appendChild(chatFixture);
+                  chatScope = chatFixture;
+                }
+                const assistantBubble = document.createElement("div");
+                Object.assign(assistantBubble.style, {
+                  maxWidth: "var(--chat-assistant-max-width, 68ch)",
+                  height: "0",
+                  overflow: "hidden",
+                });
+                chatColumn.appendChild(assistantBubble);
+                const changeSelect = (select, value) => {
+                  const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+                  valueSetter?.call(select, value);
+                  select.dispatchEvent(new Event("change", { bubbles: true }));
+                };
+                const waitForCacheWarming = async (expected) => {
+                  const cacheDeadline = Date.now() + 10000;
+                  let select;
+                  while (Date.now() < cacheDeadline) {
+                    const label = Array.from(document.querySelectorAll("label")).find((entry) =>
+                      ["Prompt cache warming", "提示缓存预热", "提示快取預熱"].includes(entry.textContent?.trim() || ""),
+                    );
+                    select = label?.htmlFor ? document.getElementById(label.htmlFor) : undefined;
+                    if (select instanceof HTMLSelectElement && select.isConnected && !select.disabled && select.value === expected) return select;
+                    await new Promise((wait) => setTimeout(wait, 25));
+                  }
+                  throw new Error("Cache warming setting did not settle: " + JSON.stringify({ expected, value: select?.value, disabled: select?.disabled, connected: select?.isConnected }));
+                };
+                let cacheSelect = await waitForCacheWarming("off");
+                if (JSON.stringify(Array.from(cacheSelect.options, (option) => option.value)) !== JSON.stringify(["off", "streaming", "idle"])) {
+                  throw new Error("Cache warming setting has the wrong modes");
+                }
+                changeSelect(cacheSelect, "idle");
+                await new Promise((wait) => setTimeout(wait, 0));
+                cacheSelect = await waitForCacheWarming("idle");
+                const cacheWarming = cacheSelect.value === "idle" && !cacheSelect.disabled;
+                if (!cacheWarming) throw new Error("Cache warming setting did not finish its UI save");
+                const waitForAppearance = async (fontSize, layout, assistantWidth = chatAssistantWidthSelect.value) => {
+                  const appearanceDeadline = Date.now() + 3000;
+                  while (Date.now() < appearanceDeadline) {
+                    const state = await window.piBridge.getUiState();
+                    if (
+                      document.documentElement.dataset.chatFontSize === fontSize &&
+                      document.documentElement.dataset.chatLayout === layout &&
+                      document.documentElement.dataset.chatAssistantWidth === assistantWidth &&
+                      state.chatAppearance?.fontSize === fontSize &&
+                      state.chatAppearance?.layout === layout &&
+                      state.chatAppearance?.assistantWidth === assistantWidth &&
+                      !chatFontSizeSelect.disabled &&
+                      !chatLayoutSelect.disabled &&
+                      !chatAssistantWidthSelect.disabled
+                    ) {
+                      return;
+                    }
+                    await new Promise((wait) => setTimeout(wait, 25));
+                  }
+                  throw new Error("Chat appearance did not apply and persist before the deadline");
+                };
+                changeSelect(chatFontSizeSelect, "standard");
+                await waitForAppearance("standard", chatLayoutSelect.value);
+                changeSelect(chatLayoutSelect, "fixed");
+                await waitForAppearance("standard", "fixed");
+                const standardInputFontSize = Number.parseFloat(getComputedStyle(chatInput).fontSize);
+                const settingsFontSize = getComputedStyle(chatFontSizeSelect).fontSize;
+                const fixedColumnWidth = chatColumn.getBoundingClientRect().width;
+                changeSelect(chatFontSizeSelect, "extra-large");
+                await waitForAppearance("extra-large", "fixed");
+                changeSelect(chatLayoutSelect, "wide");
+                await waitForAppearance("extra-large", "wide");
+                const extraLargeInputFontSize = Number.parseFloat(getComputedStyle(chatInput).fontSize);
+                const wideColumnWidth = chatColumn.getBoundingClientRect().width;
+                const chatScopeStyle = getComputedStyle(chatScope);
+                for (const layout of ["fixed", "wide"]) {
+                  changeSelect(chatLayoutSelect, layout);
+                  await waitForAppearance("extra-large", layout);
+                  const columnWidth = chatColumn.getBoundingClientRect().width;
+                  const comfortableWidth = assistantBubble.getBoundingClientRect().width;
+                  changeSelect(chatAssistantWidthSelect, "full");
+                  await waitForAppearance("extra-large", layout, "full");
+                  if (
+                    Math.abs(assistantBubble.getBoundingClientRect().width - columnWidth) > 1 ||
+                    assistantBubble.getBoundingClientRect().width <= comfortableWidth ||
+                    Math.abs(chatColumn.getBoundingClientRect().width - columnWidth) > 1
+                  ) throw new Error("Full reply width must fill, but not resize, the conversation column");
+                  changeSelect(chatAssistantWidthSelect, "comfortable");
+                  await waitForAppearance("extra-large", layout, "comfortable");
+                  if (Math.abs(assistantBubble.getBoundingClientRect().width - comfortableWidth) > 1) {
+                    throw new Error("Comfortable reply width was not restored");
+                  }
+                }
+                changeSelect(chatAssistantWidthSelect, "full");
+                await waitForAppearance("extra-large", "wide", "full");
+                window.resizeTo(900, 700);
+                await new Promise((wait) => setTimeout(wait, 50));
+                const narrowLayout =
+                  document.documentElement.clientWidth <= 900 &&
+                  document.documentElement.scrollWidth <= document.documentElement.clientWidth &&
+                  Math.abs(assistantBubble.getBoundingClientRect().width - chatColumn.getBoundingClientRect().width) <= 1 &&
+                  chatColumn.getBoundingClientRect().width <= chatScope.getBoundingClientRect().width;
+                window.resizeTo(1440, 900);
+                await new Promise((wait) => setTimeout(wait, 50));
+                const chatAppearance =
+                  Math.abs(extraLargeInputFontSize / standardInputFontSize - 1.3) < 0.01 &&
+                  chatScopeStyle.getPropertyValue("--chat-font-scale").trim() === "1.3" &&
+                  fixedColumnWidth <= 760.5 &&
+                  wideColumnWidth > 760.5 &&
+                  wideColumnWidth <= 960.5 &&
+                  wideColumnWidth > fixedColumnWidth &&
+                  narrowLayout &&
+                  getComputedStyle(chatFontSizeSelect).fontSize === settingsFontSize &&
+                  document.documentElement.scrollWidth <= document.documentElement.clientWidth &&
+                  (chatFixture ? chatFixture : document.querySelector(".chat-appearance-scope")) === chatScope &&
+                  (chatFixture ? chatFixture.querySelector("textarea") : document.querySelector("textarea")) === chatInput;
+                changeSelect(chatAssistantWidthSelect, "comfortable");
+                await waitForAppearance("extra-large", "wide", "comfortable");
+                assistantBubble.remove();
+                chatFixture?.remove();
+                changeSelect(chatFontSizeSelect, "standard");
+                await waitForAppearance("standard", "wide");
+                changeSelect(chatLayoutSelect, "fixed");
+                await waitForAppearance("standard", "fixed");
+                channelsButton.click();
+                const channelDeadline = Date.now() + 3000;
+                let weixinConnectButton;
+                let telegramConnectButton;
+                while ((!weixinConnectButton || !telegramConnectButton) && Date.now() < channelDeadline) {
+                  weixinConnectButton = findButton("Connect WeChat") || findButton("连接微信");
+                  telegramConnectButton = findButton("Connect Telegram") || findButton("连接 Telegram");
+                  if (!weixinConnectButton || !telegramConnectButton) await new Promise((wait) => setTimeout(wait, 25));
+                }
+                if (!weixinConnectButton) throw new Error("WeChat settings UI is unavailable");
+                if (!telegramConnectButton) throw new Error("Telegram settings UI is unavailable");
+                if (typeof window.piBridge.setChannelCredential !== "function") {
+                  throw new Error("Write-only channel credential bridge is unavailable");
+                }
+                const activityToggle = document.querySelector('[data-testid="channel-activity-toggle"]');
+                if (!activityToggle || activityToggle.getAttribute("aria-expanded") !== "false") {
+                  throw new Error("Recent channel activity is not collapsed by default");
+                }
+                activityToggle.click();
+                await new Promise((wait) => setTimeout(wait, 0));
+                if (activityToggle.getAttribute("aria-expanded") !== "true") {
+                  throw new Error("Recent channel activity cannot be expanded");
+                }
+                // Internal consumers use RPC; startup must leave real web APIs native.
+                const nativeNetworking = [window.fetch, window.EventSource].every((value) =>
+                  typeof value === "function" && Function.prototype.toString.call(value).includes("[native code]")
+                );
+                const token = "pi-html-preview-smoke-" + Math.random().toString(36).slice(2);
+                const previewUrl = await window.piBridge.createHtmlPreview(
+                  "<!doctype html><img id='asset' src='./icon.png'><script>addEventListener('load',()=>{if(asset.naturalWidth)parent.postMessage(" + JSON.stringify(token) + ",'*')})<\\/script>",
+                  ${JSON.stringify(path.join(process.cwd(), "build", "smoke.html"))},
+                );
+                const previewRendered = await new Promise((previewResolve, previewReject) => {
+                  const frame = document.createElement("iframe");
+                  frame.sandbox = "allow-scripts";
+                  frame.style.display = "none";
+                  const previewTimer = setTimeout(() => {
+                    cleanup();
+                    previewReject(new Error("Sandboxed HTML preview did not execute"));
+                  }, 3000);
+                  const onMessage = (event) => {
+                    if (event.data !== token) return;
+                    cleanup();
+                    previewResolve(true);
+                  };
+                  const cleanup = () => {
+                    clearTimeout(previewTimer);
+                    window.removeEventListener("message", onMessage);
+                    frame.remove();
+                    void window.piBridge.releaseHtmlPreview(previewUrl);
+                  };
+                  window.addEventListener("message", onMessage);
+                  frame.src = previewUrl;
+                  document.body.appendChild(frame);
+                });
+                resolve({
+                  bridge: typeof window.piBridge.saveBinaryFile === "function",
+                  rendered: root.childElementCount > 0,
+                  nativeNetworking,
+                  htmlPreview: previewRendered,
+                  chatAppearance,
+                  cacheWarming,
+                  channelSettings: Boolean(weixinConnectButton && telegramConnectButton),
+                  channelCredentialWrite: typeof window.piBridge.setChannelCredential === "function",
+                });
+                return;
+              }
+            } catch (error) {
+              reject(error);
+              return;
+            }
+            if (Date.now() >= deadline) reject(new Error("Renderer did not become ready"));
+            else setTimeout(check, 50);
+          };
+          void check();
+        })
+      `)) as {
+        bridge?: boolean;
+        rendered?: boolean;
+        nativeNetworking?: boolean;
+        htmlPreview?: boolean;
+        chatAppearance?: boolean;
+        cacheWarming?: boolean;
+        channelSettings?: boolean;
+        channelCredentialWrite?: boolean;
+      };
+      if (
+        !rendererResult.bridge ||
+        !rendererResult.rendered ||
+        !rendererResult.nativeNetworking ||
+        !rendererResult.htmlPreview ||
+        !rendererResult.chatAppearance ||
+        !rendererResult.cacheWarming ||
+        !rendererResult.channelSettings ||
+        !rendererResult.channelCredentialWrite
+      ) {
+        throw new Error(`Renderer smoke returned invalid result: ${JSON.stringify(rendererResult)}`);
+      }
+      const initialStatsVisible = (await smokeWindow.webContents.executeJavaScript(`
+        (async () => {
+          const until = async (read, label) => {
+            const deadline = Date.now() + 7000;
+            while (Date.now() < deadline) {
+              const value = read();
+              if (value) return value;
+              await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            throw new Error(label);
+          };
+          const dialog = document.querySelector('[role="dialog"]');
+          const close = dialog && Array.from(dialog.querySelectorAll('button[aria-label]')).find((button) =>
+            ["Close", "关闭", "關閉"].includes(button.getAttribute("aria-label"))
+          );
+          if (!close) throw new Error("Smoke settings dialog close button is unavailable");
+          close.click();
+          await until(() => !document.querySelector('[role="dialog"]'), "Smoke settings dialog did not close");
+          const sessionButton = await until(
+            () => Array.from(document.querySelectorAll('button[aria-label]')).find((button) =>
+              button.getAttribute("aria-label")?.includes(${JSON.stringify(statsSessionTitle)})
+            ),
+            "Smoke usage session did not appear in the sidebar",
+          );
+          sessionButton.click();
+          const statsButton = await until(
+            () => Array.from(document.querySelectorAll('button[title]')).find((button) =>
+              button.getAttribute("title")?.includes("$0.0200")
+            ),
+            "Initial full-session cost did not reach the top bar",
+          );
+          statsButton.click();
+          await until(
+            () => document.querySelector('.session-info-popover')?.textContent?.includes("$0.0200"),
+            "Initial full-session cost did not reach the stats panel",
+          );
+          return true;
+        })()
+      `)) as boolean;
+      if (!initialStatsVisible) throw new Error("Initial smoke usage stats were not visible");
+      fs.appendFileSync(
+        statsFile,
+        JSON.stringify({
+          type: "usage",
+          id: "smoke-idle-usage",
+          parentId: "smoke-assistant",
+          timestamp: new Date().toISOString(),
+          kind: "cache_warm",
+          provider: "anthropic",
+          model: "smoke-fixture",
+          usage: {
+            input: 7,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 7,
+            cost: { input: 0.25, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.25 },
+          },
+        }) + "\n",
+      );
+      const updatedStats = await call<{ stats?: { cost?: number; totalMessages?: number } }>("sessions.get", {
+        id: statsSessionId,
+      });
+      if (Math.abs((updatedStats.stats?.cost ?? -1) - 0.27) > 1e-9 || updatedStats.stats?.totalMessages !== 2) {
+        throw new Error("Host did not aggregate idle usage separately from displayed messages");
+      }
+      const updatedStatsVisible = (await smokeWindow.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const deadline = Date.now() + 7000;
+          const check = () => {
+            const panel = document.querySelector('.session-info-popover');
+            const topBar = Array.from(document.querySelectorAll('button[title]')).find((button) =>
+              button.getAttribute("title")?.includes("$0.2700")
+            );
+            if (panel?.textContent?.includes("$0.2700") && topBar) return resolve(true);
+            if (Date.now() >= deadline) return reject(new Error("Idle usage did not refresh the open stats panel"));
+            setTimeout(check, 25);
+          };
+          check();
+        })
+      `)) as boolean;
+      if (!updatedStatsVisible) throw new Error("Renderer did not display the updated idle usage cost");
+      const finalWarming = await call<{ mode?: string }>("settings.getCacheWarming");
+      const finalSettings = JSON.parse(fs.readFileSync(path.join(smokeAgentDir, "settings.json"), "utf8")) as {
+        cacheWarming?: string;
+      };
+      if (finalWarming.mode !== "idle" || finalSettings.cacheWarming !== "idle") {
+        throw new Error("Renderer cache warming choice did not persist through Host RPC");
+      }
+      await runMcpUiChecks(smokeWindow, call);
+      if (process.env.PI_DESKTOP_EXECUTION_RECOVERY === "1") await runExecutionRecoveryChecks(manager);
+      if (rendererSecurityViolation) {
+        throw new Error(`Renderer security violation: ${rendererSecurityViolation}`);
+      }
+    } finally {
+      if (!smokeWindow.isDestroyed()) smokeWindow.destroy();
+    }
+    appendMainLog(
+      `smoke: renderer/RPC/session/worktree/git/watch/download/skills/channels/chat-appearance/toolchain revision=${acknowledgedRevision} checks passed`,
+    );
+  } finally {
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error("Smoke port closed"));
+    }
+    pending.clear();
+    for (const [id, waiter] of eventWaiters) {
+      clearTimeout(waiter.timer);
+      port1.postMessage({ kind: "unsubscribe", id, topic: waiter.topic, key: waiter.key });
+      waiter.reject(new Error("Smoke port closed"));
+    }
+    eventWaiters.clear();
+    port1.close();
+  }
+}

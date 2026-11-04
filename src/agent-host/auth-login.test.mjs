@@ -1,0 +1,289 @@
+import { importTestBundle } from "#test-bundle";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { CredentialSynchronizationError } from "@earendil-works/pi-coding-agent";
+import { createDeferred } from "#test-timing";
+
+const root = path.resolve(import.meta.dirname, "..", "..");
+const isolatedAgentDir = mkdtempSync(path.join(tmpdir(), "pi-auth-login-"));
+process.env.PI_CODING_AGENT_DIR = isolatedAgentDir;
+test.after(() => rmSync(isolatedAgentDir, { recursive: true, force: true }));
+let modulePromise;
+
+async function loadAuthLoginModule() {
+  if (modulePromise) return modulePromise;
+  modulePromise = (async () => {
+    return importTestBundle("src/agent-host/auth-login", {
+      packages: "external",
+      absWorkingDir: root,
+      entryPoints: ["src/agent-host/auth-login.ts"],
+    });
+  })();
+  return modulePromise;
+}
+
+function nextTurn() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+for (const outcome of ["success", "cancelled"]) {
+  test(`an old OAuth ${outcome} cannot terminate the replacement subscriber`, async (t) => {
+    const { createAuthLoginService } = await loadAuthLoginModule();
+    const old = createDeferred(),
+      replacement = createDeferred(),
+      events = [];
+    let calls = 0;
+    const service = createAuthLoginService({ emit: (_topic, _key, event) => events.push(event) }, () => ({
+      getProvider: () => ({ auth: { oauth: {} } }),
+      login: () => (++calls === 1 ? old.promise : replacement.promise),
+    }));
+    t.after(() => {
+      service.dispose();
+      old.resolve();
+      replacement.resolve();
+    });
+    const provider = `late-terminal-${outcome}`;
+    await service.start(provider);
+    service.cancel(provider);
+    await service.start(provider);
+    const countAfterReplacement = events.length;
+    if (outcome === "success") old.resolve();
+    else old.reject(new Error("Login cancelled"));
+    await nextTurn();
+    assert.equal(events.length, countAfterReplacement);
+    assert.deepEqual(await service.start(provider), { started: false });
+  });
+}
+
+test("runtime initialization reserves provider ownership and cancellation prevents a late login", async () => {
+  const { createAuthLoginService } = await loadAuthLoginModule();
+  const pending = createDeferred();
+  let logins = 0;
+  const service = createAuthLoginService({ emit() {} }, () => pending.promise);
+  const starting = service.start("reserved-fixture");
+  assert.deepEqual(await service.start("reserved-fixture"), { started: false });
+  service.cancel("reserved-fixture");
+  pending.resolve({
+    getProvider: () => ({ auth: { oauth: {} } }),
+    async login() {
+      logins++;
+    },
+  });
+  assert.deepEqual(await starting, { started: false });
+  assert.equal(logins, 0);
+  service.dispose();
+});
+
+test("disposal prevents pending runtime creation from reviving a closed login service", async () => {
+  const { createAuthLoginService } = await loadAuthLoginModule();
+  const pending = createDeferred();
+  let logins = 0;
+  const service = createAuthLoginService({ emit() {} }, () => pending.promise);
+  const starting = service.start("disposed-fixture");
+  service.dispose();
+  service.dispose();
+  pending.resolve({
+    getProvider: () => ({ auth: { oauth: {} } }),
+    async login() {
+      logins++;
+    },
+  });
+  assert.deepEqual(await starting, { started: false });
+  assert.equal(logins, 0);
+  await assert.rejects(service.start("disposed-fixture"), (error) => error.code === "CLOSED");
+});
+
+test("disposal cancels owned tokens and suppresses late progress without cancelling a replacement", async () => {
+  const { createAuthLoginService, resolveLoginCode } = await loadAuthLoginModule();
+  const events = [],
+    interactions = [];
+  const runtime = {
+    getProvider: () => ({ auth: { oauth: {} } }),
+    async login(_provider, _type, interaction) {
+      interactions.push(interaction);
+      await interaction.prompt({ type: "manual_code", message: "fixture code" });
+    },
+  };
+  const first = createAuthLoginService({ emit: (_topic, _provider, event) => events.push(event) }, () => runtime);
+  await first.start("owned-fixture");
+  const token = events[0].token;
+  first.cancel("owned-fixture");
+  const replacement = createAuthLoginService({ emit() {} }, () => runtime);
+  await replacement.start("owned-fixture");
+  first.dispose();
+  const count = events.length;
+  interactions[0].notify({ type: "progress", message: "late" });
+  await nextTurn();
+  assert.equal(resolveLoginCode("owned-fixture", token, "late"), false);
+  assert.equal(events.length, count);
+  assert.equal(interactions[1].signal.aborted, false);
+  replacement.dispose();
+  await nextTurn();
+});
+
+test("a cancelled OAuth flow cannot clear the active replacement flow", async () => {
+  const { createAuthLoginService } = await loadAuthLoginModule();
+  const events = [];
+  const server = {
+    emit(topic, key, data) {
+      events.push({ topic, key, data });
+    },
+  };
+  const modelRuntime = {
+    getProvider(provider) {
+      return provider === "test-oauth" ? { auth: { oauth: {} } } : undefined;
+    },
+    async login(_provider, type, interaction) {
+      assert.equal(type, "oauth");
+      await interaction.prompt({
+        type: "select",
+        message: "Choose a login method",
+        options: [{ id: "browser", label: "Browser" }],
+      });
+    },
+  };
+  const service = createAuthLoginService(server, () => modelRuntime);
+
+  assert.deepEqual(await service.start("test-oauth"), { started: true });
+  service.cancel("test-oauth");
+  const eventsAtCancellation = events.length;
+  assert.deepEqual(await service.start("test-oauth"), { started: true });
+
+  // Let the cancelled flow reach its catch/finally after the replacement starts.
+  await nextTurn();
+  assert.deepEqual(await service.start("test-oauth"), { started: false });
+  assert.equal(events.length, eventsAtCancellation + 1, "only the new prompt may follow replacement startup");
+  assert.equal(events.filter((event) => event.data.type === "cancelled").length, 1);
+
+  service.cancel("test-oauth");
+  await nextTurn();
+  assert.equal(events.filter((event) => event.data.type === "cancelled").length, 2);
+});
+
+test("ModelRuntime auth notifications and prompts map onto the desktop login stream", async () => {
+  const { createAuthLoginService, resolveLoginCode } = await loadAuthLoginModule();
+  const events = [];
+  const server = {
+    emit(topic, key, data) {
+      events.push({ topic, key, data });
+    },
+  };
+  const modelRuntime = {
+    getProvider() {
+      return { auth: { oauth: {} } };
+    },
+    async login(_provider, type, interaction) {
+      assert.equal(type, "oauth");
+      interaction.notify({ type: "auth_url", url: "https://example.test/login", instructions: "Sign in" });
+      interaction.notify({
+        type: "device_code",
+        userCode: "ABCD-EFGH",
+        verificationUri: "https://example.test/device",
+        intervalSeconds: 5,
+      });
+      interaction.notify({ type: "progress", message: "Waiting for authorization" });
+      const code = await interaction.prompt({ type: "manual_code", message: "Paste the authorization code" });
+      assert.equal(code, "approved");
+    },
+  };
+  const service = createAuthLoginService(server, () => modelRuntime);
+
+  assert.deepEqual(await service.start("test-oauth"), { started: true });
+  const promptEvent = events.find((event) => event.data.type === "prompt_request");
+  assert.ok(promptEvent?.data.token);
+  assert.equal(resolveLoginCode("test-oauth", promptEvent.data.token, "approved"), true);
+  await nextTurn();
+
+  assert.deepEqual(
+    events.map((event) => event.data.type),
+    ["auth", "device_code", "progress", "prompt_request", "success"],
+  );
+  assert.equal(events[0].data.token, promptEvent.data.token);
+});
+
+test("pending login tokens are cancelled and resolved by exact provider ownership", async () => {
+  const { createAuthLoginService, resolveLoginCode } = await loadAuthLoginModule();
+  const events = [];
+  const service = createAuthLoginService(
+    {
+      emit(_topic, key, data) {
+        events.push({ provider: key, ...data });
+      },
+    },
+    () => ({
+      getProvider() {
+        return { auth: { oauth: {} } };
+      },
+      async login(provider, _type, interaction) {
+        const code = await interaction.prompt({ type: "manual_code", message: `Code for ${provider}` });
+        assert.equal(code, `${provider}-approved`);
+      },
+    }),
+  );
+
+  await service.start("openai");
+  await service.start("openai-codex-test");
+  const openaiToken = events.find((event) => event.provider === "openai" && event.type === "prompt_request").token;
+  const codexToken = events.find(
+    (event) => event.provider === "openai-codex-test" && event.type === "prompt_request",
+  ).token;
+
+  assert.equal(resolveLoginCode("openai", codexToken, "wrong-owner"), false);
+  service.cancel("openai");
+  assert.equal(resolveLoginCode("openai", openaiToken, "too-late"), false);
+  assert.equal(resolveLoginCode("openai-codex-test", codexToken, "openai-codex-test-approved"), true);
+  await nextTurn();
+
+  assert.equal(
+    events.some((event) => event.provider === "openai" && event.type === "cancelled"),
+    true,
+  );
+  assert.equal(
+    events.some((event) => event.provider === "openai-codex-test" && event.type === "success"),
+    true,
+  );
+});
+
+test("OAuth credential synchronization failure emits success with a safe warning after read-back", async () => {
+  const { createAuthLoginService } = await loadAuthLoginModule();
+  const events = [];
+  const service = createAuthLoginService(
+    {
+      emit(topic, key, data) {
+        events.push({ topic, key, data });
+      },
+    },
+    () => ({
+      getProvider() {
+        return { auth: { oauth: {} } };
+      },
+      async login() {
+        throw new CredentialSynchronizationError(
+          "test-oauth",
+          "login",
+          { type: "oauth", access: "secret", refresh: "secret", expires: Date.now() + 60_000 },
+          { cause: new Error("secret synchronization detail") },
+        );
+      },
+      async listCredentials() {
+        return [{ providerId: "test-oauth", type: "oauth" }];
+      },
+      async refresh() {
+        return { aborted: false, errors: new Map([["test-oauth", new Error("secret refresh detail")]]) };
+      },
+    }),
+  );
+
+  assert.deepEqual(await service.start("test-oauth"), { started: true });
+  await nextTurn();
+  const terminal = events.find((event) => event.data.type === "success");
+  assert.equal(terminal.data.warning.code, "MODEL_SYNC_FAILED");
+  assert.equal(JSON.stringify(terminal).includes("secret"), false);
+  assert.equal(
+    events.some((event) => event.data.type === "error"),
+    false,
+  );
+});

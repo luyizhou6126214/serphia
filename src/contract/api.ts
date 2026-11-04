@@ -1,0 +1,595 @@
+import type { AgentShell, AgentShellSettings } from "../shared/agent-shell";
+import type { AdvancedModelSettings, AutoRoutingConfig, CatalogModel, ModelSettingsSnapshot } from "./model-settings";
+import type {
+  AgentCommand,
+  AgentEvent,
+  ApiKeyProviderStatus,
+  CredentialMutationResult,
+  DirEntry,
+  EntryContentResult,
+  FileContent,
+  FileMeta,
+  HistoryWindow,
+  LoginProgressEvent,
+  ModelPreferencesResult,
+  ModelsConfig,
+  ModelsConfigIssue,
+  ModelsConfigSnapshot,
+  ModelDiscoveryResult,
+  ModelsListResult,
+  PagedContextInfo,
+  ProviderStatus,
+  RunningStateEvent,
+  SessionDetail,
+  SessionInfo,
+  TestResult,
+  WorktreeInfo,
+} from "./types";
+import type {
+  GitStatusResult,
+  PluginActionParams,
+  PluginsResponse,
+  SkillRecord,
+  SkillSearchResult,
+  SkillUpdateParams,
+} from "../shared/api-types";
+import type {
+  ChannelAccountConfig,
+  ChannelBinding,
+  ChannelBindingChange,
+  ChannelLoginEvent,
+  ChannelLoginStartRequest,
+  ChannelProbeResult,
+  ChannelsSnapshot,
+  ChannelStatus,
+  ChannelPairingRequest,
+  ChannelActivity,
+  ChannelId,
+  ChannelTestSendResult,
+} from "../shared/channel-types";
+import type { ToolCapabilityId, ToolProvider } from "../shared/toolchains/types";
+import type {
+  ManagedProcessChangedEvent,
+  ManagedProcessLogStream,
+  ManagedProcessLogWindow,
+  ManagedProcessOutputEvent,
+  ManagedProcessPublicInfo,
+  ManagedProcessReadParams,
+  ManagedProcessWaitParams,
+  ManagedProcessWriteParams,
+} from "./processes";
+import type {
+  HerdrAgentState,
+  HerdrAgentKey,
+  HerdrFleetSnapshot,
+  HerdrRuntimeConfigureRequest,
+  HerdrRuntimeSnapshot,
+  HerdrTerminalFrame,
+  HerdrTerminalStatus,
+  HerdrAgentKind,
+  HerdrDiagnostics,
+} from "./herdr";
+
+import type { PiRuntimeProbeResult } from "./runtime";
+import type { CredentialMutationOptions } from "./auth";
+import type { ExecutionHistoryPage, ExecutionQuery, ExecutionContentChunk } from "./executions";
+import type {
+  McpConfigurationSnapshot,
+  McpScope,
+  McpServerConfig,
+  McpPanelSnapshot,
+  McpTarget,
+  McpOAuthSnapshot,
+  McpResourcePage,
+} from "./mcp";
+
+/** Request/response API surface (replaces HTTP routes). */
+export interface Api {
+  "mcp.config.get": { params: { scope: McpScope; cwd?: string }; result: McpConfigurationSnapshot };
+  "mcp.config.upsert": {
+    params: { scope: McpScope; cwd?: string; name: string; config: McpServerConfig; expectedRevision: string };
+    result: McpConfigurationSnapshot;
+  };
+  "mcp.config.remove": {
+    params: { scope: McpScope; cwd?: string; name: string; expectedRevision: string };
+    result: McpConfigurationSnapshot;
+  };
+  "mcp.import.preview": {
+    params: { scope: McpScope; cwd?: string; json: string };
+    result: { entries: string[]; conflicts: string[] };
+  };
+  "mcp.import.apply": {
+    params: { scope: McpScope; cwd?: string; json: string; expectedRevision: string };
+    result: McpConfigurationSnapshot;
+  };
+  "mcp.snapshot": { params: { sessionId: string }; result: McpPanelSnapshot };
+  "mcp.probe": { params: McpTarget & { requestId: string }; result: McpPanelSnapshot };
+  "mcp.probe.cancel": { params: { requestId: string }; result: { ok: true } };
+  "mcp.reconnect": { params: { sessionId: string; name: string }; result: McpPanelSnapshot };
+  "mcp.grants": { params: { sessionId: string; toolNames: string[] }; result: McpPanelSnapshot };
+  "mcp.declarations": { params: { sessionId: string; toolNames: string[] }; result: McpPanelSnapshot };
+  "mcp.extension.update": {
+    params: { sessionId: string; name: string; config: McpServerConfig; expectedRevision: string };
+    result: McpPanelSnapshot;
+  };
+  "mcp.resources": { params: McpTarget & { cursor?: string; templateCursor?: string }; result: McpResourcePage };
+  "mcp.resource.read": {
+    params: McpTarget & { uri: string };
+    result: { content?: unknown; preview?: string; hash?: string; bytes?: number };
+  };
+  "mcp.resource.content": { params: { hash: string; offset: number }; result: ExecutionContentChunk };
+  "mcp.oauth.start": { params: McpTarget; result: McpOAuthSnapshot };
+  "mcp.oauth.get": { params: { requestId: string }; result: McpOAuthSnapshot };
+  "mcp.oauth.submit": { params: { requestId: string; callbackUrl: string }; result: McpOAuthSnapshot };
+  "mcp.oauth.cancel": { params: { requestId: string }; result: McpOAuthSnapshot };
+  "mcp.oauth.logout": { params: McpTarget; result: { ok: true } };
+  "sessions.executions": { params: { id: string; leafId?: string } & ExecutionQuery; result: ExecutionHistoryPage };
+  "sessions.executionContent": {
+    params: { id: string; hash: string; maxBytes?: number; offset?: number };
+    result: { value?: unknown; chunk?: ExecutionContentChunk };
+  };
+  "host.ping": { params: void; result: { ok: true; ts: number } };
+  "host.runtimeProbe": { params: void; result: PiRuntimeProbeResult };
+  "host.toolchain": {
+    params: { cwd: string };
+    result: {
+      inventoryRevision: number;
+      resolutionId: string;
+      capabilities: Partial<Record<ToolCapabilityId, { provider: ToolProvider; version: string }>>;
+      codingTools?: Array<{ name: string; available: boolean }>;
+    };
+  };
+
+  // External terminal agents managed by a pinned Herdr protocol adapter.
+  "herdr.runtime.get": { params: void; result: HerdrRuntimeSnapshot };
+  "herdr.runtime.configure": { params: HerdrRuntimeConfigureRequest; result: HerdrRuntimeSnapshot };
+  "herdr.runtime.probe": { params: void; result: HerdrRuntimeSnapshot };
+  "herdr.runtime.restart": { params: void; result: HerdrRuntimeSnapshot };
+  "herdr.runtime.connect": { params: void; result: HerdrRuntimeSnapshot };
+  "herdr.runtime.disconnect": { params: void; result: { ok: true } };
+  "herdr.diagnostics": { params: void; result: HerdrDiagnostics };
+  "herdr.snapshot": { params: void; result: HerdrFleetSnapshot };
+  "herdr.workspace.create": {
+    params: { cwd: string; name?: string };
+    result: { workspaceId: string; rootPaneId: string };
+  };
+  "herdr.pane.split": {
+    params: { paneId: string; direction: "horizontal" | "vertical"; cwd?: string };
+    result: { paneId: string };
+  };
+  "herdr.pane.read": {
+    params: { paneId: string; maxBytes?: number };
+    result: { text: string; truncated: boolean };
+  };
+  "herdr.agent.start": {
+    params: { paneId: string; kind: HerdrAgentKind };
+    result: { paneId: string; state: HerdrAgentState };
+  };
+  "herdr.agent.prompt": { params: { paneId: string; prompt: string }; result: { accepted: true } };
+  "herdr.agent.sendKeys": { params: { paneId: string; keys: HerdrAgentKey[] }; result: { accepted: true } };
+  "herdr.agent.wait": {
+    params: { paneId: string; states: HerdrAgentState[]; timeoutMs: number; requestId: string };
+    result: { state: HerdrAgentState; timedOut: boolean };
+  };
+  "herdr.agent.waitCancel": { params: { requestId: string }; result: { ok: true } };
+  "herdr.terminal.open": {
+    params: { paneId: string; mode: "observe" | "control"; cols: number; rows: number; takeover?: boolean };
+    result: { terminalId: string; mode: "observe" | "control"; controller: boolean };
+  };
+  "herdr.terminal.input": { params: { terminalId: string; bytes: Uint8Array }; result: { accepted: true } };
+  "herdr.terminal.resize": {
+    params: { terminalId: string; cols: number; rows: number };
+    result: { accepted: true };
+  };
+  "herdr.terminal.ack": { params: { terminalId: string; seq: number }; result: { ok: true } };
+  "herdr.terminal.close": { params: { terminalId: string; release: boolean }; result: { ok: true } };
+
+  // Managed background processes (trusted Renderer control surface)
+  "processes.list": {
+    params: { includeExited?: boolean } | void;
+    result: { revision: number; processes: ManagedProcessPublicInfo[] };
+  };
+  "processes.get": {
+    params: { processId: string };
+    result: ManagedProcessPublicInfo;
+  };
+  "processes.read": {
+    params: ManagedProcessReadParams;
+    result: ManagedProcessLogWindow;
+  };
+  "processes.wait": {
+    params: ManagedProcessWaitParams;
+    result: ManagedProcessLogWindow;
+  };
+  "processes.write": {
+    params: ManagedProcessWriteParams;
+    result: { ok: true; runId: string };
+  };
+  "processes.stop": {
+    params: { processId: string; runId: string; mode?: "graceful" | "force" };
+    result: ManagedProcessPublicInfo;
+  };
+  "processes.stopAll": {
+    params: { mode?: "graceful" | "force" } | void;
+    result: { ok: true; stopped: number };
+  };
+  "processes.restart": {
+    params: { processId: string; runId: string };
+    result: ManagedProcessPublicInfo;
+  };
+  "processes.dismiss": {
+    params: { processId: string };
+    result: { ok: true };
+  };
+  "processes.export": {
+    params: { processId: string; runId: string; streams?: ManagedProcessLogStream[] };
+    result: { saved: boolean; fileName?: string };
+  };
+
+  // Sessions & projects
+  "sessions.list": {
+    params: { cwd?: string } | void;
+    result: { sessions: SessionInfo[]; runningSessionIds: string[] };
+  };
+  "sessions.get": {
+    params: { id: string; includeState?: boolean; traceId?: string; historyWindow?: HistoryWindow };
+    result: SessionDetail;
+  };
+  "sessions.context": {
+    params: { id: string; leafId?: string; historyWindow?: HistoryWindow };
+    result: { context: PagedContextInfo };
+  };
+  "sessions.contextPage": {
+    params: { id: string; cursor: string; maxTurns?: number; maxBytes?: number };
+    result: { context: PagedContextInfo };
+  };
+  "sessions.entryContent": {
+    params: { id: string; entryId: string; blockIndex?: number };
+    result: EntryContentResult;
+  };
+  "sessions.export": {
+    params: { id: string; format?: "md" | "json" | "bundle" };
+    result: { content: string; suggestedName: string };
+  };
+  "sessions.delete": { params: { id: string; force?: boolean }; result: { ok: true } };
+  "sessions.rename": {
+    params: { id: string; name: string };
+    result: { ok: true };
+  };
+
+  "worktrees.list": {
+    params: { projectRoot: string };
+    result: {
+      worktrees: WorktreeInfo[];
+      projectRoot: string;
+      isGit: boolean;
+      isTopLevel: boolean;
+    };
+  };
+  "worktrees.create": {
+    params: { projectRoot: string; branch: string; cwd?: string };
+    result: { worktree: WorktreeInfo };
+  };
+  "worktrees.remove": {
+    params: { path: string; cwd?: string; force?: boolean };
+    result: { ok: true };
+  };
+
+  "git.status": {
+    params: { path: string };
+    result: GitStatusResult;
+  };
+
+  // Agent lifecycle
+  "agent.new": {
+    params: {
+      cwd: string;
+      type?: string;
+      message?: string;
+      provider?: string;
+      modelId?: string;
+      /** False for an automatically displayed default; it must not dismiss a restore warning. */
+      modelSelectionExplicit?: boolean;
+      toolNames?: string[];
+      thinkingLevel?: string;
+      [key: string]: unknown;
+    };
+    result: { sessionId: string; data?: unknown };
+  };
+  "agent.command": {
+    params: { sessionId: string; command: AgentCommand };
+    result: unknown;
+  };
+  "agent.state": {
+    params: { sessionId: string };
+    result: { running: boolean; state?: unknown };
+  };
+  /** Generate a concise session title from the first user message (silent LLM request, never touches session history). */
+  "agent.generateTitle": {
+    params: {
+      sessionId: string;
+      message: string;
+      provider?: string;
+      modelId?: string;
+    };
+    result: { title: string | null };
+  };
+
+  // Messaging channels
+  "channels.list": { params: void; result: ChannelsSnapshot };
+  "channels.accountUpsert": {
+    params: { account: ChannelAccountConfig };
+    result: ChannelsSnapshot;
+  };
+  "channels.accountConnect": {
+    params: { account: ChannelAccountConfig };
+    result: ChannelsSnapshot;
+  };
+  "channels.accountDelete": {
+    params: { accountId: string };
+    result: ChannelsSnapshot;
+  };
+  "channels.start": { params: { accountId: string }; result: { ok: true } };
+  "channels.stop": { params: { accountId: string }; result: { ok: true } };
+  "channels.restart": { params: { accountId: string }; result: { ok: true } };
+  "channels.probe": { params: { accountId: string }; result: ChannelProbeResult };
+  "channels.loginStart": {
+    params: ChannelLoginStartRequest;
+    result: ChannelLoginEvent;
+  };
+  "channels.loginWait": {
+    params: { channel: ChannelId; sessionKey: string };
+    result: ChannelLoginEvent;
+  };
+  "channels.loginSubmitCode": {
+    params: { channel: ChannelId; sessionKey: string; code: string };
+    result: { ok: true };
+  };
+  "channels.loginCancel": {
+    params: { channel: ChannelId; sessionKey: string };
+    result: { ok: true };
+  };
+  "channels.pairingApprove": {
+    params: { pairingId: string };
+    result: ChannelsSnapshot;
+  };
+  "channels.pairingReject": {
+    params: { pairingId: string };
+    result: ChannelsSnapshot;
+  };
+  "channels.bindingUpsert": {
+    params: { binding: ChannelBinding };
+    result: ChannelsSnapshot;
+  };
+  "channels.bindingDelete": {
+    params: { bindingId: string };
+    result: ChannelsSnapshot;
+  };
+  "channels.testSend": {
+    params: { accountId: string; peerId: string; message: string };
+    result: ChannelTestSendResult;
+  };
+
+  // Files
+  "files.list": { params: { path: string }; result: { entries: DirEntry[] } };
+  "files.read": {
+    params: { path: string; sourceSessionId?: string };
+    result: FileContent & {
+      encoding?: "utf8" | "base64" | "too_large";
+      mime?: string;
+    };
+  };
+  "files.download": {
+    params: { path: string; sourceSessionId?: string };
+    result: { base64: string; size: number; mime: string };
+  };
+  "files.meta": {
+    params: { path: string; sourceSessionId?: string };
+    result: FileMeta;
+  };
+  "files.preview": {
+    params: { path: string; sourceSessionId?: string };
+    result: { kind: string; content?: string; base64?: string; mime?: string; [key: string]: unknown };
+  };
+  "files.index": {
+    params: { root: string; query?: string };
+    result: {
+      files: string[];
+      truncated: boolean;
+      truncatedReason?: "depth" | "count";
+      matches?: Array<{ path: string; isDir?: boolean; score?: number }>;
+      degradedReason?: "search-unavailable" | "search-timeout" | "search-failed";
+    };
+  };
+  "files.watchStart": {
+    params: { path: string; sourceSessionId?: string; watchId?: string };
+    result: { ok: true };
+  };
+  "files.watchStop": {
+    params: { path: string; watchId?: string };
+    result: { ok: true };
+  };
+
+  // Config
+  "settings.getAgentShell": { params: void; result: AgentShellSettings };
+  "settings.setAgentShell": { params: { shell: AgentShell }; result: AgentShellSettings };
+  "settings.getCacheWarming": {
+    params: void;
+    result: {
+      mode: "off" | "streaming" | "idle";
+      scope: "global";
+      loadFailed: boolean;
+      pendingSessionCount: number;
+    };
+  };
+  "settings.setCacheWarming": {
+    params: { mode: "off" | "streaming" | "idle" };
+    result: {
+      mode: "off" | "streaming" | "idle";
+      scope: "global";
+      loadFailed: boolean;
+      pendingSessionCount: number;
+    };
+  };
+  "models.list": {
+    params: { cwd?: string } | void;
+    result: ModelsListResult;
+  };
+  "models.refresh": {
+    params: { cwd?: string; requestId: string };
+    result: ModelsListResult;
+  };
+  "models.refreshCancel": {
+    params: { requestId: string };
+    result: { ok: true; cancelled: boolean };
+  };
+  "models.preferences.get": {
+    params: { cwd?: string } | void;
+    result: ModelPreferencesResult;
+  };
+  "models.preferences.set": {
+    params: { cwd?: string; enabledModels: string[] | null };
+    result: ModelPreferencesResult;
+  };
+  "models.routing.get": { params: void; result: ModelSettingsSnapshot<AutoRoutingConfig> };
+  "models.routing.set": {
+    params: { config: AutoRoutingConfig; expectedVersion: string; cwd?: string };
+    result: ModelSettingsSnapshot<AutoRoutingConfig>;
+  };
+  "settings.advanced.get": { params: void; result: ModelSettingsSnapshot<AdvancedModelSettings> };
+  "settings.advanced.set": {
+    params: { config: AdvancedModelSettings; expectedVersion: string };
+    result: ModelSettingsSnapshot<AdvancedModelSettings>;
+  };
+  "models.catalog": { params: { cwd?: string } | void; result: { models: CatalogModel[] } };
+  "models.test": {
+    params: { provider: string; modelId: string; type: "chat" | "classifier" | "image"; cwd?: string };
+    result: TestResult;
+  };
+  "modelsConfig.get": { params: void; result: ModelsConfigSnapshot };
+  "modelsConfig.set": {
+    params: { config: ModelsConfig; expectedVersion: string; providerRenames?: Record<string, string> };
+    result: { ok: true; version: string; warnings?: ModelsConfigIssue[] };
+  };
+  "modelsConfig.test": {
+    params: {
+      providerName?: string;
+      provider?: Record<string, unknown>;
+      model?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    result: TestResult;
+  };
+  "modelsConfig.discover": {
+    params: { provider: Record<string, unknown> };
+    result: ModelDiscoveryResult;
+  };
+
+  "auth.providers": { params: void; result: { providers: ProviderStatus[] } };
+  "auth.allProviders": { params: void; result: { providers: ApiKeyProviderStatus[] } };
+  "auth.setApiKey": {
+    params: { provider: string; key: string } & CredentialMutationOptions;
+    result: CredentialMutationResult;
+  };
+  "auth.deleteApiKey": {
+    params: { provider: string; expectedVersion?: string };
+    result: CredentialMutationResult;
+  };
+  "auth.logout": { params: { provider: string; expectedVersion?: string }; result: CredentialMutationResult };
+  "auth.loginSubmit": {
+    params: { provider: string; token: string; code: string };
+    result: { ok: true };
+  };
+  /** Kick off OAuth login; progress arrives on Streams["auth.login"]. */
+  "auth.loginStart": {
+    params: { provider: string; authType?: "oauth" | "api_key" } & CredentialMutationOptions;
+    result: { ok: true; started: boolean };
+  };
+  "auth.loginCancel": {
+    params: { provider: string };
+    result: { ok: true };
+  };
+
+  "skills.list": {
+    params: { cwd?: string } | void;
+    result: { skills: SkillRecord[]; diagnostics?: unknown[] };
+  };
+  "skills.search": {
+    params: { query: string };
+    result: { results: SkillSearchResult[] };
+  };
+  "skills.install": {
+    params: { package: string; scope?: "global" | "project"; cwd?: string };
+    result: { ok: true; output: string };
+  };
+  "skills.set": {
+    params: SkillUpdateParams;
+    result: { ok: true };
+  };
+  "skills.getContent": {
+    params: { cwd: string; filePath: string };
+    result: { content: string };
+  };
+
+  "plugins.list": {
+    params: { cwd?: string } | void;
+    result: PluginsResponse;
+  };
+  "plugins.set": {
+    params: PluginActionParams;
+    result: PluginsResponse;
+  };
+
+  // System / desktop helpers exposed via Host (or main-bridged)
+  "system.home": { params: void; result: { home: string } };
+  "system.validateCwd": {
+    params: { path: string };
+    result: { ok: boolean; path?: string; error?: string };
+  };
+  "system.defaultCwd": { params: void; result: { cwd: string } };
+  "system.allowRoot": { params: { path: string }; result: { ok: true } };
+  "system.runningCount": { params: void; result: { count: number; sessionIds: string[] } };
+}
+
+/** Server-push streams delivered over MessagePort RPC. */
+export interface Streams {
+  "mcp.changed": { sessionId: string; instances: import("./mcp").McpInstanceSnapshot[] };
+  "mcp.oauth": McpOAuthSnapshot;
+  "mcp.settings": { sessionId: string };
+  "agent.events": AgentEvent;
+  "agent.running": RunningStateEvent;
+  "auth.login": LoginProgressEvent;
+  "sessions.changed": {
+    cwd: string | null;
+    sessionId?: string;
+    session?: SessionInfo;
+    deleted?: boolean;
+    fullRefresh?: boolean;
+    /** Project metadata was invalidated after the Git toolchain changed. */
+    projectInfoChanged?: boolean;
+  };
+  "files.changed": {
+    path: string;
+    event: "connected" | "change" | "error";
+    mtime?: string;
+    size?: number;
+    message?: string;
+  };
+  "channels.status": ChannelStatus;
+  "channels.login": ChannelLoginEvent;
+  "channels.pairing": ChannelPairingRequest;
+  "channels.binding": ChannelBindingChange;
+  "channels.activity": ChannelActivity;
+  "processes.changed": ManagedProcessChangedEvent;
+  "processes.output": ManagedProcessOutputEvent;
+  "herdr.runtime": HerdrRuntimeSnapshot;
+  "herdr.fleet": HerdrFleetSnapshot;
+  "herdr.terminal.frame": HerdrTerminalFrame;
+  "herdr.terminal.status": HerdrTerminalStatus;
+}
+
+export type ApiMethod = keyof Api;
+export type StreamTopic = keyof Streams;
+
+export type ApiParams<M extends ApiMethod> = Api[M]["params"];
+export type ApiResult<M extends ApiMethod> = Api[M]["result"];

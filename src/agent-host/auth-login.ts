@@ -1,0 +1,304 @@
+/**
+ * Provider login progress service for Streams["auth.login"].
+ */
+import type { AuthEvent, AuthInteraction, AuthPrompt, LoginOptions } from "@earendil-works/pi-ai";
+import { CredentialSynchronizationError } from "@earendil-works/pi-coding-agent";
+import type { RpcServer } from "../contract/rpc";
+import { RpcError } from "../contract/types";
+import { createGuardedOAuthRuntime } from "./auth-runtime";
+import { ensureInstallationDeviceId } from "./installation-device-id";
+import type { CredentialMutationOptions } from "../contract/auth";
+import { recoverCommittedCredential } from "./credential-sync";
+
+type Pending = {
+  provider: string;
+  resolve: (v: string) => void;
+  reject: (e: Error) => void;
+};
+
+const loginCallbacks = new Map<string, Pending>();
+const activeLogins = new Map<string, AbortController>();
+
+export function resolveLoginCode(provider: string, token: string, code: string): boolean {
+  const pending = loginCallbacks.get(token);
+  if (!pending || pending.provider !== provider) return false;
+  pending.resolve(code);
+  loginCallbacks.delete(token);
+  return true;
+}
+
+export function cancelLogin(provider: string): void {
+  const abort = activeLogins.get(provider);
+  if (abort) {
+    abort.abort();
+    activeLogins.delete(provider);
+  }
+  for (const [token, pending] of [...loginCallbacks.entries()]) {
+    if (pending.provider === provider) {
+      pending.reject(new Error("Login cancelled"));
+      loginCallbacks.delete(token);
+    }
+  }
+}
+
+type OAuthRuntime = {
+  getProvider(provider: string): { auth: { oauth?: unknown; apiKey?: unknown } } | undefined;
+  login(
+    provider: string,
+    type: "oauth" | "api_key",
+    interaction: AuthInteraction,
+    options?: LoginOptions,
+    mutation?: CredentialMutationOptions,
+  ): Promise<unknown>;
+  listCredentials(): ReturnType<import("@earendil-works/pi-coding-agent").ModelRuntime["listCredentials"]>;
+  refresh: import("@earendil-works/pi-coding-agent").ModelRuntime["refresh"];
+};
+
+type ModelRuntimeFactory = () => OAuthRuntime | Promise<OAuthRuntime>;
+
+export function createAuthLoginService(
+  server: RpcServer,
+  createModelRuntime: ModelRuntimeFactory = createGuardedOAuthRuntime,
+  createDeviceId: (signal: AbortSignal) => Promise<string> = (signal) => ensureInstallationDeviceId(undefined, signal),
+) {
+  let closed = false;
+  const ownedLogins = new Map<string, AbortController>();
+  const pendingLogins = new Set<Promise<void>>();
+  function emit(provider: string, data: Record<string, unknown>) {
+    if (closed) return;
+    server.emit("auth.login", provider, data as never);
+  }
+
+  return {
+    async start(
+      provider: string,
+      mutation: CredentialMutationOptions = {},
+      authType: "oauth" | "api_key" = "oauth",
+    ): Promise<{ started: boolean }> {
+      if (closed) throw new RpcError({ code: "CLOSED", message: "Login service is closed" });
+      if (authType !== "oauth" && authType !== "api_key")
+        throw new RpcError({ code: "BAD_REQUEST", message: "Invalid authentication type" });
+      if (activeLogins.has(provider)) {
+        return { started: false };
+      }
+
+      const abort = new AbortController();
+      activeLogins.set(provider, abort);
+      ownedLogins.set(provider, abort);
+      let terminalSent = false;
+      const emitTerminal = (data: Record<string, unknown>) => {
+        if (terminalSent || activeLogins.get(provider) !== abort) return;
+        terminalSent = true;
+        emit(provider, data);
+      };
+      // Acknowledge cancellation before releasing the provider slot. Later SDK
+      // settlement must not deliver an old terminal event to a new subscription.
+      const onAbort = () => emitTerminal({ type: "cancelled" });
+      abort.signal.addEventListener("abort", onAbort, { once: true });
+      const releaseSlot = () => {
+        abort.signal.removeEventListener("abort", onAbort);
+        if (activeLogins.get(provider) === abort) activeLogins.delete(provider);
+        if (ownedLogins.get(provider) === abort) ownedLogins.delete(provider);
+      };
+      let modelRuntime: OAuthRuntime;
+      let deviceId: string;
+      try {
+        modelRuntime = await createModelRuntime();
+        if (closed || abort.signal.aborted) {
+          releaseSlot();
+          return { started: false };
+        }
+        if (!modelRuntime.getProvider(provider)?.auth[authType === "oauth" ? "oauth" : "apiKey"])
+          throw new RpcError({ code: "NOT_FOUND", message: `Unknown provider: ${provider}` });
+        deviceId = authType === "oauth" ? await createDeviceId(abort.signal) : "";
+        if (closed || abort.signal.aborted) {
+          releaseSlot();
+          return { started: false };
+        }
+      } catch (error) {
+        releaseSlot();
+        if (closed || abort.signal.aborted) return { started: false };
+        throw error;
+      }
+      const activeTokens = new Set<string>();
+
+      const createClientInputRequest = (signal?: AbortSignal) => {
+        if (closed || abort.signal.aborted) throw new Error("Login cancelled");
+        const token = `${provider}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        activeTokens.add(token);
+        const promise = new Promise<string>((resolve, reject) => {
+          let removeAbortListener = () => {};
+          const pending: Pending = {
+            provider,
+            resolve: (value) => {
+              activeTokens.delete(token);
+              loginCallbacks.delete(token);
+              removeAbortListener();
+              resolve(value);
+            },
+            reject: (error) => {
+              activeTokens.delete(token);
+              loginCallbacks.delete(token);
+              removeAbortListener();
+              reject(error);
+            },
+          };
+          loginCallbacks.set(token, pending);
+          if (signal) {
+            const onAbort = () => pending.reject(new Error("Prompt cancelled"));
+            removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+            if (signal.aborted) onAbort();
+            else signal.addEventListener("abort", onAbort, { once: true });
+          }
+        });
+        return { token, promise };
+      };
+
+      let pendingManualRequest: { token: string; promise: Promise<string> } | undefined;
+      const getManualInputRequest = (signal?: AbortSignal) => {
+        if (!pendingManualRequest) {
+          pendingManualRequest = createClientInputRequest(signal);
+          pendingManualRequest.promise
+            .finally(() => {
+              pendingManualRequest = undefined;
+            })
+            .catch(() => {});
+        }
+        return pendingManualRequest;
+      };
+
+      const cleanup = () => {
+        for (const token of activeTokens) {
+          loginCallbacks.get(token)?.reject(new Error("Login cancelled"));
+          loginCallbacks.delete(token);
+        }
+        activeTokens.clear();
+        // A cancelled flow may finish after its replacement has started.
+        // Only remove this flow's own controller from the provider slot.
+        releaseSlot();
+      };
+
+      abort.signal.addEventListener("abort", cleanup, { once: true });
+
+      const notify = (event: AuthEvent) => {
+        if (closed || abort.signal.aborted) return;
+        switch (event.type) {
+          case "auth_url": {
+            const request = getManualInputRequest();
+            emit(provider, {
+              type: "auth",
+              url: event.url,
+              instructions: event.instructions ?? null,
+              token: request.token,
+            });
+            break;
+          }
+          case "device_code":
+            emit(provider, {
+              type: "device_code",
+              userCode: event.userCode,
+              verificationUri: event.verificationUri,
+              intervalSeconds: event.intervalSeconds ?? null,
+              expiresInSeconds: event.expiresInSeconds ?? null,
+            });
+            break;
+          case "progress":
+            emit(provider, { type: "progress", message: event.message });
+            break;
+          case "info":
+            emit(provider, { type: "progress", message: event.message, links: event.links ?? [] });
+            break;
+        }
+      };
+
+      const prompt = async (request: AuthPrompt): Promise<string> => {
+        if (request.type === "select") {
+          const pending = createClientInputRequest(request.signal);
+          emit(provider, {
+            type: "select_request",
+            message: request.message,
+            options: request.options.map(({ id, label }) => ({ id, label })),
+            token: pending.token,
+          });
+          return pending.promise;
+        }
+
+        const pending =
+          request.type === "manual_code"
+            ? getManualInputRequest(request.signal)
+            : createClientInputRequest(request.signal);
+        emit(provider, {
+          type: "prompt_request",
+          message: request.message,
+          placeholder: request.placeholder ?? null,
+          token: pending.token,
+          secret: request.type === "secret",
+        });
+        return pending.promise;
+      };
+
+      // Fire-and-forget; stream progress via auth.login
+      const operation = (async () => {
+        try {
+          await modelRuntime.login(
+            provider,
+            authType,
+            {
+              signal: abort.signal,
+              notify,
+              prompt,
+            },
+            { getDeviceId: () => deviceId },
+            mutation,
+          );
+
+          emitTerminal({ type: "success" });
+        } catch (err) {
+          if (err instanceof CredentialSynchronizationError) {
+            const recovered = await recoverCommittedCredential(modelRuntime, provider, {
+              present: true,
+              type: authType,
+            });
+            if (recovered) {
+              emitTerminal({ type: "success", ...(recovered.warning ? { warning: recovered.warning } : {}) });
+              return;
+            }
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg === "Login cancelled" || abort.signal.aborted) {
+            emitTerminal({ type: "cancelled" });
+          } else {
+            emitTerminal({ type: "error", message: msg });
+          }
+        } finally {
+          cleanup();
+          abort.signal.removeEventListener("abort", cleanup);
+        }
+      })();
+      pendingLogins.add(operation);
+      void operation.then(
+        () => pendingLogins.delete(operation),
+        () => pendingLogins.delete(operation),
+      );
+
+      return { started: true };
+    },
+
+    cancel(provider: string) {
+      cancelLogin(provider);
+    },
+    async dispose() {
+      if (closed) {
+        await Promise.allSettled([...pendingLogins]);
+        return;
+      }
+      closed = true;
+      for (const [provider, abort] of ownedLogins) {
+        abort.abort();
+        if (activeLogins.get(provider) === abort) activeLogins.delete(provider);
+      }
+      ownedLogins.clear();
+      await Promise.allSettled([...pendingLogins]);
+    },
+  };
+}

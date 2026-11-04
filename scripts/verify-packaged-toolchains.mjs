@@ -1,0 +1,649 @@
+#!/usr/bin/env node
+
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { darwinCodeDigest } from "../src/main/toolchains/darwin-binary-integrity.ts";
+import { extractFile, listPackage } from "@electron/asar";
+import { verifyWindowsHelperPe } from "./windows-helper-pe.mjs";
+import {
+  PI_RUNTIME_ROOTS,
+  resolvePackage,
+  validatePiPackageGraph,
+  validatePiRuntimeAssets,
+} from "./pi-runtime-contract.mjs";
+import { assertLockedPackage, validatePiAuthoringAssets } from "./pi-packaging.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const expectedPiVersion = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies?.[
+  "@earendil-works/pi-coding-agent"
+];
+const lockfile = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
+const argumentsList = process.argv.slice(2);
+const target = argumentsList.shift() ?? `${process.platform}-${process.arch}`;
+let outputArgument;
+let staticOnly = false;
+let requireReleaseHelper = false;
+for (const argument of argumentsList) {
+  if (argument === "--static" && !staticOnly) staticOnly = true;
+  else if (argument === "--release-helper" && !requireReleaseHelper) requireReleaseHelper = true;
+  else if (!argument.startsWith("--") && !outputArgument) outputArgument = argument;
+  else {
+    throw new Error(
+      "Usage: verify-packaged-toolchains.mjs <darwin-arm64|darwin-x64|win32-x64|linux-x64> [package-output-directory] [--static]",
+    );
+  }
+}
+if (!/^(?:darwin-(?:arm64|x64)|win32-x64|linux-x64)$/.test(target)) {
+  throw new Error(
+    "Usage: verify-packaged-toolchains.mjs <darwin-arm64|darwin-x64|win32-x64|linux-x64> [package-output-directory] [--static]",
+  );
+}
+const dist = outputArgument ? path.resolve(outputArgument) : path.join(root, "dist");
+const [expectedPlatform, expectedArch] = target.split("-");
+const layout = findPackagedLayout(dist, target);
+
+verifyPackagedResources(layout.resources, target);
+verifyWindowsManagedProcessHelper(layout.resources, target, !staticOnly, requireReleaseHelper);
+verifyPiRuntimeAssets(layout.resources, expectedPlatform, expectedArch);
+verifyBundledTools(layout.resources, expectedPlatform, expectedArch, !staticOnly);
+verifyBundledHerdr(layout.resources, expectedPlatform, expectedArch, !staticOnly);
+verifyLinuxSandbox(layout.executable, expectedPlatform);
+if (!staticOnly) {
+  runPackagedStartup(layout.executable, target);
+  if (target === "win32-x64") runPackagedCleanupFaultValidation(layout.executable);
+  if (layout.appImage) {
+    verifyLinuxAppImageDesktopEntry(layout.appImage);
+    // Extraction mode writes chrome-sandbox into a user-owned temporary directory, so it cannot retain the
+    // root-owned 4755 metadata required by Chromium. The unpacked layout startup above already exercises the
+    // configured SUID sandbox; this second launch verifies the AppImage entry point and production resources.
+    runPackagedStartup(layout.appImage, target, { APPIMAGE_EXTRACT_AND_RUN: "1" }, ["--no-sandbox"]);
+  }
+}
+
+console.log(
+  staticOnly
+    ? `OK: ${target} packaged resources and target toolchains pass static verification (executables not run)`
+    : `OK: ${target} packaged app starts through its production entry and contains only verified target toolchains`,
+);
+
+function findPackagedLayout(directory, toolTarget) {
+  if (!fs.existsSync(directory)) throw new Error(`Missing package output: ${directory}`);
+  const candidates = [];
+  walkDirectories(directory, 5, (current) => {
+    const normalized = current.split(path.sep).join("/");
+    let resources;
+    let executable;
+    if (expectedPlatform === "darwin" && normalized.endsWith(".app/Contents")) {
+      resources = path.join(current, "Resources");
+      executable = path.join(current, "MacOS", "serphia");
+    } else if (
+      /-unpacked$/i.test(path.basename(current)) ||
+      (expectedPlatform === "win32" && path.resolve(current) === path.resolve(directory))
+    ) {
+      resources = path.join(current, "resources");
+      if (expectedPlatform === "win32") executable = path.join(current, "serphia.exe");
+      else if (expectedPlatform === "linux") executable = path.join(current, "pi-agent-desktop");
+    }
+    if (
+      resources &&
+      executable &&
+      regularFile(path.join(resources, "app.asar")) &&
+      regularFile(executable) &&
+      fs.existsSync(path.join(resources, "toolchains", "core", toolTarget))
+    ) {
+      candidates.push({ resources, executable });
+    }
+  });
+  if (candidates.length !== 1) {
+    throw new Error(`Expected one ${toolTarget} unpacked packaged layout, found ${candidates.length}`);
+  }
+  if (expectedPlatform !== "linux") return candidates[0];
+  const appImages = fs
+    .readdirSync(directory)
+    .filter((name) => name.endsWith(".AppImage") && regularFile(path.join(directory, name)))
+    .map((name) => path.join(directory, name));
+  if (appImages.length !== 1) throw new Error(`Expected one Linux AppImage, found ${appImages.length}`);
+  return { ...candidates[0], appImage: appImages[0] };
+}
+
+function verifyPackagedResources(resources, toolTarget) {
+  const toolchains = path.join(resources, "toolchains");
+  const entries = fs.readdirSync(toolchains).sort();
+  assertExact(entries, ["core", "core-catalog.json", "runtime-catalog.json"], "packaged toolchain resources");
+  const coreTargets = fs
+    .readdirSync(path.join(toolchains, "core"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assertExact(coreTargets, [toolTarget], "packaged core target directories");
+  const notice = path.join(resources, "THIRD_PARTY_NOTICES.md");
+  if (!regularFile(notice)) throw new Error("Packaged third-party notices are missing");
+  const noticeText = fs.readFileSync(notice, "utf8");
+  for (const [component, version] of [
+    ["ripgrep", "15.2.0"],
+    ["fd", "10.3.0"],
+    ["Node.js", "24.18.0"],
+    ["uv", "0.11.29"],
+    ["PortableGit", "2.55.0.3"],
+    ["jq", "1.8.2"],
+    ["Bun", "1.3.14"],
+    ["Herdr", "0.8.2"],
+  ]) {
+    const tableRow = new RegExp(`^\\|\\s*${escapeRegExp(component)}\\s*\\|\\s*${escapeRegExp(version)}\\s*\\|`, "m");
+    if (!tableRow.test(noticeText)) throw new Error(`Third-party notices are missing ${component} ${version}`);
+  }
+  const runtimeCatalog = JSON.parse(fs.readFileSync(path.join(toolchains, "runtime-catalog.json"), "utf8"));
+  const ids = runtimeCatalog.components?.map((component) => component.id).sort();
+  assertExact(ids ?? [], ["bun", "cpython", "jq", "node-lts", "portable-git", "uv"], "managed runtime catalog IDs");
+
+  const herdrRoot = path.join(resources, "herdr");
+  if (!fs.existsSync(herdrRoot)) throw new Error("Packaged Herdr catalog is missing");
+  const herdrEntries = fs.readdirSync(herdrRoot).sort();
+  assertExact(herdrEntries, ["bin", "runtime-catalog.json"], "packaged Herdr resources");
+  const herdrTargets = fs
+    .readdirSync(path.join(herdrRoot, "bin"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assertExact(herdrTargets, [toolTarget], "packaged Herdr target directories");
+
+  const forbidden = [];
+  walkFiles(toolchains, (file) => {
+    const relative = path.relative(toolchains, file).split(path.sep).join("/");
+    if (/(?:^|\/)(?:downloads|runtimes|staging|prefixes|caches)(?:\/|$)/i.test(relative)) forbidden.push(relative);
+    if (/\.(?:partial|artifact|7z\.exe)$/i.test(relative)) forbidden.push(relative);
+    if (/PortableGit-.*\.exe$/i.test(relative)) forbidden.push(relative);
+  });
+  if (forbidden.length > 0) throw new Error(`Packaged managed runtime residue: ${forbidden.join(", ")}`);
+}
+
+function verifyWindowsManagedProcessHelper(resources, toolTarget, executeHelper, requireReleaseProvenance) {
+  const helperRoot = path.join(resources, "managed-process");
+  if (toolTarget !== "win32-x64") {
+    if (fs.existsSync(helperRoot)) throw new Error("Windows managed process helper leaked into a non-Windows package");
+    return;
+  }
+  const targetRoot = path.join(helperRoot, "win32-x64");
+  assertExact(fs.readdirSync(helperRoot).sort(), ["win32-x64"], "managed process helper target directories");
+  assertExact(
+    fs.readdirSync(targetRoot).sort(),
+    ["manifest.json", "pi-managed-process-helper.exe"],
+    "managed process helper files",
+  );
+  const executable = path.join(targetRoot, "pi-managed-process-helper.exe");
+  const manifest = JSON.parse(fs.readFileSync(path.join(targetRoot, "manifest.json"), "utf8"));
+  const expectedKeys = [
+    "arch",
+    "buildId",
+    "file",
+    "protocolVersion",
+    "provenance",
+    "schemaVersion",
+    "sha256",
+    "sourceRevision",
+    "targetTriple",
+  ];
+  assertExact(Object.keys(manifest).sort(), expectedKeys, "managed process helper manifest keys");
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.protocolVersion !== 1 ||
+    manifest.arch !== "x64" ||
+    manifest.file !== "pi-managed-process-helper.exe" ||
+    manifest.targetTriple !== "x86_64-pc-windows-msvc" ||
+    (requireReleaseProvenance && manifest.provenance !== "release-authoritative") ||
+    !/^[a-f0-9]{64}$/u.test(manifest.sha256) ||
+    createHash("sha256").update(fs.readFileSync(executable)).digest("hex") !== manifest.sha256
+  ) {
+    throw new Error("Packaged Windows managed process helper manifest or hash is invalid");
+  }
+  verifyWindowsHelperPe(executable);
+  if (!executeHelper) return;
+  for (const [mode, validate] of [
+    ["--version-json-v1", (value) => value?.buildId === manifest.buildId && value?.protocolVersion === 1],
+    ["--self-test-json-v1", (value) => value?.ok === true && value?.buildId === manifest.buildId],
+  ]) {
+    const result = spawnSync(executable, [mode], { encoding: "utf8", windowsHide: true });
+    if (result.status !== 0) throw new Error(`Packaged managed process helper ${mode} failed`);
+    let value;
+    try {
+      value = JSON.parse(result.stdout);
+    } catch {
+      throw new Error(`Packaged managed process helper ${mode} returned malformed JSON`);
+    }
+    if (!validate(value)) throw new Error(`Packaged managed process helper ${mode} metadata mismatch`);
+  }
+  const integration = spawnSync(
+    process.execPath,
+    [
+      "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+      "--experimental-strip-types",
+      path.join(root, "scripts", "test-windows-managed-process-helper.mjs"),
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, PI_WINDOWS_MANAGED_HELPER_RESOURCES_PATH: resources },
+      encoding: "utf8",
+      // This is the full Windows containment suite, including GUI and optional
+      // Java runtime scenarios. Cold hosted runners routinely need more than
+      // 45 seconds even when every individual scenario is healthy.
+      timeout: 180_000,
+      windowsHide: true,
+    },
+  );
+  if (integration.status !== 0 || integration.signal || integration.error) {
+    throw new Error(
+      `Packaged managed process helper integration failed: ${integration.error?.message ?? integration.stderr ?? integration.signal ?? integration.status}`,
+    );
+  }
+  let report;
+  for (const line of integration.stdout.trim().split(/\r?\n/u).reverse()) {
+    try {
+      const candidate = JSON.parse(line);
+      if (candidate?.ok === true) {
+        report = candidate;
+        break;
+      }
+    } catch {
+      // Progress and diagnostics are not the final machine-readable report.
+    }
+  }
+  if (!report) {
+    throw new Error("Packaged managed process helper integration returned malformed output");
+  }
+  if (report?.ok !== true || !report.scenarios?.includes("reaper-identity-fail-closed")) {
+    throw new Error("Packaged managed process helper integration did not complete the required scenarios");
+  }
+}
+
+function verifyPiRuntimeAssets(resources, platform, arch) {
+  const asarPath = path.join(resources, "app.asar");
+  const entries = new Set(listPackage(asarPath).map((entry) => entry.replace(/^[/\\]+/u, "").replaceAll("\\", "/")));
+  const readPackage = (entry) => JSON.parse(extractAsarFile(asarPath, entry).toString("utf8"));
+  const exists = (entry) => entries.has(entry);
+  const graph = validatePiPackageGraph({
+    readPackage,
+    exists,
+    version: expectedPiVersion,
+    rootPackages: PI_RUNTIME_ROOTS,
+  });
+  validatePiRuntimeAssets({ graph, readPackage, exists });
+  validatePiAuthoringAssets({ graph, readPackage, exists, platform, arch });
+  const codingAgentRoot = resolvePackage("", "@earendil-works/pi-coding-agent", exists);
+  const grokRoot = resolvePackage(codingAgentRoot, "grok-mermaid", exists);
+  const typeboxRoot = resolvePackage("", "typebox", exists);
+  for (const entry of [`${grokRoot}/dist/index.js`, `${typeboxRoot}/build/index.mjs`]) {
+    if (!exists(entry)) throw new Error(`Packaged runtime asset is missing: ${entry}`);
+  }
+  for (const packageRoot of new Set([...graph.keys(), grokRoot, typeboxRoot])) {
+    assertLockedPackage(lockfile, packageRoot, readPackage(`${packageRoot}/package.json`));
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractAsarFile(archive, entry) {
+  return extractFile(archive, path.join(...entry.split("/")));
+}
+
+function verifyBundledTools(resources, platform, arch, executeTools) {
+  const targetRoot = path.join(resources, "toolchains", "core", `${platform}-${arch}`);
+  const manifestPath = path.join(targetRoot, "manifests", "core-tools.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (manifest.schemaVersion !== 1 || manifest.platform !== platform || manifest.arch !== arch) {
+    throw new Error("Packaged core manifest target does not match the application");
+  }
+  if (!Array.isArray(manifest.tools) || manifest.tools.length !== 2)
+    throw new Error("Core manifest must contain rg and fd");
+  if (!Array.isArray(manifest.licenses) || manifest.licenses.length !== 4) {
+    throw new Error("Core manifest must contain all rg/fd license files");
+  }
+
+  const byComponent = new Map();
+  for (const tool of manifest.tools) {
+    if (!["ripgrep", "fd"].includes(tool.componentId) || !safeRelativePath(tool.executable)) {
+      throw new Error("Unsafe core tool manifest entry");
+    }
+    const executable = path.join(targetRoot, tool.executable);
+    if (platform === "darwin") {
+      if (!/^[a-f0-9]{64}$/.test(tool.darwinCodeSha256) || !Number.isSafeInteger(tool.darwinCodeBytes)) {
+        throw new Error(`Missing signed-code integrity metadata: ${executable}`);
+      }
+      verifyDarwinExecutable(executable, tool.darwinCodeSha256, tool.darwinCodeBytes);
+    } else {
+      verifyManifestFile(executable, tool.sha256, tool.bytes);
+    }
+    if (platform !== "win32" && (fs.statSync(executable).mode & 0o111) === 0) {
+      throw new Error(`${tool.componentId} is not executable`);
+    }
+    byComponent.set(tool.componentId, executable);
+  }
+  for (const license of manifest.licenses) {
+    if (!safeRelativePath(license.path)) throw new Error("Unsafe core license manifest entry");
+    verifyManifestFile(path.join(targetRoot, license.path), license.sha256);
+  }
+
+  if (!executeTools) return;
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-packaged-core-"));
+  try {
+    const needleFile = path.join(temp, "needle.txt");
+    fs.writeFileSync(needleFile, "packaged-toolchain-needle\n", "utf8");
+    const rg = spawnSync(byComponent.get("ripgrep"), ["--json", "packaged-toolchain-needle", needleFile], {
+      encoding: "utf8",
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    if (rg.status !== 0 || !rg.stdout.includes('"type":"match"')) throw new Error(`Packaged rg failed: ${rg.stderr}`);
+    const fd = spawnSync(byComponent.get("fd"), ["--glob", "needle.txt", temp], {
+      encoding: "utf8",
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    if (fd.status !== 0 || !fd.stdout.includes("needle.txt")) throw new Error(`Packaged fd failed: ${fd.stderr}`);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+function verifyBundledHerdr(resources, platform, arch, executeTool) {
+  const herdrRoot = path.join(resources, "herdr");
+  const catalog = JSON.parse(fs.readFileSync(path.join(herdrRoot, "runtime-catalog.json"), "utf8"));
+  const target = `${platform}-${arch}`;
+  const artifact = catalog.artifacts?.[target];
+  if (!artifact || catalog.version !== "0.8.2" || catalog.protocol !== 20 || catalog.apiSchemaVersion !== 1) {
+    throw new Error("Packaged Herdr catalog target is invalid");
+  }
+  const targetRoot = path.join(herdrRoot, "bin", target);
+  const windows = platform === "win32";
+  assertExact(
+    fs.readdirSync(targetRoot).sort(),
+    windows
+      ? ["LICENSE", "THIRD-PARTY-NOTICES", "conpty", "herdr.exe", "manifest.json"]
+      : ["LICENSE", "herdr", "manifest.json"],
+    "packaged Herdr files",
+  );
+  const manifest = JSON.parse(fs.readFileSync(path.join(targetRoot, "manifest.json"), "utf8"));
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.version !== catalog.version ||
+    manifest.protocol !== catalog.protocol ||
+    manifest.apiSchemaVersion !== catalog.apiSchemaVersion ||
+    manifest.apiSchemaSha256 !== catalog.apiSchemaSha256 ||
+    manifest.platform !== platform ||
+    manifest.arch !== arch ||
+    manifest.executable !== (windows ? "herdr.exe" : "herdr") ||
+    manifest.artifactSha256 !== artifact.sha256 ||
+    manifest.sha256 !== (windows ? artifact.bundleFiles?.[0].sha256 : artifact.sha256) ||
+    manifest.bytes !== (windows ? artifact.bundleFiles?.[0].bytes : artifact.downloadBytes) ||
+    (windows && JSON.stringify(manifest.bundleFiles) !== JSON.stringify(artifact.bundleFiles))
+  ) {
+    throw new Error("Packaged Herdr manifest does not match the pinned catalog");
+  }
+  const executable = path.join(targetRoot, windows ? "herdr.exe" : "herdr");
+  if (platform === "darwin") {
+    if (!/^[a-f0-9]{64}$/.test(manifest.darwinCodeSha256) || !Number.isSafeInteger(manifest.darwinCodeBytes)) {
+      throw new Error("Packaged Herdr is missing signed-code integrity metadata");
+    }
+    verifyDarwinExecutable(executable, manifest.darwinCodeSha256, manifest.darwinCodeBytes);
+  } else {
+    verifyManifestFile(executable, manifest.sha256, manifest.bytes);
+  }
+  if (windows) {
+    const actualFiles = [];
+    walkFiles(targetRoot, (file) => actualFiles.push(path.relative(targetRoot, file).split(path.sep).join("/")));
+    assertExact(
+      actualFiles.sort(),
+      [...artifact.bundleFiles.map((file) => file.path), "LICENSE", "manifest.json"].sort(),
+      "packaged Herdr Windows bundle files",
+    );
+    for (const file of artifact.bundleFiles) {
+      verifyManifestFile(path.join(targetRoot, ...file.path.split("/")), file.sha256, file.bytes);
+    }
+  } else if ((fs.statSync(executable).mode & 0o111) === 0) {
+    throw new Error("Packaged Herdr is not executable");
+  }
+  const license = fs.readFileSync(path.join(targetRoot, "LICENSE"));
+  if (
+    license.length !== 11357 ||
+    createHash("sha256").update(license).digest("hex") !==
+      "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  ) {
+    throw new Error("Packaged Herdr license failed verification");
+  }
+  if (!executeTool) return;
+  const version = spawnSync(executable, ["--version"], { encoding: "utf8", timeout: 10_000 });
+  if (version.status !== 0 || !version.stdout.includes(`herdr ${catalog.version}`)) {
+    throw new Error(`Packaged Herdr version probe failed: ${version.stderr}`);
+  }
+  const schema = spawnSync(executable, ["api", "schema", "--json"], { encoding: "utf8", timeout: 10_000 });
+  if (schema.status !== 0) throw new Error(`Packaged Herdr schema probe failed: ${schema.stderr}`);
+  const parsed = JSON.parse(schema.stdout);
+  if (parsed.protocol !== catalog.protocol || parsed.schema_version !== catalog.apiSchemaVersion) {
+    throw new Error("Packaged Herdr schema metadata is incompatible");
+  }
+}
+
+function runPackagedStartup(executable, toolTarget, environmentPatch = {}, extraArguments = []) {
+  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), "pi-packaged-startup-"));
+  const userData = path.join(isolated, "user-data");
+  const environment = {
+    ...process.env,
+    HOME: isolated,
+    USERPROFILE: isolated,
+    APPDATA: path.join(isolated, "AppData", "Roaming"),
+    LOCALAPPDATA: path.join(isolated, "AppData", "Local"),
+    TMPDIR: isolated,
+    XDG_CONFIG_HOME: path.join(isolated, ".config"),
+    XDG_CACHE_HOME: path.join(isolated, ".cache"),
+    XDG_DATA_HOME: path.join(isolated, ".local", "share"),
+    ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+    PI_DESKTOP_RUNTIME_PROBE_NODE: process.execPath,
+    ...environmentPatch,
+  };
+  try {
+    const result = spawnSync(
+      executable,
+      [...extraArguments, `--user-data-dir=${userData}`, "--validate-packaged-startup", "--disable-gpu"],
+      {
+        cwd: path.dirname(executable),
+        env: environment,
+        encoding: "utf8",
+        timeout: 60_000,
+        windowsHide: true,
+      },
+    );
+    if (result.error) {
+      throw new Error(
+        `Packaged startup failed: ${result.error.message}\n${[result.stdout, result.stderr].filter(Boolean).join("\n").slice(-4000)}`,
+      );
+    }
+    if (result.status !== 0) {
+      throw new Error(
+        `Packaged startup exited ${result.status}: ${[result.stdout, result.stderr].filter(Boolean).join("\n").slice(-4_000)}`,
+      );
+    }
+    const reports = [];
+    walkFiles(isolated, (file) => {
+      if (path.basename(file) === "packaged-startup-check.json") reports.push(file);
+    });
+    if (reports.length !== 1) throw new Error(`Expected one packaged startup report, found ${reports.length}`);
+    const report = JSON.parse(fs.readFileSync(reports[0], "utf8"));
+    if (
+      report.ok !== true ||
+      report.platformArch !== toolTarget ||
+      report.rendererReady !== true ||
+      report.hostReady !== true ||
+      report.piVersion !== expectedPiVersion ||
+      report.runtimeModules?.piVersion !== expectedPiVersion ||
+      report.runtimeModules?.openaiOAuthLoaded !== true ||
+      report.runtimeModules?.mcpLoaded !== true ||
+      report.runtimeModules?.codemodeMcpRoundTrip !== true ||
+      report.runtimeModules?.codemodeCancellation !== true ||
+      report.runtimeModules?.mcpStdioRoundTrip !== true ||
+      report.hostAckRevision !== report.revision
+    ) {
+      throw new Error(`Invalid packaged startup report: ${JSON.stringify(report)}`);
+    }
+  } finally {
+    fs.rmSync(isolated, { recursive: true, force: true });
+  }
+}
+
+function runPackagedCleanupFaultValidation(executable) {
+  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), "pi-packaged-cleanup-fault-"));
+  const userData = path.join(isolated, "user-data");
+  try {
+    const result = spawnSync(
+      executable,
+      [`--user-data-dir=${userData}`, "--validate-packaged-cleanup-fault", "--disable-gpu"],
+      {
+        cwd: path.dirname(executable),
+        env: {
+          ...process.env,
+          HOME: isolated,
+          USERPROFILE: isolated,
+          APPDATA: path.join(isolated, "AppData", "Roaming"),
+          LOCALAPPDATA: path.join(isolated, "AppData", "Local"),
+          TMP: isolated,
+          TEMP: isolated,
+          ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+        },
+        encoding: "utf8",
+        timeout: 15_000,
+        windowsHide: true,
+      },
+    );
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw new Error(
+        `Packaged cleanup fault validation exited ${result.status}: ${[result.stdout, result.stderr]
+          .filter(Boolean)
+          .join("\n")
+          .slice(-4_000)}`,
+      );
+    }
+    const reports = [];
+    walkFiles(isolated, (file) => {
+      if (path.basename(file) === "packaged-cleanup-fault-check.json") reports.push(file);
+    });
+    if (reports.length !== 1) throw new Error(`Expected one packaged cleanup fault report, found ${reports.length}`);
+    const report = JSON.parse(fs.readFileSync(reports[0], "utf8"));
+    if (
+      report.ok !== true ||
+      report.productionDeadlineMs !== 15_000 ||
+      report.ordinaryQuitCompleted !== true ||
+      report.journalRetained !== true ||
+      report.installRejected !== true ||
+      report.installerLaunches !== 0 ||
+      report.recoveries !== 1 ||
+      report.updatePhase !== "error" ||
+      report.canRetry !== true
+    ) {
+      throw new Error(`Invalid packaged cleanup fault report: ${JSON.stringify(report)}`);
+    }
+  } finally {
+    fs.rmSync(isolated, { recursive: true, force: true });
+  }
+}
+
+function verifyLinuxAppImageDesktopEntry(appImage) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pi-appimage-entry-"));
+  try {
+    const result = spawnSync(appImage, ["--appimage-extract", "*.desktop"], {
+      cwd: directory,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw new Error(`Could not inspect AppImage desktop entry: ${(result.stderr || result.stdout).slice(-2_000)}`);
+    }
+    const entries = [];
+    walkFiles(path.join(directory, "squashfs-root"), (file) => {
+      if (file.endsWith(".desktop")) entries.push(file);
+    });
+    if (entries.length !== 1) throw new Error(`Expected one AppImage desktop entry, found ${entries.length}`);
+    const desktop = fs.readFileSync(entries[0], "utf8");
+    if (!/^Exec=AppRun --appimage-desktop-launch %U$/m.test(desktop) || /--no-sandbox/.test(desktop)) {
+      throw new Error("AppImage desktop entry must launch without disabling the Chromium sandbox");
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function verifyLinuxSandbox(executable, platform) {
+  if (platform !== "linux") return;
+  const sandbox = path.join(path.dirname(executable), "chrome-sandbox");
+  const stat = fs.lstatSync(sandbox);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== 0 || (stat.mode & 0o4000) === 0) {
+    throw new Error("Packaged Linux chrome-sandbox must be a root-owned setuid regular file for the startup E2E");
+  }
+}
+
+function verifyManifestFile(file, expectedSha256, expectedBytes) {
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Manifest target is not a regular file: ${file}`);
+  if (expectedBytes !== undefined && stat.size !== expectedBytes) throw new Error(`Size mismatch: ${file}`);
+  const sha256 = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  if (sha256 !== expectedSha256) throw new Error(`SHA-256 mismatch: ${file}`);
+}
+
+function verifyDarwinExecutable(file, expectedSha256, expectedBytes) {
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Manifest target is not a regular file: ${file}`);
+  const digest = darwinCodeDigest(fs.readFileSync(file), expectedBytes);
+  if (!digest || digest.bytes !== expectedBytes || digest.sha256 !== expectedSha256) {
+    throw new Error(`Signed Mach-O code mismatch: ${file}`);
+  }
+}
+
+function regularFile(file) {
+  try {
+    const stat = fs.lstatSync(file);
+    return stat.isFile() && !stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function safeRelativePath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !value.includes("\\") &&
+    !path.posix.isAbsolute(value) &&
+    !value.split("/").includes("..")
+  );
+}
+
+function assertExact(actual, expected, label) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${label} mismatch: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`);
+  }
+}
+
+function walkDirectories(directory, remainingDepth, visit) {
+  visit(directory);
+  if (remainingDepth <= 0) return;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      walkDirectories(path.join(directory, entry.name), remainingDepth - 1, visit);
+    }
+  }
+}
+
+function walkFiles(directory, visit) {
+  if (!fs.existsSync(directory)) return;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory() && !entry.isSymbolicLink()) walkFiles(entryPath, visit);
+    else if (entry.isFile() && !entry.isSymbolicLink()) visit(entryPath);
+  }
+}

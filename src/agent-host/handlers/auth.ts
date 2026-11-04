@@ -1,0 +1,194 @@
+import { CredentialSynchronizationError, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { AuthInteraction } from "@earendil-works/pi-ai";
+import type { ApiHandler } from "../../contract/rpc";
+import { RpcError, type ApiKeyProviderStatus } from "../../contract/types";
+import { getSharedModelRuntime } from "../model-runtime";
+import { credentialStateMatches, recoverCommittedCredential, type CredentialTarget } from "../credential-sync";
+import { resolveLoginCode, type createAuthLoginService } from "../auth-login";
+import { getCredentialMutations } from "../credential-mutations";
+
+export async function credentialMutationFailure(
+  modelRuntime: ModelRuntime,
+  providerId: string,
+  target: CredentialTarget,
+  error: unknown,
+) {
+  if (error instanceof RpcError) throw error;
+  if (error instanceof CredentialSynchronizationError) {
+    const recovered = await recoverCommittedCredential(modelRuntime, providerId, target);
+    if (recovered) {
+      if (!recovered.synchronized) {
+        console.warn(`[agent-host] credential ${error.operation} committed for ${providerId}; model sync retry failed`);
+      }
+      return recovered;
+    }
+    throw new RpcError({ code: "INTERNAL", message: `Credential change for ${providerId} could not be verified` });
+  }
+  throw new RpcError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : String(error) });
+}
+
+type AuthHandlers = {
+  providers: NonNullable<ApiHandler["auth.providers"]>;
+  allProviders: NonNullable<ApiHandler["auth.allProviders"]>;
+  setApiKey: NonNullable<ApiHandler["auth.setApiKey"]>;
+  deleteApiKey: NonNullable<ApiHandler["auth.deleteApiKey"]>;
+  logout: NonNullable<ApiHandler["auth.logout"]>;
+  submitLogin: NonNullable<ApiHandler["auth.loginSubmit"]>;
+  startLogin: NonNullable<ApiHandler["auth.loginStart"]>;
+  cancelLogin: NonNullable<ApiHandler["auth.loginCancel"]>;
+};
+
+/** Login service creation and ownership remain with registerHandlers. */
+export function createAuthHandlers(authLogin: Pick<ReturnType<typeof createAuthLoginService>, "start" | "cancel">) {
+  return {
+    providers: async () => {
+      const modelRuntime = await getSharedModelRuntime();
+      const DISPLAY_NAMES: Record<string, string> = {
+        "openai-codex": "OpenAI Codex (legacy)",
+        openai: "OpenAI / ChatGPT",
+        "github-copilot": "GitHub Copilot",
+      };
+      const result = await Promise.all(
+        modelRuntime
+          .getProviders()
+          .filter((p) => p.auth.oauth)
+          .map(async (p) => {
+            const credential = await getCredentialMutations().snapshot(p.id);
+            return {
+              id: p.id,
+              name: DISPLAY_NAMES[p.id] ?? p.name,
+              usesCallbackServer: false,
+              authenticated: credential.type === "oauth",
+              loggedIn: credential.type === "oauth",
+              storedAuthType: credential.type,
+              credentialVersion: credential.version,
+            };
+          }),
+      );
+      return { providers: result };
+    },
+
+    allProviders: async () => {
+      const modelRuntime = await getSharedModelRuntime();
+      const all = modelRuntime.getAllModels();
+      const OAUTH_PROVIDER_IDS = new Set(["github-copilot", "openai-codex"]);
+      const seen = new Set<string>();
+      const result: ApiKeyProviderStatus[] = [];
+      for (const model of all) {
+        if (seen.has(model.provider)) continue;
+        seen.add(model.provider);
+        if (OAUTH_PROVIDER_IDS.has(model.provider)) continue;
+        const provider = modelRuntime.getProvider(model.provider);
+        if (!provider?.auth.apiKey) continue;
+        const status = modelRuntime.getProviderAuthStatus(model.provider);
+        const credential = await getCredentialMutations().snapshot(model.provider);
+        if (status.source === "models_json_key") continue;
+        const models = all.filter((candidate) => candidate.provider === model.provider);
+        result.push({
+          id: model.provider,
+          displayName: provider.name,
+          configured:
+            credential.type === "api_key" ||
+            (credential.type === null && status.source !== "stored" && status.configured),
+          source: credential.type === "oauth" ? "stored_oauth" : (status.label ?? status.source),
+          storedAuthType: credential.type,
+          credentialVersion: credential.version,
+          modelCount: models.length,
+          chatModelCount: models.filter((candidate) => (candidate.type ?? "chat") === "chat").length,
+          auxiliaryModels: models.flatMap((candidate) =>
+            candidate.type === "classifier" || candidate.type === "image"
+              ? [{ id: candidate.id, name: candidate.name, type: candidate.type }]
+              : [],
+          ),
+        });
+      }
+      return { providers: result };
+    },
+
+    setApiKey: async (params) => {
+      const { provider, key, expectedVersion, replaceExisting } = params;
+      if (!provider || !key?.trim()) {
+        throw new RpcError({ code: "BAD_REQUEST", message: "provider and key required" });
+      }
+      const modelRuntime = await getSharedModelRuntime();
+      let promptCount = 0;
+      const interaction: AuthInteraction = {
+        async prompt(request) {
+          promptCount += 1;
+          if (promptCount !== 1 || request.type !== "secret") {
+            throw new Error(`${provider} requires an interactive, multi-field login flow`);
+          }
+          return key.trim();
+        },
+        notify() {},
+      };
+      try {
+        await getCredentialMutations().login(modelRuntime, provider, "api_key", interaction, undefined, {
+          expectedVersion,
+          replaceExisting,
+        });
+      } catch (error) {
+        return credentialMutationFailure(modelRuntime, provider, { present: true, type: "api_key" }, error);
+      }
+      if (!(await credentialStateMatches(modelRuntime, provider, { present: true, type: "api_key" }))) {
+        throw new RpcError({
+          code: "INTERNAL",
+          message: `Key for ${provider} was written but not readable back`,
+        });
+      }
+      return { ok: true as const, synchronized: true };
+    },
+
+    deleteApiKey: async (params) => {
+      const { provider, expectedVersion } = params;
+      const modelRuntime = await getSharedModelRuntime();
+      try {
+        await getCredentialMutations().logout(modelRuntime, provider, "api_key", expectedVersion);
+      } catch (error) {
+        return credentialMutationFailure(modelRuntime, provider, { present: false, type: "api_key" }, error);
+      }
+      if (!(await credentialStateMatches(modelRuntime, provider, { present: false, type: "api_key" }))) {
+        throw new RpcError({ code: "INTERNAL", message: `Key removal for ${provider} could not be verified` });
+      }
+      return { ok: true as const, synchronized: true };
+    },
+
+    logout: async (params) => {
+      const { provider, expectedVersion } = params;
+      const modelRuntime = await getSharedModelRuntime();
+      try {
+        await getCredentialMutations().logout(modelRuntime, provider, "oauth", expectedVersion);
+      } catch (error) {
+        return credentialMutationFailure(modelRuntime, provider, { present: false }, error);
+      }
+      if (!(await credentialStateMatches(modelRuntime, provider, { present: false }))) {
+        throw new RpcError({ code: "INTERNAL", message: `Logout for ${provider} could not be verified` });
+      }
+      return { ok: true as const, synchronized: true };
+    },
+
+    submitLogin: async (params) => {
+      const { provider, token, code } = params as {
+        provider: string;
+        token: string;
+        code: string;
+      };
+      if (!resolveLoginCode(provider, token, code)) {
+        throw new RpcError({ code: "NOT_FOUND", message: "No pending login for token" });
+      }
+      return { ok: true as const };
+    },
+
+    startLogin: async (params) => {
+      const { provider, expectedVersion, replaceExisting, authType } = params;
+      const result = await authLogin.start(provider, { expectedVersion, replaceExisting }, authType);
+      return { ok: true as const, started: result.started };
+    },
+
+    cancelLogin: async (params) => {
+      const { provider } = params as { provider: string };
+      authLogin.cancel(provider);
+      return { ok: true as const };
+    },
+  } satisfies AuthHandlers;
+}

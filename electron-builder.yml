@@ -1,0 +1,123 @@
+# serphia v2 — pure Electron (no Next sidecar, no bundled Node)
+appId: app.dlyzzt.pi-agent-desktop
+productName: serphia
+icon: build/icon.png
+# Resolve Pi resources from the installed dependency graph, including hoisted or nested layouts.
+extends: ./scripts/pi-builder-config.mjs
+copyright: Copyright © DLYZZT
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+  - LICENSE
+  - build/icon.png
+  - build/entitlements.mac.plist
+  - "!**/*.map"
+  - "!**/*.{md,markdown,ts,tsx}"
+  - "!**/*.d.{mts,cts}"
+  - "!scripts/**"
+  - "!src/**"
+  - "!dist/**"
+  - "!tsconfig*.json"
+  - "!tsup.config.ts"
+  - "!vite.config.ts"
+  - "!electron-builder.yml"
+  # Keep authoring assets out of electron-builder's default dependency walk.
+  # The explicit FileSet below restores them exactly once; without these
+  # exclusions Linux asar packaging can hard-link JSON/images twice (EEXIST).
+  - "!node_modules/@earendil-works/pi-coding-agent/docs/**/*"
+  - "!node_modules/@earendil-works/pi-coding-agent/examples/**/*"
+  # The inherited Pi FileSets restore declarations, docs and examples after these exclusions.
+
+asar: true
+
+# Signed runtime catalogs plus the current target's small core search tools.
+# Managed Node/Python/Git archives remain download-on-consent and are never shipped.
+extraResources:
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: build/toolchains/runtime-catalog.json
+    to: toolchains/runtime-catalog.json
+  - from: build/toolchains/core-catalog.json
+    to: toolchains/core-catalog.json
+  - from: build/toolchains/core/${platform}-${arch}
+    to: toolchains/core/${platform}-${arch}
+  - from: build/herdr/runtime-catalog.json
+    to: herdr/runtime-catalog.json
+
+mac:
+  extraResources:
+    - from: build/herdr/bin/${platform}-${arch}
+      to: herdr/bin/${platform}-${arch}
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  artifactName: serphia-${version}-${arch}.${ext}
+
+win:
+  extraResources:
+    - from: out/native/windows-managed-process-helper
+      to: managed-process/win32-x64
+      filter:
+        - pi-managed-process-helper.exe
+        - manifest.json
+    - from: build/herdr/bin/${platform}-${arch}
+      to: herdr/bin/${platform}-${arch}
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # Authenticode is not provisioned yet. Keep the trust limitation visible in
+  # every downloaded filename until the release workflow is replaced by a
+  # certificate-backed signing and provenance gate.
+  artifactName: serphia-Unsigned-Beta-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: serphia
+
+linux:
+  extraResources:
+    - from: build/herdr/bin/${platform}-${arch}
+      to: herdr/bin/${platform}-${arch}
+  executableName: pi-agent-desktop
+  # Override electron-builder's unsafe default AppImage argument. Keep Chromium
+  # sandboxing enabled and use an app-owned inert launch marker instead.
+  executableArgs:
+    - --appimage-desktop-launch
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Development
+  artifactName: serphia-${version}-${arch}.${ext}
+  synopsis: Local desktop UI for the pi coding agent
+
+protocols:
+  - name: serphia
+    schemes:
+      - pi-agent-desktop
+
+publish:
+  provider: github
+  owner: DLYZZT
+  repo: pi-desktop
+  releaseType: draft
