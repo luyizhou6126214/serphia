@@ -118,6 +118,6 @@ protocols:
 
 publish:
   provider: github
-  owner: DLYZZT
-  repo: pi-desktop
+  owner: luyizhou6126214
+  repo: serphia
   releaseType: draft

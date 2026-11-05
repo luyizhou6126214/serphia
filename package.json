@@ -1,12 +1,12 @@
 {
   "name": "serphia",
-  "version": "0.4.3",
+  "version": "0.0.1",
   "private": true,
   "description": "serphia — pure Electron desktop app for the pi coding agent",
-  "homepage": "https://github.com/DLYZZT/pi-desktop#readme",
+  "homepage": "https://github.com/luyizhou6126214/serphia#readme",
   "license": "Apache-2.0",
   "productName": "serphia",
-  "author": "DLYZZT",
+  "author": "luyizhou",
   "engines": {
     "node": ">=22.19.0 <23"
   },
