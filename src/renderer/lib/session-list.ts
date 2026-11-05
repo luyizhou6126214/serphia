@@ -39,6 +39,18 @@ export function sessionDateGroup(modified: string, now = new Date()): SessionDat
   return "older";
 }
 
+export function sessionMatchesQuery(session: SessionInfo, rawQuery: string): boolean {
+  const query = rawQuery.trim().toLocaleLowerCase();
+  return (
+    !query ||
+    [session.name, session.firstMessage, session.id, session.cwd, session.worktreeBranch]
+      .filter(Boolean)
+      .join("\n")
+      .toLocaleLowerCase()
+      .includes(query)
+  );
+}
+
 export function filterSessionsForQuery(sessions: SessionInfo[], rawQuery: string): SessionInfo[] {
   const query = rawQuery.trim().toLocaleLowerCase();
   if (!query) return sessions;
@@ -47,11 +59,7 @@ export function filterSessionsForQuery(sessions: SessionInfo[], rawQuery: string
   const visibleIds = new Set<string>();
 
   for (const session of sessions) {
-    const searchText = [session.name, session.firstMessage, session.id, session.cwd, session.worktreeBranch]
-      .filter(Boolean)
-      .join("\n")
-      .toLocaleLowerCase();
-    if (!searchText.includes(query)) continue;
+    if (!sessionMatchesQuery(session, query)) continue;
 
     visibleIds.add(session.id);
     let parentId = session.parentSessionId;

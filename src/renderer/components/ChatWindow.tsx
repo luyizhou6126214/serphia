@@ -1,4 +1,5 @@
 import type { SidebarWorkspace } from "@/hooks/useSidebarWorkspace";
+import { isDefaultSessionDirectory } from "@shared/session-workspace";
 import { WorktreePicker } from "./sidebar/WorktreePicker";
 import { lastRoutedModel, ModelRoutingStatus } from "./models/ModelRoutingStatus";
 import { isVirtualSelection } from "@shared/session-model-display";
@@ -191,7 +192,9 @@ export function ChatWindow({
   const isMobile = useIsMobile();
   const { t } = useI18n();
   // Promotion keeps this view mounted; selecting another session remounts it.
-  const [draftPromotionFrom] = useState(() => (!session && newSessionCwd ? `new:${newSessionCwd}` : undefined));
+  const [draftPromotionFrom] = useState(() =>
+    !session && newSessionCwd !== null ? `new:${newSessionCwd}` : undefined,
+  );
   const messageRenderKeys = useRef(new MessageRenderKeyRegistry()).current;
   const assistantRenderParts = useRef(new WeakMap<AssistantMessage, AssistantRenderParts>()).current;
 
@@ -339,7 +342,7 @@ export function ChatWindow({
 
   const workspaceContext = useMemo(
     () =>
-      workspace && onWorkspaceChange ? (
+      messageCwd && !isDefaultSessionDirectory(messageCwd) && workspace && onWorkspaceChange ? (
         <WorktreePicker
           key={messageCwd}
           selectedCwd={messageCwd ?? null}
@@ -383,7 +386,7 @@ export function ChatWindow({
       isCompacting={isCompacting}
       compactResult={compactResult}
       toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+      onToolPresetChange={messageCwd && (session || isNew) ? handleToolPresetChange : undefined}
       toolSelectionError={toolSelectionError}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
@@ -396,7 +399,7 @@ export function ChatWindow({
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
       onBuiltinCommand={handleBuiltinSlashCommand}
-      draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
+      draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}
       cwd={session?.cwd ?? newSessionCwd}
     />

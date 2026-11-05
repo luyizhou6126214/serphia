@@ -33,6 +33,14 @@ export async function createDesktopSessionTools(
     shell,
   }: { runtime?: ToolchainRuntime; platform?: NodeJS.Platform; shell?: AgentShell } = {},
 ) {
+  if (!cwd) {
+    return {
+      customTools: [history.tool(), ...createBrowserToolDefinitions()],
+      attach(_wrapper: AgentSessionWrapper, executionPolicy: SessionToolPolicy) {
+        executionPolicy.setAvailability(() => true);
+      },
+    };
+  }
   const resolve = () =>
     runtime.createExecutionContext({
       cwd,

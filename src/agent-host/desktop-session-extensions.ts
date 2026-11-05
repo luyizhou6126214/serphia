@@ -13,13 +13,14 @@ export function desktopSessionExtensions(
   history: SessionExecutionHistory,
   prompt: SessionPromptPolicy,
   running: () => boolean,
+  hasDirectory = true,
 ): InlineExtension[] {
   return [
     createAgentSettlementExtension(),
     policy.extension(),
     history.extension(),
     ...sessionOrchestrationExtensions(undefined, { isAllowed: () => policy.isAllowed("codemode"), history }),
-    ...desktopMcpExtensions(policy, running, history),
+    ...(hasDirectory ? desktopMcpExtensions(policy, running, history) : []),
     createLegacyChannelContextExtension(),
     createDesktopPromptExtension(prompt),
   ];

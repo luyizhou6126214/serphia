@@ -33,10 +33,14 @@ export function AnimatedDropdown({
   open,
   children,
   style,
+  className,
+  transformOrigin = "top center",
 }: {
   open: boolean;
   children: ReactNode;
   style: CSSProperties;
+  className?: string;
+  transformOrigin?: string;
 }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(open);
@@ -66,11 +70,12 @@ export function AnimatedDropdown({
 
   return (
     <div
+      className={className}
       style={{
         ...style,
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0) scale(1)" : "translateY(-8px) scale(0.96)",
-        transformOrigin: "top center",
+        transformOrigin,
         transition: `opacity ${DROPDOWN_ANIMATION_MS}ms ease, transform ${DROPDOWN_ANIMATION_MS}ms ease`,
         pointerEvents: open ? "auto" : "none",
       }}

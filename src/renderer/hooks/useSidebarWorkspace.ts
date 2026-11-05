@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { call } from "@/lib/api-client";
 import type { SessionInfo } from "@/lib/types";
+import { isDefaultSessionDirectory } from "@shared/session-workspace";
 
 interface WorktreeEntry {
   path: string;
@@ -26,6 +27,7 @@ export interface WorktreeState {
 export function getRecentProjects(sessions: SessionInfo[]): string[] {
   const latestByRoot = new Map<string, string>(); // projectRoot -> most recent modified
   for (const s of sessions) {
+    if (isDefaultSessionDirectory(s.cwd)) continue;
     const root = s.projectRoot ?? s.cwd;
     if (!root) continue;
     const prev = latestByRoot.get(root);
@@ -65,7 +67,7 @@ export function useSidebarWorkspace({
   /** Resolve the project root for a cwd from the freshest data available */
   const projectRootFor = useCallback(
     (cwd: string | null): string | null => {
-      if (!cwd) return null;
+      if (!cwd || isDefaultSessionDirectory(cwd)) return null;
       if (worktreeState && worktreeState.forCwd === cwd) return worktreeState.projectRoot;
       // Any path in the loaded worktree list belongs to that project — covers
       // worktrees without sessions, so switching to them keeps the row mounted.
@@ -91,7 +93,7 @@ export function useSidebarWorkspace({
   // value changes, so a manual switcher change is not snapped back.
   const lastSyncedCwdPropRef = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedCwdProp && selectedCwdProp !== lastSyncedCwdPropRef.current) {
+    if (selectedCwdProp !== undefined && selectedCwdProp !== lastSyncedCwdPropRef.current) {
       lastSyncedCwdPropRef.current = selectedCwdProp;
       setSelectedCwd(selectedCwdProp);
     }
@@ -100,7 +102,7 @@ export function useSidebarWorkspace({
   // Load worktrees for the current effective cwd
   const [wtRefreshKey, setWtRefreshKey] = useState(0);
   useLayoutEffect(() => {
-    if (!selectedCwd) {
+    if (!selectedCwd || isDefaultSessionDirectory(selectedCwd)) {
       setWorktreeState(null);
       setWorktreeLoadingCwd(null);
       return;

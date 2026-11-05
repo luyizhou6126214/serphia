@@ -96,6 +96,17 @@ function requestToolNames(context) {
   return (context.tools ?? ai.getCurrentTools?.(context.messages) ?? []).map((tool) => tool.name);
 }
 
+test("directory-free prompts omit the SDK working directory and toolchain section", () => {
+  const policy = new SessionPromptPolicy(false, false);
+  policy.setToolchainSummary(1, ["toolchain path"]);
+  const prompt = policy.resolve("Conversation\n\n<cwd>\n/private/sdk-storage\n</cwd>\n");
+  assert.ok(!prompt.includes("/private/sdk-storage"));
+  assert.ok(!prompt.includes("toolchain path"));
+  assert.match(prompt, /no project or working directory/);
+  policy.setForceEmpty(true);
+  assert.equal(policy.resolve("anything"), "");
+});
+
 test("Desktop toolchain prompt reaches real SDK requests after user extensions and updates once", async (t) => {
   const extension = {
     name: "user-prompt",

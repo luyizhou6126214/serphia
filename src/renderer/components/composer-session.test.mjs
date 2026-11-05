@@ -62,8 +62,8 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
 
 let fixtureNumber = 0;
 const text = (node) => (typeof node === "string" ? node : (node?.children?.map(text).join("") ?? ""));
-async function mount(t, { existing = false, running = false } = {}) {
-  const cwd = `/composer-fixture-${++fixtureNumber}`;
+async function mount(t, { existing = false, running = false, directory } = {}) {
+  const cwd = directory ?? `/composer-fixture-${++fixtureNumber}`;
   const initialId = `existing-${fixtureNumber}`;
   const previous = new Map(
     [
@@ -247,6 +247,20 @@ test("the composer send icon submits the draft and creates the session", async (
   await f.reply("ensure_session", { sessionId: "sent-from-button" });
   await f.reply("prompt", null);
   assert.equal(f.count("prompt"), 1);
+  assert.equal(f.value(), "");
+});
+
+test("a non-project conversation promotes the actual working directory allocated by the host", async (t) => {
+  const f = await mount(t, { directory: "" });
+  await f.type("chat without a project");
+  await f.click("Send");
+  assert.equal(f.next("ensure_session").params.cwd, "");
+  const cwd = "/Users/demo/Documents/Serphia/2026-11-04/0123456789abcdef0123456789abcdef";
+  await f.reply("ensure_session", { sessionId: "no-project", cwd });
+  await f.reply("prompt", null);
+  assert.equal(f.count("prompt"), 1);
+  assert.equal(f.promotions.length, 1);
+  assert.equal(f.promotions[0].cwd, cwd);
   assert.equal(f.value(), "");
 });
 

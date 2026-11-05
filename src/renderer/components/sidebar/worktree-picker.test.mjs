@@ -45,7 +45,7 @@ async function mount(t, overrides = {}) {
   const surface = { addEventListener() {}, removeEventListener() {} };
   Object.assign(globalThis, {
     IS_REACT_ACT_ENVIRONMENT: true,
-    document: { ...surface, body: {}, activeElement: null },
+    document: { ...surface, body: { style: {} }, activeElement: null },
     window: { ...surface, innerWidth: 1200, innerHeight: 800, localStorage: { getItem: () => null, setItem() {} } },
   });
   api.calls = [];
@@ -184,7 +184,7 @@ test("Escape dismisses the popover without navigating or mutating Git", async (t
   assert.deepEqual(ui.events, [["refresh"]]);
 });
 
-test("sidebar shows each session once and searches inside collapsed projects without Git controls", async (t) => {
+test("sidebar opens modal search across collapsed projects without filtering the sidebar or exposing refresh", async (t) => {
   let renderer;
   // Release the sidebar before the shared DOM fixture restores globals.
   t.after(async () => {
@@ -194,10 +194,15 @@ test("sidebar shows each session once and searches inside collapsed projects wit
   const home = "/home/demo";
   const sessions = [
     { id: "a", name: "Project discussion", cwd: main, projectRoot: main },
-    { id: "b", name: "General discussion", cwd: home, projectRoot: home },
+    {
+      id: "b",
+      name: "General discussion",
+      cwd: "/Users/demo/Documents/Serphia/2026-11-04/0123456789abcdef0123456789abcdef",
+    },
     { id: "c", name: "Hidden discussion", cwd: "/projects/other", projectRoot: "/projects/other" },
   ].map((session) => ({ ...session, modified: "2026-11-04T08:00:00Z", messageCount: 1 }));
   const snapshot = { sessions, loading: false, error: null, runningSessionIds: [] };
+  const selected = [];
   const store = {
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
@@ -208,7 +213,9 @@ test("sidebar shows each session once and searches inside collapsed projects wit
     renderer = create(
       createElement(SessionSidebar, {
         selectedSessionId: "a",
-        onSelectSession() {},
+        onSelectSession(session) {
+          selected.push(session.id);
+        },
         sessionList: store,
         workspace: { selectedCwd: main, selectedProject: main, setSelectedCwd() {}, homeDir: home },
       }),
@@ -220,13 +227,23 @@ test("sidebar shows each session once and searches inside collapsed projects wit
   assert.equal(count("General discussion"), 1);
   assert.equal(count("Hidden discussion"), 0);
   assert.equal(renderer.root.findAllByType(WorktreePicker).length, 0);
+  assert.equal(count("Refresh"), 0);
   await act(async () =>
     renderer.root
       .findAllByType("button")
       .find((node) => node.props["aria-label"] === "Search sessions")
       .props.onClick(),
   );
-  await act(async () => renderer.root.findByProps({ type: "search" }).props.onChange({ target: { value: "Hidden" } }));
-  assert.equal(count("Hidden discussion"), 1);
-  assert.equal(count("Project discussion"), 0);
+  assert.equal(renderer.root.findAllByProps({ role: "dialog" }).length, 1);
+  await act(async () =>
+    renderer.root.findByProps({ role: "combobox" }).props.onChange({ target: { value: "Hidden" } }),
+  );
+  const options = renderer.root.findAllByProps({ role: "option" });
+  assert.equal(options.length, 1);
+  assert.match(text(options[0]), /Hidden discussion/);
+  assert.equal(count("Hidden discussion"), 0, "collapsed projects remain collapsed behind the search panel");
+  assert.equal(count("Project discussion"), 1, "search does not filter the sidebar");
+  await act(async () => options[0].props.onClick());
+  assert.deepEqual(selected, ["c"]);
+  assert.equal(renderer.root.findAllByProps({ role: "dialog" }).length, 0);
 });

@@ -1,5 +1,7 @@
 import { PlusOutlined } from "@ant-design/icons/es";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
+import { Check, Folder, FolderOpen, Home, Plus, Search } from "lucide-react";
 import { call } from "@/lib/api-client";
 import { useI18n } from "@/i18n";
 import type { SessionInfo } from "@/lib/types";
@@ -14,6 +16,21 @@ interface Props {
   setSelectedCwd: (cwd: string | null) => void;
 }
 
+/** Last path segment, used as the primary project label. */
+function projectName(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  return trimmed.split(/[\\/]/).pop() || path;
+}
+
+const PICKER_WIDTH = 240;
+
+interface PickerPosition {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
 export function ProjectPicker({ selectedProject, homeDir, allSessions, setSelectedCwd }: Props) {
   const { t } = useI18n();
   const deferFocus = useDeferredFocus();
@@ -23,8 +40,24 @@ export function ProjectPicker({ selectedProject, homeDir, allSessions, setSelect
   const [customPathValue, setCustomPathValue] = useState("");
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
+  const [position, setPosition] = useState<PickerPosition | null>(null);
   const customPathInputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const closePicker = useCallback(
+    (restoreFocus = false) => {
+      setDropdownOpen(false);
+      setProjectFilter("");
+      setCustomPathOpen(false);
+      setCustomPathValue("");
+      setCustomPathError(null);
+      if (restoreFocus) deferFocus(() => triggerRef.current?.focus());
+    },
+    [deferFocus],
+  );
+
   const commitCustomPath = useCallback(async () => {
     const path = customPathValue.trim();
     if (!path || customPathValidating) return;
@@ -38,30 +71,25 @@ export function ProjectPicker({ selectedProject, homeDir, allSessions, setSelect
         return;
       }
       setSelectedCwd(result.path ?? path);
-      setCustomPathOpen(false);
-      setCustomPathValue("");
-      setDropdownOpen(false);
+      closePicker();
     } catch (e) {
       setCustomPathError(e instanceof Error ? e.message : String(e));
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating, setSelectedCwd, t]);
+  }, [customPathValue, customPathValidating, setSelectedCwd, closePicker, t]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
       const data = await call("system.defaultCwd");
       if (data.cwd) {
         setSelectedCwd(data.cwd);
-        setCustomPathOpen(false);
-        setCustomPathValue("");
-        setCustomPathError(null);
-        setDropdownOpen(false);
+        closePicker();
       }
     } catch {
       // ignore
     }
-  }, [setSelectedCwd]);
+  }, [setSelectedCwd, closePicker]);
 
   /** Desktop-native directory picker (design §6.1). Falls back to path input. */
   const handlePickDirectory = useCallback(async () => {
@@ -74,29 +102,50 @@ export function ProjectPicker({ selectedProject, homeDir, allSessions, setSelect
         return;
       }
       setSelectedCwd(result.path ?? dir);
-      setCustomPathOpen(false);
-      setCustomPathValue("");
-      setCustomPathError(null);
-      setDropdownOpen(false);
+      closePicker();
     } catch (e) {
       setCustomPathError(e instanceof Error ? e.message : String(e));
     }
-  }, [setSelectedCwd, t]);
+  }, [setSelectedCwd, closePicker, t]);
 
-  // Close dropdowns on outside click
+  // Close on outside click — the panel lives in a portal, so both surfaces count as inside.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-        setProjectFilter("");
-        setCustomPathOpen(false);
-        setCustomPathValue("");
-        setCustomPathError(null);
-      }
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      closePicker();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [closePicker]);
+
+  // Anchor the portaled panel to the trigger and keep it inside the viewport.
+  useLayoutEffect(() => {
+    if (!dropdownOpen) return;
+    const update = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(PICKER_WIDTH, window.innerWidth - 24);
+      const top = rect.bottom + 8;
+      setPosition({
+        top,
+        left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)),
+        width,
+        maxHeight: Math.max(220, window.innerHeight - top - 12),
+      });
+    };
+    update();
+    const onScroll = (event: Event) => {
+      if (panelRef.current?.contains(event.target as Node)) return;
+      update();
+    };
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [dropdownOpen]);
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
@@ -104,322 +153,207 @@ export function ProjectPicker({ selectedProject, homeDir, allSessions, setSelect
     ? recentProjects.filter((p) => p.toLowerCase().includes(projectFilter.trim().toLowerCase()))
     : recentProjects;
 
+  const chooseProject = (project: string) => {
+    setSelectedCwd(project);
+    closePicker();
+  };
+
   return (
     <div ref={dropdownRef} style={{ position: "relative" }}>
       <button
-        onClick={() => setDropdownOpen((v) => !v)}
+        ref={triggerRef}
+        onClick={() => {
+          if (dropdownOpen) closePicker();
+          else setDropdownOpen(true);
+        }}
         title={t("addProject", "Add project")}
         className="project-sidebar-icon project-picker-trigger"
         aria-label={t("addProject", "Add project")}
+        aria-haspopup="dialog"
+        aria-expanded={dropdownOpen}
       >
         <PlusOutlined />
       </button>
 
-      <AnimatedDropdown
-        open={dropdownOpen}
-        style={{
-          position: "absolute",
-          top: "calc(100% + 4px)",
-          right: 0,
-          width: 235,
-          zIndex: 100,
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-          overflow: "hidden",
-        }}
-      >
-        {showProjectFilter && (
-          <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
-            <input
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setProjectFilter("");
-                  setDropdownOpen(false);
-                }
-              }}
-              placeholder={t("filterProjects", "Filter projects…")}
-              autoFocus
-              style={{
-                width: "100%",
-                fontSize: 11,
-                fontFamily: "var(--font-mono)",
-                padding: "5px 8px",
-                border: "1px solid var(--border)",
-                borderRadius: 5,
-                outline: "none",
-                background: "var(--bg)",
-                color: "var(--text)",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-        )}
-        <div style={{ maxHeight: "min(50vh, 380px)", overflowY: "auto" }}>
-          {visibleProjects.map((project) => (
-            <button
-              key={project}
-              onClick={() => {
-                setSelectedCwd(project);
-                setProjectFilter("");
-                setCustomPathOpen(false);
-                setCustomPathValue("");
-                setCustomPathError(null);
-                setDropdownOpen(false);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                width: "100%",
-                padding: "8px 10px",
-                background: "var(--bg)",
-                border: "none",
-                borderBottom: "1px solid var(--border)",
-                color: project === selectedProject ? "var(--text)" : "var(--text-muted)",
-                cursor: "pointer",
-                textAlign: "left",
-                fontSize: 11,
-                fontFamily: "var(--font-mono)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={project}
-            >
-              {project === selectedProject && (
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 10 10"
-                  fill="none"
-                  stroke="var(--accent)"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ flexShrink: 0 }}
-                >
-                  <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                </svg>
-              )}
-              {project !== selectedProject && <span style={{ width: 10, flexShrink: 0 }} />}
-              <PathLabel text={abbreviateHomePath(project, homeDir)} style={{ flex: 1 }} />
-            </button>
-          ))}
-          {visibleProjects.length === 0 && projectFilter.trim() && (
-            <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>
-              {t("noMatchingProjects", "No matching projects")}
-            </div>
-          )}
-        </div>
-
-        {/* Default cwd shortcut */}
-        {!customPathOpen && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleDefaultCwd();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              width: "100%",
-              padding: "8px 10px",
-              background: "none",
-              border: "none",
-              borderTop: visibleProjects.length > 0 ? "1px solid var(--border)" : "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              textAlign: "left",
-              fontSize: 11,
+      {createPortal(
+        <AnimatedDropdown
+          open={dropdownOpen}
+          className="project-picker-menu"
+          transformOrigin="top right"
+          style={{
+            position: "fixed",
+            top: position?.top ?? 0,
+            left: position?.left ?? 0,
+            width: position?.width ?? PICKER_WIDTH,
+            maxHeight: position?.maxHeight,
+            visibility: position ? "visible" : "hidden",
+            zIndex: 1200,
+          }}
+        >
+          <div
+            ref={panelRef}
+            className="project-picker-panel"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              closePicker(true);
             }}
           >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0 }}
-            >
-              <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
-            </svg>
-            <span>{t("useDefaultDirectory", "Use default directory")}</span>
-          </button>
-        )}
-
-        {/* Native directory picker (desktop) */}
-        {!customPathOpen && typeof window !== "undefined" && !!window.piBridge && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              void handlePickDirectory();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              width: "100%",
-              padding: "8px 10px",
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              textAlign: "left",
-              fontSize: 11,
-            }}
-          >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0 }}
-            >
-              <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
-            </svg>
-            <span>{t("browseFolder", "Browse folder…")}</span>
-          </button>
-        )}
-
-        {/* Custom path entry */}
-        {!customPathOpen ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setCustomPathOpen(true);
-              setCustomPathError(null);
-              deferFocus(() => customPathInputRef.current?.focus());
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              width: "100%",
-              padding: "8px 10px",
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              textAlign: "left",
-              fontSize: 11,
-            }}
-          >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinecap="round"
-              style={{ flexShrink: 0 }}
-            >
-              <line x1="5" y1="1" x2="5" y2="9" />
-              <line x1="1" y1="5" x2="9" y2="5" />
-            </svg>
-            <span>{t("customPath", "Custom path…")}</span>
-          </button>
-        ) : (
-          <div style={{ padding: "6px 8px", borderTop: visibleProjects.length > 0 ? "none" : undefined }}>
-            <input
-              ref={customPathInputRef}
-              value={customPathValue}
-              onChange={(e) => {
-                setCustomPathValue(e.target.value);
-                setCustomPathError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void commitCustomPath();
-                }
-                if (e.key === "Escape") {
-                  setCustomPathOpen(false);
-                  setCustomPathValue("");
-                  setCustomPathError(null);
-                }
-              }}
-              placeholder="/path/to/project"
-              style={{
-                width: "100%",
-                fontSize: 11,
-                fontFamily: "var(--font-mono)",
-                padding: "5px 8px",
-                border: "1px solid var(--accent)",
-                borderRadius: 5,
-                outline: "none",
-                background: "var(--bg)",
-                color: "var(--text)",
-                boxSizing: "border-box",
-              }}
-            />
-            {customPathError && (
-              <div
-                style={{
-                  marginTop: 5,
-                  color: "#dc2626",
-                  fontSize: 11,
-                  lineHeight: 1.35,
-                  overflowWrap: "anywhere",
-                }}
-              >
-                {customPathError}
+            {showProjectFilter && (
+              <div className="project-picker-search">
+                <Search size={14} strokeWidth={1.8} aria-hidden="true" />
+                <input
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  placeholder={t("filterProjects", "Filter projects…")}
+                  aria-label={t("filterProjects", "Filter projects…")}
+                  autoFocus
+                />
               </div>
             )}
-            <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
-              <button
-                onClick={() => void commitCustomPath()}
-                disabled={customPathValidating || !customPathValue.trim()}
-                style={{
-                  flex: 1,
-                  padding: "4px 0",
-                  background: "var(--accent)",
-                  border: "none",
-                  borderRadius: 5,
-                  color: "#fff",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer",
-                  opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1,
-                }}
-              >
-                {customPathValidating ? t("checking", "Checking…") : t("open", "Open")}
-              </button>
-              <button
-                onClick={() => {
-                  setCustomPathOpen(false);
-                  setCustomPathValue("");
-                  setCustomPathError(null);
-                }}
-                style={{
-                  flex: 1,
-                  padding: "4px 0",
-                  background: "var(--bg-hover)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 5,
-                  color: "var(--text-muted)",
-                  fontSize: 11,
-                  cursor: "pointer",
-                }}
-              >
-                {t("cancel", "Cancel")}
-              </button>
+
+            <div className="project-picker-section-title">{t("recentProjects", "Recent projects")}</div>
+            <div className="project-picker-list">
+              {visibleProjects.map((project) => {
+                const current = project === selectedProject;
+                const name = projectName(project);
+                return (
+                  <button
+                    key={project}
+                    type="button"
+                    className={`project-picker-item${current ? " is-current" : ""}`}
+                    onClick={() => chooseProject(project)}
+                    title={project}
+                    aria-current={current ? "true" : undefined}
+                  >
+                    <span className="project-picker-item-icon" aria-hidden="true">
+                      <Folder size={15} strokeWidth={1.7} />
+                    </span>
+                    <span className="project-picker-item-copy">
+                      <span className="project-picker-item-name">{name}</span>
+                      <PathLabel
+                        text={abbreviateHomePath(project, homeDir)}
+                        style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--picker-dim)" }}
+                      />
+                    </span>
+                    {current && (
+                      <Check className="project-picker-check" size={15} strokeWidth={2.4} aria-hidden="true" />
+                    )}
+                  </button>
+                );
+              })}
+              {recentProjects.length === 0 && (
+                <div className="project-picker-empty">{t("noRecentProjects", "No recent projects yet")}</div>
+              )}
+              {recentProjects.length > 0 && visibleProjects.length === 0 && projectFilter.trim() && (
+                <div className="project-picker-empty">{t("noMatchingProjects", "No matching projects")}</div>
+              )}
             </div>
+
+            <div className="project-picker-divider" />
+
+            {customPathOpen ? (
+              <form
+                className="project-picker-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void commitCustomPath();
+                }}
+              >
+                <label className="project-picker-form-title" htmlFor="project-picker-custom-path">
+                  {t("customPath", "Custom path…")}
+                </label>
+                <input
+                  id="project-picker-custom-path"
+                  ref={customPathInputRef}
+                  value={customPathValue}
+                  onChange={(e) => {
+                    setCustomPathValue(e.target.value);
+                    setCustomPathError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setCustomPathOpen(false);
+                      setCustomPathValue("");
+                      setCustomPathError(null);
+                    }
+                  }}
+                  placeholder="/path/to/project"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                {customPathError && (
+                  <div className="project-picker-form-error" role="alert">
+                    {customPathError}
+                  </div>
+                )}
+                <div className="project-picker-form-actions">
+                  <button
+                    type="button"
+                    className="project-picker-secondary"
+                    onClick={() => {
+                      setCustomPathOpen(false);
+                      setCustomPathValue("");
+                      setCustomPathError(null);
+                    }}
+                  >
+                    {t("cancel", "Cancel")}
+                  </button>
+                  <button
+                    type="submit"
+                    className="project-picker-primary"
+                    disabled={customPathValidating || !customPathValue.trim()}
+                  >
+                    {customPathValidating ? t("checking", "Checking…") : t("open", "Open")}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="project-picker-actions">
+                <button
+                  type="button"
+                  className="project-picker-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDefaultCwd();
+                  }}
+                >
+                  <Home size={15} strokeWidth={1.7} aria-hidden="true" />
+                  <span>{t("useDefaultDirectory", "Use default directory")}</span>
+                </button>
+                {typeof window !== "undefined" && !!window.piBridge && (
+                  <button
+                    type="button"
+                    className="project-picker-action"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handlePickDirectory();
+                    }}
+                  >
+                    <FolderOpen size={15} strokeWidth={1.7} aria-hidden="true" />
+                    <span>{t("browseFolder", "Browse folder…")}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="project-picker-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCustomPathOpen(true);
+                    setCustomPathError(null);
+                    deferFocus(() => customPathInputRef.current?.focus());
+                  }}
+                >
+                  <Plus size={15} strokeWidth={1.7} aria-hidden="true" />
+                  <span>{t("customPath", "Custom path…")}</span>
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </AnimatedDropdown>
+        </AnimatedDropdown>,
+        document.body,
+      )}
     </div>
   );
 }

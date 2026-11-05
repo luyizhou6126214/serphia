@@ -1,11 +1,10 @@
-import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import path from "node:path";
 import type { ApiHandler } from "../../contract/rpc";
 import { RpcError } from "../../contract/types";
 import { allowFileRoot } from "../file-access";
 import { getRunningRpcSessionIds } from "../rpc-manager";
 import { validateExistingDirectory } from "../directory-validation";
+import { createDefaultSessionDirectory } from "../default-session-directory";
 
 type SystemHandlers = {
   home: NonNullable<ApiHandler["system.home"]>;
@@ -27,9 +26,7 @@ export const systemHandlers = {
   },
 
   defaultCwd: async () => {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const dir = path.join(homedir(), `pi-cwd-${date}`);
-    mkdirSync(dir, { recursive: true });
+    const dir = createDefaultSessionDirectory();
     allowFileRoot(dir);
     return { cwd: dir };
   },

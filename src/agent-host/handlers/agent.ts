@@ -28,7 +28,7 @@ export function createAgentHandlers({
   return {
     new: async (params) => {
       const body = params as {
-        cwd: string;
+        cwd?: string | null;
         type?: string;
         message?: string;
         provider?: string;
@@ -38,19 +38,21 @@ export function createAgentHandlers({
         thinkingLevel?: string;
         [key: string]: unknown;
       };
-      const { cwd, provider, modelId, modelSelectionExplicit, toolNames, thinkingLevel, ...rest } = body;
+      const { cwd: requestedCwd, provider, modelId, modelSelectionExplicit, toolNames, thinkingLevel, ...rest } = body;
+      const cwd = requestedCwd ?? "";
       if (modelSelectionExplicit !== undefined && typeof modelSelectionExplicit !== "boolean")
         throw new RpcError({ code: "BAD_REQUEST", message: "modelSelectionExplicit must be a boolean" });
-      if (!cwd || typeof cwd !== "string") {
-        throw new RpcError({ code: "BAD_REQUEST", message: "cwd is required" });
+      if (typeof cwd !== "string") {
+        throw new RpcError({ code: "BAD_REQUEST", message: "cwd must be a string or null" });
       }
-      if (!existsSync(cwd)) {
+      if (cwd && !existsSync(cwd)) {
         throw new RpcError({ code: "BAD_REQUEST", message: `Directory does not exist: ${cwd}` });
       }
 
       const tempKey = createAgentNewLockKey();
       const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, toolNames);
-      allowFileRoot(cwd);
+      const sessionCwd = session.cwd || cwd;
+      if (sessionCwd) allowFileRoot(sessionCwd);
 
       // ISSUE-003: single event-binding entry only (ensureSessionEvents)
       bindEvents(session, realSessionId);
@@ -67,13 +69,13 @@ export function createAgentHandlers({
       }
 
       if (rest.type === "ensure_session") {
-        return { sessionId: realSessionId, data: null };
+        return { sessionId: realSessionId, cwd: sessionCwd, data: null };
       }
 
       const command = rest.type ? rest : { type: "prompt", message: body.message ?? "" };
       const data = await session.send(command as Record<string, unknown>);
-      await emitIndexedSessionChange(server, realSessionId, cwd);
-      return { sessionId: realSessionId, data };
+      await emitIndexedSessionChange(server, realSessionId, sessionCwd);
+      return { sessionId: realSessionId, cwd: sessionCwd, data };
     },
 
     command: async (params) => {
@@ -89,7 +91,7 @@ export function createAgentHandlers({
       }
       const filePath = await resolveSessionPath(sessionId);
       if (!filePath) throw new RpcError({ code: "NOT_FOUND", message: "Session not found" });
-      const cwd = readSessionSnapshot(filePath).getHeader()?.cwd ?? process.cwd();
+      const cwd = readSessionSnapshot(filePath).getHeader()?.cwd ?? "";
       const { session } = await startRpcSession(sessionId, filePath, cwd);
       bindEvents(session, sessionId);
       return session.send(command);

@@ -638,7 +638,7 @@ export function AppShell({
       // that lives in another worktree) must not close the open session.
       // Path strings may differ in separators/casing depending on their source
       // (session file vs git output), so compare with worktreePathsEqual.
-      if (newSessionCwd && worktreePathsEqual(newSessionCwd, cwd)) return;
+      if (newSessionCwd !== null && worktreePathsEqual(newSessionCwd, cwd)) return;
       const newProject = projectRoot ?? cwd;
       if (selectedSession && worktreePathsEqual(selectedSession.projectRoot ?? selectedSession.cwd, newProject)) {
         return;
@@ -647,7 +647,7 @@ export function AppShell({
       // matches the selected project directory.
       setSelectedSession(null);
       setNewSessionCwd((prev) => {
-        if (prev && prev !== cwd) return null;
+        if (prev !== null && prev !== cwd) return null;
         return prev;
       });
       setSessionKey((k) => k + 1);
@@ -668,6 +668,7 @@ export function AppShell({
   const handleSelectSession = useCallback(
     (session: SessionInfo, isRestore = false) => {
       beginSessionLoadTrace(session.id, isRestore ? "restore" : "selection");
+      setActiveCwd(session.cwd);
       setNewSessionCwd(null);
       setSelectedSession(session);
       setSessionKey((k) => k + 1);
@@ -691,6 +692,7 @@ export function AppShell({
 
   const handleNewSession = useCallback(
     (_sessionId: string, cwd: string) => {
+      setActiveCwd(cwd);
       setSelectedSession(null);
       setNewSessionCwd(cwd);
       setSessionKey((k) => k + 1);

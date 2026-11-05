@@ -5,6 +5,7 @@ import { getSessionContentSnapshot } from "./session-content-cache.ts";
 import type { SessionInfo } from "../shared/types";
 import { buildSessionInfoFromManager } from "./session-reader";
 import { getProjectCacheRevision, resolveProject } from "../shared/worktree";
+import { isDefaultSessionDirectory } from "../shared/session-workspace";
 
 const PROJECT_VIEW_TTL_MS = 60_000;
 
@@ -109,11 +110,15 @@ export class SessionIndex {
     if (revision === this.projectRevision && Date.now() - this.projectViewsRefreshedAt < PROJECT_VIEW_TTL_MS) return;
     const projects = new Map<string, Awaited<ReturnType<typeof resolveProject>>>();
     await Promise.all(
-      [...new Set([...this.byPath.values()].flatMap((record) => (record.info?.cwd ? [record.info.cwd] : [])))].map(
-        async (cwd) => {
-          projects.set(cwd, await resolveProject(cwd));
-        },
-      ),
+      [
+        ...new Set(
+          [...this.byPath.values()].flatMap((record) =>
+            record.info?.cwd && !isDefaultSessionDirectory(record.info.cwd) ? [record.info.cwd] : [],
+          ),
+        ),
+      ].map(async (cwd) => {
+        projects.set(cwd, await resolveProject(cwd));
+      }),
     );
     for (const record of this.byPath.values()) {
       if (!record.info) continue;

@@ -134,28 +134,11 @@ function RunningSessionIndicator() {
     <span
       title={t("agentRunning", "Agent is running…")}
       aria-label={t("agentRunningStatus", "Agent running")}
-      style={{
-        width: 14,
-        height: 14,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        color: "var(--accent)",
-      }}
+      className="sidebar-session-running"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
-        <g>
-          <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
-          <animateTransform
-            attributeName="transform"
-            type="rotate"
-            from="0 12 12"
-            to="360 12 12"
-            dur="0.9s"
-            repeatCount="indefinite"
-          />
-        </g>
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.18" />
+        <path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
       </svg>
     </span>
   );
@@ -550,11 +533,9 @@ function SessionItem({
                       : title
                 }
               >
-                {isRunning ? (
-                  <RunningSessionIndicator />
-                ) : isUnread ? (
+                {!isRunning && isUnread ? (
                   <UnreadSessionIndicator />
-                ) : (
+                ) : !isRunning ? (
                   <span
                     className="sidebar-session-idle-dot"
                     style={{
@@ -566,7 +547,7 @@ function SessionItem({
                       opacity: isSelected ? 1 : 0.55,
                     }}
                   />
-                )}
+                ) : null}
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                   {title}
                 </span>
@@ -634,9 +615,13 @@ function SessionItem({
             </div>
           </button>
 
-          <span className="sidebar-session-time" title={session.modified}>
-            {formatRelativeDateTime(session.modified, language)}
-          </span>
+          {isRunning ? (
+            <RunningSessionIndicator />
+          ) : (
+            <span className="sidebar-session-time" title={session.modified}>
+              {formatRelativeDateTime(session.modified, language)}
+            </span>
+          )}
 
           {/* Collapse toggle — always visible when has children */}
           {hasChildren && (

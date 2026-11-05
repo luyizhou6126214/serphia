@@ -7,6 +7,7 @@ import { isManagedProcessToolName } from "./managed-process/tool-names";
 import { CODING_TOOL_NAMES } from "./tool-activation";
 import { isMcpManagedTool } from "../shared/mcp-tool-policy";
 import { isOrchestrationTool } from "../shared/orchestration-tools";
+import { requiresSessionDirectory } from "../shared/session-workspace";
 
 /** A Desktop grant is independent from SDK declaration/callable membership. */
 export class SessionToolPolicy {
@@ -43,6 +44,7 @@ export class SessionToolPolicy {
     private execution?: string[],
     private mcpExecution?: string[],
     private readonly platform: string = process.platform,
+    private readonly hasDirectory = true,
   ) {}
   bind(session: AgentSessionLike): void {
     this.session = session;
@@ -75,6 +77,7 @@ export class SessionToolPolicy {
     return this.execution ? [...this.execution] : undefined;
   }
   isAllowed(name: string): boolean {
+    if (!this.hasDirectory && requiresSessionDirectory(name)) return false;
     if (this.resourceReady && !this.resourceReady()) return false;
     if (!this.session || this.requested?.length === 0 || excludedPiTools(this.platform).includes(name)) return false;
     if (name === "powershell" && !this.requested?.includes(name)) return false;
@@ -115,7 +118,7 @@ export class SessionToolPolicy {
     const callable = new Set(this.session.getCallableToolNames?.() ?? this.session.getActiveToolNames());
     return this.session
       .getAllTools()
-      .filter((tool) => tool.exposure !== "hidden")
+      .filter((tool) => tool.exposure !== "hidden" && (this.hasDirectory || !requiresSessionDirectory(tool.name)))
       .map((tool) => ({
         // SDK metadata also contains functions and private extension paths. Only project the wire contract.
         name: tool.name,

@@ -283,7 +283,8 @@ export interface Api {
   // Agent lifecycle
   "agent.new": {
     params: {
-      cwd: string;
+      /** Omitted, null or empty to allocate a private non-project working directory under Documents/Serphia. */
+      cwd?: string | null;
       type?: string;
       message?: string;
       provider?: string;
@@ -294,7 +295,7 @@ export interface Api {
       thinkingLevel?: string;
       [key: string]: unknown;
     };
-    result: { sessionId: string; data?: unknown };
+    result: { sessionId: string; cwd?: string; data?: unknown };
   };
   "agent.command": {
     params: { sessionId: string; command: AgentCommand };

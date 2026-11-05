@@ -251,6 +251,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
+  const resolvedNewSessionCwdRef = useRef<string | null>(null);
   const promptRunIdRef = useRef(0);
   // The counter is local to this view. A restored run belongs to an earlier
   // mount and may legitimately complete with a different clientRunId.
@@ -388,12 +389,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const promoteNewSession = useCallback(
     (messageCount = 0, firstMessage = "(no messages)") => {
       const sid = sessionIdRef.current;
-      if (!isActive() || !isNew || !newSessionCwd || !sid || newSessionPromotedRef.current) return;
+      if (!isActive() || !isNew || newSessionCwd === null || !sid || newSessionPromotedRef.current) return;
       newSessionPromotedRef.current = true;
       onSessionCreated?.({
         id: sid,
         path: "",
-        cwd: newSessionCwd,
+        cwd: resolvedNewSessionCwdRef.current ?? newSessionCwd,
         name: undefined,
         created: new Date().toISOString(),
         modified: new Date().toISOString(),
@@ -406,7 +407,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
-    if (!isNew || !newSessionCwd) return sessionIdRef.current;
+    if (!isNew || newSessionCwd === null) return sessionIdRef.current;
     if (ensuringNewSessionRef.current) return ensuringNewSessionRef.current;
 
     const promise = (async () => {
@@ -427,6 +428,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
       });
       const realId = result.sessionId;
+      resolvedNewSessionCwdRef.current = result.cwd ?? newSessionCwd;
       sessionIdRef.current = realId;
       return realId;
     })();
@@ -752,7 +754,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
       try {
         let sentSessionId: string | null = null;
-        if (isNew && newSessionCwd) {
+        if (isNew && newSessionCwd !== null) {
           const selectedModel = newSessionModel;
           const existingSid = sessionIdRef.current ?? (await ensuringNewSessionRef.current);
           const sid = existingSid ?? (await ensureNewSession());

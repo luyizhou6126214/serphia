@@ -49,6 +49,9 @@ import { createDesktopAgentSessionServices as createAgentSessionServices } from 
 import { promptChannelTurn, cancelChannelAttachmentContext } from "./channel-attachment-context";
 import { createDesktopSessionTools } from "./desktop-session-tools";
 import { SessionModelSelection } from "./session-model-selection";
+import { sessionWorkspaceOptions, openSessionWorkspace, forkSessionWorkspace } from "./session-workspace";
+import { DIRECTORY_TOOL_NAMES, requiresSessionDirectory } from "../shared/session-workspace";
+import { allowFileRoot } from "./file-access";
 
 // ============================================================================
 // Types
@@ -224,7 +227,9 @@ export class AgentSessionWrapper {
     const browserTools = browserToolNamesForSnapshot(browserCapabilityRuntime.getSnapshot());
     const herdrTools = herdrToolNamesForRuntime(peekHerdrBridge());
     this.inner.setActiveToolsByName(
-      filterUnapprovedShellTools([...current, ...browserTools, ...herdrTools], this.requestedToolNames),
+      filterUnapprovedShellTools([...current, ...browserTools, ...herdrTools], this.requestedToolNames).filter(
+        (name) => !!this.cwd || !requiresSessionDirectory(name),
+      ),
     );
     if (this.requestedToolNames !== undefined) dropPendingRestoredTools(this.inner);
   }
@@ -638,20 +643,7 @@ export class AgentSessionWrapper {
         if (!entry) throw new Error("Invalid entry ID for forking");
 
         const sessionDir = sessionManager.getSessionDir();
-        let newSessionFile: string;
-
-        if (!entry.parentId) {
-          // Fork before the first message: create an empty session linked to this one
-          const newManager = SessionManager.create(sessionManager.getCwd(), sessionDir);
-          newManager.newSession({ parentSession: currentSessionFile });
-          newSessionFile = newManager.getSessionFile() as string;
-        } else {
-          // Fork after some history: copy path up to (but not including) the fork point
-          const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
-          const forkedPath = sourceManager.createBranchedSession(entry.parentId);
-          if (!forkedPath) throw new Error("Failed to create forked session");
-          newSessionFile = forkedPath;
-        }
+        const newSessionFile = forkSessionWorkspace(sessionManager, currentSessionFile, entry.parentId);
 
         const forkManager = SessionManager.open(newSessionFile, sessionDir);
         const newSessionId = forkManager.getSessionId();
@@ -1441,9 +1433,10 @@ export async function startRpcSession(
 
     if (sessionFile) assertSessionWritable(sessionFile);
 
-    const sessionManager = sessionFile
-      ? SessionManager.open(sessionFile, undefined)
-      : SessionManager.create(cwd, undefined);
+    const sessionManager = openSessionWorkspace(sessionFile, cwd, agentDir);
+    cwd = sessionManager.getHeader()?.cwd ?? "";
+    allowFileRoot(cwd);
+    const hasDirectory = !!cwd;
     // Unknown provenance is fail-closed for desktop tools. A session becomes
     // local only at this explicit desktop-owned construction boundary.
     setBrowserSessionSource(sessionManager, "local");
@@ -1461,29 +1454,26 @@ export async function startRpcSession(
       sessionToolNames,
       getDesktopSessionExecutionTools(sessionId),
       getDesktopSessionMcpExecutionTools(managerSessionId),
+      process.platform,
+      hasDirectory,
     );
 
     // Build services first so extension-registered providers are available
     // before the SDK restores the saved model from the session file.
-    const promptPolicy = new SessionPromptPolicy(sessionToolNames?.length === 0);
+    const promptPolicy = new SessionPromptPolicy(sessionToolNames?.length === 0, hasDirectory);
     const modelSelection = new SessionModelSelection();
     const services = await createAgentSessionServices(
-      {
-        cwd,
-        agentDir,
-        resourceLoaderOptions: {
-          extensionFactories: [
-            modelSelection.extension(),
-            ...desktopSessionExtensions(
-              toolPolicy,
-              executionHistory,
-              promptPolicy,
-              () => getRpcSession(managerSessionId)?.isRunning() ?? false,
-            ),
-          ],
-        },
-      },
-      { project: true, sessionManager },
+      sessionWorkspaceOptions(cwd, agentDir, [
+        modelSelection.extension(),
+        ...desktopSessionExtensions(
+          toolPolicy,
+          executionHistory,
+          promptPolicy,
+          () => getRpcSession(managerSessionId)?.isRunning() ?? false,
+          hasDirectory,
+        ),
+      ]),
+      { project: hasDirectory, sessionManager },
     );
     const desktopTools = await createDesktopSessionTools(
       cwd,
@@ -1497,7 +1487,7 @@ export async function startRpcSession(
       services,
       sessionManager,
       customTools: desktopTools.customTools,
-      excludeTools: [...excludedPiTools(process.platform)],
+      excludeTools: [...excludedPiTools(process.platform), ...(!hasDirectory ? DIRECTORY_TOOL_NAMES : [])],
       ...(model ? { model } : {}),
     });
     modelSelection.finish(inner, modelFallbackMessage);

@@ -249,6 +249,7 @@ export class HostManager {
     delete env.ELECTRON_RUN_AS_NODE;
     env.PI_AGENT_HOST = "1";
     env.PI_DESKTOP_USER_DATA = app.getPath("userData");
+    env.PI_DESKTOP_DOCUMENTS = app.getPath("documents");
     env.PI_DESKTOP_VERSION = app.getVersion();
 
     const spawnResult = trySpawnHost(() =>

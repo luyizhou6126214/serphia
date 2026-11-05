@@ -7,7 +7,10 @@ export class SessionPromptPolicy {
   private forceEmpty: boolean;
   private toolchainPrompt = "";
 
-  constructor(forceEmpty: boolean) {
+  constructor(
+    forceEmpty: boolean,
+    private readonly hasDirectory = true,
+  ) {
     this.forceEmpty = forceEmpty;
   }
 
@@ -25,6 +28,9 @@ export class SessionPromptPolicy {
 
   resolve(systemPrompt: string): string {
     if (this.forceEmpty) return "";
+    if (!this.hasDirectory) {
+      return `${systemPrompt.replace(/\n*<cwd>[\s\S]*?<\/cwd>\n*/g, "\n").trimEnd()}\n\nThis conversation has no project or working directory. Do not use filesystem, shell, terminal or process tools.`;
+    }
     if (!this.toolchainPrompt) return systemPrompt;
     const base = systemPrompt.replace(TOOLCHAIN_SECTION, "").trimEnd();
     return `${base}\n\n${this.toolchainPrompt}`.trim();

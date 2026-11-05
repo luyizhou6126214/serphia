@@ -19,6 +19,7 @@ import { skillInvocationCommandText } from "../shared/skill-invocation";
 import { sessionIndex } from "./session-index";
 import { readSessionSnapshot } from "./session-readonly.ts";
 import { abortedAssistantEntryIds } from "./agent-settlement";
+import { isDefaultSessionDirectory } from "../shared/session-workspace";
 
 export { getAgentDir };
 
@@ -39,7 +40,7 @@ async function listAllSessionsFallback(): Promise<SessionInfo[]> {
 
   // Resolve each unique cwd to its project root (main repo shared by all
   // worktrees). resolveProject caches per-cwd, so this is cheap after warmup.
-  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter(Boolean))];
+  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter((cwd) => cwd && !isDefaultSessionDirectory(cwd)))];
   const projectByCwd = new Map<string, ProjectInfo>();
   await Promise.all(
     uniqueCwds.map(async (cwd) => {
@@ -160,7 +161,10 @@ export async function buildSessionInfoFromManager(
   const headerTime = Date.parse(header.timestamp);
   const created = Number.isNaN(headerTime) ? header.timestamp : new Date(headerTime).toISOString();
   const modified = lastActivityTime === undefined ? created : new Date(lastActivityTime).toISOString();
-  const project = header.cwd && options.resolveProjectInfo !== false ? await resolveProject(header.cwd) : undefined;
+  const project =
+    header.cwd && !isDefaultSessionDirectory(header.cwd) && options.resolveProjectInfo !== false
+      ? await resolveProject(header.cwd)
+      : undefined;
   const parentSessionId = header.parentSession ? findCachedSessionId(header.parentSession) : undefined;
 
   return {

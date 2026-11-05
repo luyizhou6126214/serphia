@@ -1,13 +1,6 @@
-import {
-  CheckOutlined,
-  EditOutlined,
-  EllipsisOutlined,
-  FolderOutlined,
-  PushpinOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-} from "@ant-design/icons/es";
-import { subscribeRunning } from "@/lib/api-client";
+import { EditOutlined, EllipsisOutlined, PushpinOutlined, SearchOutlined } from "@ant-design/icons/es";
+import { Folder, FolderOpen } from "lucide-react";
+import { call, subscribeRunning } from "@/lib/api-client";
 import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { useI18n } from "@/i18n";
@@ -15,11 +8,13 @@ import {
   loadUnreadSessionIds as loadStoredUnreadSessionIds,
   saveUnreadSessionIds as saveStoredUnreadSessionIds,
 } from "@/lib/unread-session-storage";
-import { filterSessionsForQuery, resolveInitialSessionRestore } from "@/lib/session-list";
+import { resolveInitialSessionRestore } from "@/lib/session-list";
 import type { SessionListStore } from "@/lib/session-list-store";
 import { worktreePathsEqual } from "@shared/worktree-path";
+import { isDefaultSessionDirectory } from "@shared/session-workspace";
 import { buildSessionTree, SessionTreeItem } from "./sidebar/SessionTree";
 import { ProjectPicker } from "./sidebar/ProjectPicker";
+import { SessionSearchDialog } from "./sidebar/SessionSearchDialog";
 import { type SidebarWorkspace, getRecentProjects } from "@/hooks/useSidebarWorkspace";
 
 interface Props {
@@ -74,7 +69,6 @@ export function SessionSidebar({
       : (listError instanceof Error ? listError.message : String(listError)) ||
         t("sessionListLoadFailed", "Failed to load sessions.");
   const { selectedCwd, setSelectedCwd, selectedProject, homeDir } = workspace;
-  const [sessionFilter, setSessionFilter] = useState("");
   const [savedProjects, setSavedProjects] = useState<string[]>(() => {
     try {
       const value = JSON.parse(window.localStorage.getItem("serphia:sidebar-projects") ?? "[]");
@@ -127,38 +121,12 @@ export function SessionSidebar({
     },
     [setSelectedCwd],
   );
-  const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   // Once the live stream has delivered a frame it is the source of truth for
   // running state; late session responses must not overwrite it.
   const streamAuthoritativeRef = useRef(false);
-  const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sidebarMountedRef = useRef(false);
-  useEffect(() => {
-    sidebarMountedRef.current = true;
-    return () => {
-      sidebarMountedRef.current = false;
-      if (sessionRefreshTimerRef.current) clearTimeout(sessionRefreshTimerRef.current);
-    };
-  }, []);
-
-  const loadSessions = useCallback(
-    async (showLoading = false) => {
-      await sessionList.refresh(showLoading).catch(() => {});
-      if (!sidebarMountedRef.current) return;
-      if (!showLoading && sessionList.getSnapshot().error === null) {
-        setSessionRefreshDone(true);
-        if (sessionRefreshTimerRef.current) clearTimeout(sessionRefreshTimerRef.current);
-        sessionRefreshTimerRef.current = setTimeout(() => {
-          sessionRefreshTimerRef.current = null;
-          setSessionRefreshDone(false);
-        }, 2000);
-      }
-    },
-    [sessionList],
-  );
 
   useEffect(() => {
     if (!streamAuthoritativeRef.current) setRunningSessionIds(new Set(fallbackRunningIds));
@@ -276,7 +244,7 @@ export function SessionSidebar({
   // open session after manually switching worktrees.
   const handleSelectSessionFromList = useCallback(
     (s: SessionInfo) => {
-      if (s.cwd) setSelectedCwd(s.cwd);
+      setSelectedCwd(s.cwd);
       onSelectSession(s);
     },
     [onSelectSession, setSelectedCwd],
@@ -284,7 +252,6 @@ export function SessionSidebar({
 
   const handleNewSession = useCallback(
     (cwd: string) => {
-      if (!cwd) return;
       const tempId =
         typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
@@ -295,12 +262,13 @@ export function SessionSidebar({
     [onNewSession, setSelectedCwd],
   );
 
-  const projects = savedProjects.filter((path) => !homeDir || !worktreePathsEqual(path, homeDir));
+  const projects = savedProjects.filter(
+    (path) => !isDefaultSessionDirectory(path) && (!homeDir || !worktreePathsEqual(path, homeDir)),
+  );
   for (const project of getRecentProjects(allSessions)) {
     if (homeDir && worktreePathsEqual(project, homeDir)) continue;
     if (!projects.some((item) => worktreePathsEqual(item, project))) projects.push(project);
   }
-  const filteredSessions = filterSessionsForQuery(allSessions, sessionFilter);
   const groups = projects.map((path) => ({
     path,
     label:
@@ -308,16 +276,17 @@ export function SessionSidebar({
         .replace(/[\\/]+$/, "")
         .split(/[\\/]/)
         .pop() || path,
-    sessions: filteredSessions.filter((s) => worktreePathsEqual(s.projectRoot ?? s.cwd, path)),
+    sessions: allSessions.filter((s) => worktreePathsEqual(s.projectRoot ?? s.cwd, path)),
   }));
-  const recentSessions = filteredSessions
+  const recentSessions = allSessions
     .filter((session) => !projects.some((path) => worktreePathsEqual(session.projectRoot ?? session.cwd, path)))
     .sort((a, b) => b.modified.localeCompare(a.modified));
   const isPinned = (path: string) => pinnedProjects.some((item) => worktreePathsEqual(item, path));
   const renderProject = (group: (typeof groups)[number]) => {
     const expanded =
-      Boolean(sessionFilter.trim()) ||
-      (projectExpansion[group.path] ?? Boolean(selectedProject && worktreePathsEqual(group.path, selectedProject)));
+      projectExpansion[group.path] ?? Boolean(selectedProject && worktreePathsEqual(group.path, selectedProject));
+    const hasSelectedSession = group.sessions.some((session) => session.id === selectedSessionId);
+    const current = Boolean(selectedProject && worktreePathsEqual(group.path, selectedProject) && !hasSelectedSession);
     const nodes = buildSessionTree(group.sessions);
     return (
       <section key={group.path} className={`project-sidebar-group${expanded ? " is-expanded" : ""}`}>
@@ -332,12 +301,16 @@ export function SessionSidebar({
         >
           <button
             type="button"
-            className="project-sidebar-group-toggle"
+            className={`project-sidebar-group-toggle${current ? " is-current" : ""}`}
             title={group.path}
             aria-expanded={expanded}
             onClick={() => setProjectExpansion((previous) => ({ ...previous, [group.path]: !expanded }))}
           >
-            <FolderOutlined />
+            {expanded ? (
+              <FolderOpen size={17} strokeWidth={1.8} aria-hidden="true" />
+            ) : (
+              <Folder size={17} strokeWidth={1.8} aria-hidden="true" />
+            )}
             <span className="project-sidebar-group-name">{group.label}</span>
           </button>
           <div className="project-sidebar-group-actions">
@@ -410,20 +383,9 @@ export function SessionSidebar({
             <button
               type="button"
               className="project-sidebar-icon"
-              onClick={() => void loadSessions(false)}
-              title={t("refresh", "Refresh")}
-              aria-label={t("refresh", "Refresh")}
-            >
-              {sessionRefreshDone ? <CheckOutlined /> : <ReloadOutlined />}
-            </button>
-            <button
-              type="button"
-              className="project-sidebar-icon"
               aria-expanded={searchOpen}
-              onClick={() => {
-                setSearchOpen((open) => !open);
-                setSessionFilter("");
-              }}
+              aria-haspopup="dialog"
+              onClick={() => setSearchOpen(true)}
               title={t("searchSessions", "Search sessions")}
               aria-label={t("searchSessions", "Search sessions")}
             >
@@ -434,23 +396,11 @@ export function SessionSidebar({
         <button
           type="button"
           className="project-sidebar-new"
-          disabled={!homeDir}
-          title={t("newUnprojectedHint", "Start a session in your home directory without adding a project")}
-          onClick={() => handleNewSession(homeDir)}
+          title={t("newUnprojectedHint", "Start a session in its own folder under Documents/Serphia")}
+          onClick={() => handleNewSession("")}
         >
           <EditOutlined /> {t("newSession", "new session")}
         </button>
-        {searchOpen && (
-          <input
-            className="project-sidebar-search"
-            type="search"
-            value={sessionFilter}
-            autoFocus
-            onChange={(event) => setSessionFilter(event.target.value)}
-            placeholder={t("searchSessions", "Search sessions")}
-            aria-label={t("searchSessions", "Search sessions")}
-          />
-        )}
       </div>
       <nav aria-label={t("sessions", "Sessions")} className="project-sidebar-list">
         {loading && <div className="project-sidebar-message">{t("loading", "Loading…")}</div>}
@@ -459,15 +409,10 @@ export function SessionSidebar({
             {error}
           </div>
         )}
-        {!loading && !error && sessionFilter.trim() && filteredSessions.length === 0 && (
-          <div className="project-sidebar-message">{t("noMatchingSessions", "No matching sessions")}</div>
-        )}
         {groups.some((group) => isPinned(group.path)) && (
           <div className="project-sidebar-section">
             <div className="project-sidebar-section-heading">{t("pinnedProjects", "Pinned")}</div>
-            {groups
-              .filter((group) => isPinned(group.path) && (!sessionFilter.trim() || group.sessions.length))
-              .map(renderProject)}
+            {groups.filter((group) => isPinned(group.path)).map(renderProject)}
           </div>
         )}
         <div className="project-sidebar-section">
@@ -480,15 +425,13 @@ export function SessionSidebar({
               setSelectedCwd={addProject}
             />
           </div>
-          {groups
-            .filter((group) => !isPinned(group.path) && (!sessionFilter.trim() || group.sessions.length))
-            .map(renderProject)}
+          {groups.filter((group) => !isPinned(group.path)).map(renderProject)}
         </div>
         {recentSessions.length > 0 && (
           <div className="project-sidebar-section">
             <div className="project-sidebar-section-heading">{t("recentSessions", "Recent")}</div>
             <div role="list" className="project-sidebar-recent-list">
-              {recentSessions.slice(0, showAllRecent || sessionFilter.trim() ? undefined : 12).map((session) => (
+              {recentSessions.slice(0, showAllRecent ? undefined : 12).map((session) => (
                 <SessionTreeItem
                   key={session.id}
                   node={{ session, children: [] }}
@@ -502,7 +445,7 @@ export function SessionSidebar({
                 />
               ))}
             </div>
-            {!showAllRecent && !sessionFilter.trim() && recentSessions.length > 12 && (
+            {!showAllRecent && recentSessions.length > 12 && (
               <button type="button" className="project-sidebar-show-more" onClick={() => setShowAllRecent(true)}>
                 {t("showMoreSessions", "Show more")}
               </button>
@@ -510,6 +453,30 @@ export function SessionSidebar({
           </div>
         )}
       </nav>
+      {searchOpen && (
+        <SessionSearchDialog
+          sessions={allSessions}
+          loading={loading}
+          error={error}
+          onClose={() => setSearchOpen(false)}
+          onSelectSession={handleSelectSessionFromList}
+          onNewSession={() => handleNewSession("")}
+          onOpenFolder={
+            window.piBridge?.selectDirectory
+              ? async () => {
+                  const directory = await window.piBridge.selectDirectory();
+                  if (!directory) return false;
+                  const result = await call("system.validateCwd", { path: directory });
+                  if (!result.ok) throw new Error(result.error ?? t("invalidDirectory", "Invalid directory"));
+                  const cwd = result.path ?? directory;
+                  addProject(cwd);
+                  handleNewSession(cwd);
+                  return true;
+                }
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 }

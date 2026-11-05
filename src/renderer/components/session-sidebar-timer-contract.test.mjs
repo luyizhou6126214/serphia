@@ -12,9 +12,7 @@ const pickers = ["ProjectPicker", "WorktreePicker"].map((name) =>
 );
 
 test("sidebar and picker timers are released by their owning view", () => {
-  assert.match(source, /if \(sessionRefreshTimerRef\.current\) clearTimeout\(sessionRefreshTimerRef\.current\)/);
-  assert.match(source, /sidebarMountedRef\.current = false/);
-  assert.match(source, /if \(!sidebarMountedRef\.current\) return/);
+  assert.doesNotMatch(source, /sessionRefreshTimerRef|sidebarMountedRef/);
   assert.match(workspace, /const pending = timers.current/);
   assert.match(workspace, /for \(const timer of pending\) clearTimeout\(timer\)/);
   for (const picker of pickers) assert.match(picker, /const deferFocus = useDeferredFocus\(\)/);
