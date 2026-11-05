@@ -216,7 +216,6 @@ function SessionItem({
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -274,28 +273,14 @@ function SessionItem({
   }, [renameValue, session.id, session.name, onRenamed]);
 
   const handleDeleteClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      closeActionsMenu();
-      // ISSUE-001: block delete while agent is running
-      if (isRunning) {
-        window.alert(t("deleteRunningSessionBlocked", "This session is still running. Stop it before deleting."));
-        return;
-      }
-      setConfirmDelete(true);
-    },
-    [closeActionsMenu, isRunning, t],
-  );
-
-  const handleDeleteConfirm = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
+      closeActionsMenu();
       if (isRunning) {
         window.alert(t("deleteRunningSessionBlocked", "This session is still running. Stop it before deleting."));
-        setConfirmDelete(false);
         return;
       }
-      setConfirmDelete(false);
+      if (deleting) return;
       setDeleting(true);
       try {
         await call("sessions.delete", { id: session.id });
@@ -307,13 +292,8 @@ function SessionItem({
         setDeleting(false);
       }
     },
-    [session.id, onDeleted, isRunning, t],
+    [closeActionsMenu, deleting, session.id, onDeleted, isRunning, t],
   );
-
-  const handleDeleteCancel = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(false);
-  }, []);
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
   const ITEM_HEIGHT = 54;
@@ -338,18 +318,8 @@ function SessionItem({
           paddingLeft: depth > 0 ? depth * 12 + 10 : 10,
           paddingRight: 8,
           cursor: "default",
-          background: confirmDelete
-            ? "color-mix(in srgb, var(--danger) 8%, transparent)"
-            : isSelected
-              ? "var(--bg-selected)"
-              : hovered
-                ? "var(--bg-hover)"
-                : "transparent",
-          border: confirmDelete
-            ? "1px solid color-mix(in srgb, var(--danger) 40%, transparent)"
-            : isSelected
-              ? "1px solid var(--accent-soft-border)"
-              : "1px solid transparent",
+          background: isSelected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
+          border: isSelected ? "1px solid var(--accent-soft-border)" : "1px solid transparent",
           borderRadius: 8,
           transition: "background 0.1s, border-color 0.1s",
           opacity: deleting ? 0.5 : 1,
@@ -358,85 +328,7 @@ function SessionItem({
         } as CSSProperties
       }
     >
-      {confirmDelete ? (
-        /* ── Delete confirmation: same height, two flat buttons ── */
-        <>
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: 12,
-              color: "var(--text)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("deleteSessionConfirm", "Delete “{title}”?").replace(
-              "{title}",
-              `${title.slice(0, 22)}${title.length > 22 ? "…" : ""}`,
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-            <button
-              onClick={handleDeleteConfirm}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 4,
-                height: 32,
-                padding: "0 11px",
-                background: "#ef4444",
-                border: "none",
-                borderRadius: 6,
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 600,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
-              {t("delete", "Delete")}
-            </button>
-            <button
-              onClick={handleDeleteCancel}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: 32,
-                padding: "0 11px",
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 500,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {t("cancel", "Cancel")}
-            </button>
-          </div>
-        </>
-      ) : renaming ? (
+      {renaming ? (
         /* ── Rename: input fills the same row ── */
         <input
           ref={inputRef}

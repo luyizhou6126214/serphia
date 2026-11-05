@@ -1,4 +1,4 @@
-import { EditOutlined, EllipsisOutlined, PushpinOutlined, SearchOutlined } from "@ant-design/icons/es";
+import { DeleteOutlined, EditOutlined, EllipsisOutlined, PushpinOutlined, SearchOutlined } from "@ant-design/icons/es";
 import { Folder, FolderOpen } from "lucide-react";
 import { call, subscribeRunning } from "@/lib/api-client";
 import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react";
@@ -77,6 +77,14 @@ export function SessionSidebar({
       return [];
     }
   });
+  const [removedProjects, setRemovedProjects] = useState<string[]>(() => {
+    try {
+      const value = JSON.parse(window.localStorage.getItem("serphia:removed-projects") ?? "[]");
+      return Array.isArray(value) ? value.filter((path): path is string => typeof path === "string" && !!path) : [];
+    } catch {
+      return [];
+    }
+  });
   const [projectExpansion, setProjectExpansion] = useState<Record<string, boolean>>({});
   const [pinnedProjects, setPinnedProjects] = useState<string[]>(() => {
     try {
@@ -87,6 +95,8 @@ export function SessionSidebar({
     }
   });
   const [projectMenu, setProjectMenu] = useState<string | null>(null);
+  const [deletingProject, setDeletingProject] = useState<string | null>(null);
+  const deletingProjectRef = useRef(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showAllRecent, setShowAllRecent] = useState(false);
   const togglePin = (path: string) => {
@@ -107,6 +117,15 @@ export function SessionSidebar({
   const addProject = useCallback(
     (path: string | null) => {
       if (!path) return;
+      setRemovedProjects((previous) => {
+        const next = previous.filter((item) => !worktreePathsEqual(item, path));
+        try {
+          window.localStorage.setItem("serphia:removed-projects", JSON.stringify(next));
+        } catch {
+          /* storage unavailable */
+        }
+        return next;
+      });
       setSavedProjects((previous) => {
         if (previous.some((item) => worktreePathsEqual(item, path))) return previous;
         const next = [...previous, path];
@@ -121,7 +140,49 @@ export function SessionSidebar({
     },
     [setSelectedCwd],
   );
+  const removeProject = (path: string) => {
+    const removePath = (items: string[]) => items.filter((item) => !worktreePathsEqual(item, path));
+    const saved = removePath(savedProjects);
+    const pinned = removePath(pinnedProjects);
+    const removed = [...removePath(removedProjects), path];
+    setSavedProjects(saved);
+    setPinnedProjects(pinned);
+    setRemovedProjects(removed);
+    setProjectMenu(null);
+    try {
+      window.localStorage.setItem("serphia:sidebar-projects", JSON.stringify(saved));
+      window.localStorage.setItem("serphia:pinned-projects", JSON.stringify(pinned));
+      window.localStorage.setItem("serphia:removed-projects", JSON.stringify(removed));
+    } catch {
+      /* storage unavailable */
+    }
+  };
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const deleteProject = async (path: string, sessions: SessionInfo[]) => {
+    if (deletingProjectRef.current) return;
+    setProjectMenu(null);
+    if (sessions.some((session) => runningSessionIds.has(session.id))) {
+      window.alert(t("deleteRunningSessionBlocked", "This session is still running. Stop it before deleting."));
+      return;
+    }
+    deletingProjectRef.current = true;
+    setDeletingProject(path);
+    try {
+      for (const session of sessions) {
+        await call("sessions.delete", { id: session.id });
+        sessionList.applyChange({ cwd: null, sessionId: session.id, deleted: true });
+      }
+      removeProject(path);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      window.alert(
+        `${t("deleteProjectFailed", "Failed to delete the project and all its sessions. Some sessions may already have been deleted.")} ${reason}`,
+      );
+    } finally {
+      deletingProjectRef.current = false;
+      setDeletingProject(null);
+    }
+  };
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   // Once the live stream has delivered a frame it is the source of truth for
@@ -267,6 +328,7 @@ export function SessionSidebar({
   );
   for (const project of getRecentProjects(allSessions)) {
     if (homeDir && worktreePathsEqual(project, homeDir)) continue;
+    if (removedProjects.some((item) => worktreePathsEqual(item, project))) continue;
     if (!projects.some((item) => worktreePathsEqual(item, project))) projects.push(project);
   }
   const groups = projects.map((path) => ({
@@ -328,6 +390,7 @@ export function SessionSidebar({
               type="button"
               className="project-sidebar-icon"
               onClick={() => handleNewSession(group.path)}
+              disabled={deletingProject === group.path}
               title={`${t("newSessionIn", "New session in selected project")}: ${group.label}`}
               aria-label={`${t("newSession", "new session")}: ${group.label}`}
             >
@@ -344,6 +407,14 @@ export function SessionSidebar({
               >
                 <PushpinOutlined />{" "}
                 {isPinned(group.path) ? t("unpinProject", "Unpin project") : t("pinProject", "Pin project")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={deletingProject !== null}
+                onClick={() => void deleteProject(group.path, group.sessions)}
+              >
+                <DeleteOutlined /> {t("delete", "Delete")}
               </button>
             </div>
           )}

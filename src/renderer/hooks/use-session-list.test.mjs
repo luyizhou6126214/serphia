@@ -419,13 +419,11 @@ test("delete retains running guards and backend conflicts without issuing an imp
   await act(async () => fixture.sources[0].on({ type: "running", sessionIds: [] }));
   await fixture.click("Session actions for one");
   await fixture.click("Delete");
-  await fixture.click("Delete");
   assert.deepEqual(fixture.next("sessions.delete").params, { id: "one" });
   await fixture.failRpc("sessions.delete", "CONFLICT", "Stop managed processes before deleting.");
   assert.deepEqual(fixture.deleted, []);
   assert.match(fixture.alerts.at(-1), /Stop managed processes/);
   await fixture.click("Session actions for one");
-  await fixture.click("Delete");
   await fixture.click("Delete");
   await fixture.replyRpc("sessions.delete", { ok: true });
   await fixture.change({ cwd: "/project", sessionId: "one", deleted: true });

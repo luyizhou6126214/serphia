@@ -885,68 +885,92 @@ export function AppShell({
     />
   );
 
+  const isWindows = window.piBridge?.platform === "win32";
+  const sessionHeader = (
+    <>
+      <div
+        className="app-topbar-title"
+        role="heading"
+        aria-level={1}
+        title={
+          settingsOpen
+            ? t("settings", "Settings")
+            : selectedSession
+              ? getSessionDisplayTitle(displayedSession ?? selectedSession, 240)
+              : ""
+        }
+      >
+        {settingsOpen
+          ? t("settings", "Settings")
+          : selectedSession
+            ? getSessionDisplayTitle(displayedSession ?? selectedSession)
+            : ""}
+      </div>
+      {!settingsOpen && (
+        <>
+          {selectedSession && (
+            <QuickChannelBinding
+              sessionId={selectedSession.id}
+              snapshot={channelSnapshot}
+              isMobile={isMobile}
+              onSnapshotChange={setChannelSnapshot}
+            />
+          )}
+          {showChat && (
+            <QuickHerdrFleet
+              isMobile={isMobile}
+              alignRight={!selectedSession}
+              onOpenTerminal={(pane) => {
+                setHerdrTerminalPane(pane);
+                dispatchFileTab({ type: "select", tabId: HERDR_TERMINAL_TAB_ID });
+                openRightPanel();
+              }}
+            />
+          )}
+          <SessionInfoPanel
+            store={presentationStore}
+            showChat={showChat}
+            activeTopPanel={activeTopPanel}
+            toggleTopPanel={toggleTopPanel}
+            isMobile={isMobile}
+          />
+          <button
+            type="button"
+            className="app-topbar-button"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+            }}
+            title={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
+            aria-label={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
+            aria-pressed={isDark}
+          >
+            {isDark ? (
+              <Sun size={17} strokeWidth={1.7} aria-hidden="true" />
+            ) : (
+              <Moon size={17} strokeWidth={1.7} aria-hidden="true" />
+            )}
+          </button>
+          <span className="app-topbar-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="app-topbar-button app-topbar-panel-toggle"
+            onClick={handleRightPanelToggle}
+            aria-pressed={rightPanelOpen}
+            aria-expanded={rightPanelOpen}
+            title={rightPanelOpen ? t("hideFilePanel", "Hide file panel") : t("showFilePanel", "Show file panel")}
+            aria-label={rightPanelOpen ? t("hideFilePanel", "Hide file panel") : t("showFilePanel", "Show file panel")}
+          >
+            <PanelRight size={17} strokeWidth={1.7} aria-hidden="true" />
+          </button>
+        </>
+      )}
+    </>
+  );
+
   return (
     <>
       <style>{`
-      @keyframes session-info-pop {
-        0% {
-          opacity: 0;
-          transform: translateY(-24px);
-          filter: blur(6px);
-          box-shadow: 0 2px 8px rgba(0,0,0,0);
-        }
-        55% {
-          opacity: 1;
-          transform: translateY(0);
-          filter: blur(0);
-          background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
-          box-shadow: 0 18px 44px color-mix(in srgb, var(--accent) 18%, transparent);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0);
-          filter: blur(0);
-          background: var(--bg-panel);
-          box-shadow: 0 10px 28px rgba(0,0,0,0.10);
-        }
-      }
-      @keyframes session-info-light-wash {
-        0% {
-          opacity: 0;
-          transform: translateX(-110%) skewX(-16deg);
-        }
-        24% {
-          opacity: 0.42;
-        }
-        100% {
-          opacity: 0;
-          transform: translateX(115%) skewX(-16deg);
-        }
-      }
-      .session-info-popover {
-        position: relative;
-        overflow: hidden;
-        transform-origin: top right;
-        animation: session-info-pop 360ms ease-out both;
-        will-change: transform, opacity, filter, background, box-shadow;
-      }
-      .session-info-popover::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        width: 44%;
-        pointer-events: none;
-        background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 24%, transparent), transparent);
-        animation: session-info-light-wash 620ms ease-out both;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .session-info-popover,
-        .session-info-popover::after {
-          animation: none;
-        }
-      }
       @media (max-width: 640px) {
         .sidebar-overlay-backdrop.sidebar-mobile-pending {
           opacity: 0 !important;
@@ -958,7 +982,7 @@ export function AppShell({
         }
       }
     `}</style>
-      <div className="app-frame">
+      <div className={`app-frame${isWindows ? " is-windows" : ""}`}>
         <header className="app-topbar">
           <div className={`app-topbar-navigation${sidebarOpen && !isMobile ? " with-sidebar" : ""}`}>
             <button
@@ -992,86 +1016,29 @@ export function AppShell({
               <PanelLeft size={16} strokeWidth={1.7} aria-hidden="true" />
             </button>
           </div>
-          <div
-            className="app-topbar-title"
-            role="heading"
-            aria-level={1}
-            title={
-              settingsOpen
-                ? t("settings", "Settings")
-                : selectedSession
-                  ? getSessionDisplayTitle(displayedSession ?? selectedSession, 240)
-                  : ""
-            }
-          >
-            {settingsOpen
-              ? t("settings", "Settings")
-              : selectedSession
-                ? getSessionDisplayTitle(displayedSession ?? selectedSession)
-                : ""}
-          </div>
-          {!settingsOpen && (
-            <>
-              {selectedSession && (
-                <QuickChannelBinding
-                  sessionId={selectedSession.id}
-                  snapshot={channelSnapshot}
-                  isMobile={isMobile}
-                  onSnapshotChange={setChannelSnapshot}
-                />
-              )}
-              {showChat && (
-                <QuickHerdrFleet
-                  isMobile={isMobile}
-                  alignRight={!selectedSession}
-                  onOpenTerminal={(pane) => {
-                    setHerdrTerminalPane(pane);
-                    dispatchFileTab({ type: "select", tabId: HERDR_TERMINAL_TAB_ID });
-                    openRightPanel();
+          {isWindows ? (
+            <nav className="app-window-menu" aria-label={t("applicationMenu", "Application menu")}>
+              {[
+                t("menuFile", "File"),
+                t("menuEdit", "Edit"),
+                t("menuView", "View"),
+                t("menuWindow", "Window"),
+                t("menuHelp", "Help"),
+              ].map((menu, index) => (
+                <button
+                  key={menu}
+                  type="button"
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    void window.piBridge.showApplicationMenu(index, Math.round(rect.left), Math.round(rect.bottom));
                   }}
-                />
-              )}
-              <SessionInfoPanel
-                store={presentationStore}
-                showChat={showChat}
-                activeTopPanel={activeTopPanel}
-                toggleTopPanel={toggleTopPanel}
-                isMobile={isMobile}
-              />
-              <button
-                type="button"
-                className="app-topbar-button"
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-                }}
-                title={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
-                aria-label={
-                  isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")
-                }
-                aria-pressed={isDark}
-              >
-                {isDark ? (
-                  <Sun size={17} strokeWidth={1.7} aria-hidden="true" />
-                ) : (
-                  <Moon size={17} strokeWidth={1.7} aria-hidden="true" />
-                )}
-              </button>
-              <span className="app-topbar-divider" aria-hidden="true" />
-              <button
-                type="button"
-                className="app-topbar-button app-topbar-panel-toggle"
-                onClick={handleRightPanelToggle}
-                aria-pressed={rightPanelOpen}
-                aria-expanded={rightPanelOpen}
-                title={rightPanelOpen ? t("hideFilePanel", "Hide file panel") : t("showFilePanel", "Show file panel")}
-                aria-label={
-                  rightPanelOpen ? t("hideFilePanel", "Hide file panel") : t("showFilePanel", "Show file panel")
-                }
-              >
-                <PanelRight size={17} strokeWidth={1.7} aria-hidden="true" />
-              </button>
-            </>
+                >
+                  {menu}
+                </button>
+              ))}
+            </nav>
+          ) : (
+            sessionHeader
           )}
         </header>
         <div className="app-workspace" aria-hidden={settingsOpen || undefined} inert={settingsOpen || undefined}>
@@ -1120,6 +1087,7 @@ export function AppShell({
               position: "relative",
             }}
           >
+            {isWindows && <header className="app-session-header">{sessionHeader}</header>}
             {/* Chat content */}
             <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
               {showChat ? (

@@ -20,10 +20,10 @@ const scenarios = [
     zh: "未找到技能",
   },
   {
-    key: "deleteSessionConfirm",
+    key: "deleteSessionFailed",
     owner: "session",
-    en: "Delete “{title}”?",
-    zh: "删除“{title}”？",
+    en: "Failed to delete session.",
+    zh: "删除会话失败。",
   },
   {
     key: "worktreeForceRemoveConfirm",

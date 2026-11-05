@@ -1,5 +1,5 @@
 import { getNativeLanguage } from "./native-language";
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from "electron";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import type {
   ChannelCredentialWrite,
@@ -126,6 +126,23 @@ export function installDesktopIpc(options: DesktopIpcOptions): void {
     });
   };
 
+  trustedHandle("desktop:show-application-menu", (event, index: unknown, x: unknown, y: unknown) => {
+    if (
+      process.platform !== "win32" ||
+      typeof index !== "number" ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index > 4 ||
+      typeof x !== "number" ||
+      !Number.isFinite(x) ||
+      typeof y !== "number" ||
+      !Number.isFinite(y)
+    )
+      return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const menu = Menu.getApplicationMenu()?.items[index]?.submenu;
+    if (win && menu) menu.popup({ window: win, x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) });
+  });
   trustedHandle("desktop:get-version", () => app.getVersion());
   trustedHandle("desktop:update:get-state", () => updateManager.getState());
   trustedHandle("desktop:update:check", () => updateManager.checkForUpdates());

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo, type RefObject } from "react";
+import { useEffect, useRef, useState, useMemo, type RefObject } from "react";
 import { useI18n } from "@/i18n";
 
 export interface ChatMinimapMessage {
@@ -17,18 +17,17 @@ interface Props {
 
 interface TimelineNode {
   index: number;
-  ratio: number;
   offset: number;
-  message: ChatMinimapMessage;
+  user: string;
+  answer: string;
 }
 
-/** A quiet document outline: select a turn, or drag the viewport to scrub. */
+/** A compact, centered outline for navigating the conversation. */
 export function ChatMinimap({ messages, streamingMessage, scrollContainer, messageRefs, historyTruncated }: Props) {
   const { t } = useI18n();
-  const [layout, setLayout] = useState({ nodes: [] as TimelineNode[], top: 0, height: 1, visible: false });
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ pointerId: number; offset: number } | null>(null);
+  const [layout, setLayout] = useState({ nodes: [] as TimelineNode[], activeIndex: -1, visible: false });
+  const [previewState, setPreviewState] = useState<{ index: number; top: number } | null>(null);
+  const navRef = useRef<HTMLElement>(null);
   const allMessages = useMemo(
     () => (streamingMessage ? [...messages, streamingMessage] : messages),
     [messages, streamingMessage],
@@ -46,15 +45,20 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
       const rect = scrollEl.getBoundingClientRect();
       const nodes: TimelineNode[] = [];
       allMessagesRef.current.forEach((message, index) => {
-        const element = messageRefs.current[index];
-        if (!element || !message.hasText) return;
-        const offset = element.getBoundingClientRect().top - rect.top + scrollEl.scrollTop;
-        nodes.push({ index, offset, ratio: offset / Math.max(total, 1), message });
+        if (message.role === "user") {
+          const element = messageRefs.current[index];
+          if (!element) return;
+          const offset = element.getBoundingClientRect().top - rect.top + scrollEl.scrollTop;
+          nodes.push({ index, offset, user: message.preview, answer: "" });
+        } else if (message.hasText && nodes.length > 0) {
+          nodes[nodes.length - 1].answer = message.preview;
+        }
       });
+      const currentOffset = scrollEl.scrollTop + Math.min(scrollEl.clientHeight * 0.25, 160);
+      const activeIndex = nodes.findLastIndex((node) => node.offset <= currentOffset);
       setLayout({
         nodes,
-        top: scrollEl.scrollTop / Math.max(total, 1),
-        height: scrollEl.clientHeight / Math.max(total, 1),
+        activeIndex: Math.max(0, activeIndex),
         visible: total > scrollEl.clientHeight + 20,
       });
     };
@@ -71,73 +75,37 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
       observer.disconnect();
       scrollEl.removeEventListener("scroll", schedule);
     };
-  }, [scrollContainer, messageRefs, allMessages.length]);
+  }, [scrollContainer, messageRefs, allMessages]);
 
-  const scrub = useCallback(
-    (clientY: number, offset: number) => {
-      const scrollEl = scrollContainer.current;
-      const track = trackRef.current;
-      if (!scrollEl || !track) return;
-      const rect = track.getBoundingClientRect();
-      const ratio = (clientY - rect.top) / rect.height - offset;
-      scrollEl.scrollTop = Math.max(
-        0,
-        Math.min(scrollEl.scrollHeight - scrollEl.clientHeight, ratio * scrollEl.scrollHeight),
-      );
-    },
-    [scrollContainer],
-  );
-
-  const preview = layout.nodes.find((node) => node.index === previewIndex);
+  const preview = layout.nodes.find((node) => node.index === previewState?.index);
+  const showPreview = (index: number, element: HTMLElement) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const rect = element.getBoundingClientRect();
+    setPreviewState({ index, top: rect.top + rect.height / 2 - nav.getBoundingClientRect().top });
+  };
 
   return (
     <nav
+      ref={navRef}
       className="chat-timeline"
       style={{ visibility: layout.visible ? "visible" : "hidden" }}
       aria-label={t("conversationTimeline", "Conversation timeline")}
     >
-      <div
-        ref={trackRef}
-        className="chat-timeline-track"
-        onPointerDown={(event) => {
-          if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
-          const rect = event.currentTarget.getBoundingClientRect();
-          const ratio = (event.clientY - rect.top) / rect.height;
-          const offset =
-            ratio >= layout.top && ratio <= layout.top + layout.height ? ratio - layout.top : layout.height / 2;
-          dragRef.current = { pointerId: event.pointerId, offset };
-          event.currentTarget.setPointerCapture(event.pointerId);
-          scrub(event.clientY, offset);
-        }}
-        onPointerMove={(event) => {
-          if (dragRef.current?.pointerId === event.pointerId) scrub(event.clientY, dragRef.current.offset);
-        }}
-        onPointerUp={() => {
-          dragRef.current = null;
-        }}
-        onPointerCancel={() => {
-          dragRef.current = null;
-        }}
-      >
+      <div className="chat-timeline-track" onScroll={() => setPreviewState(null)}>
         {historyTruncated && (
           <span
             className="chat-timeline-truncated"
             title={t("timelineLoadedHistory", "Timeline shows loaded history")}
           />
         )}
-        <div
-          className="chat-timeline-viewport"
-          style={{ top: `${layout.top * 100}%`, height: `${layout.height * 100}%` }}
-        />
-        {layout.nodes.map((node) => (
+        {layout.nodes.map((node, nodeIndex) => (
           <button
             key={node.index}
             type="button"
             className="chat-timeline-node"
-            data-role={node.message.role}
-            data-visible={node.ratio >= layout.top && node.ratio < layout.top + layout.height}
-            style={{ top: `${node.ratio * 100}%` }}
-            aria-label={`${node.message.role === "user" ? t("you", "You") : "Serphia"}: ${node.message.preview}`}
+            data-visible={nodeIndex === layout.activeIndex}
+            aria-label={`${t("you", "You")}: ${node.user}${node.answer ? `. Serphia: ${node.answer}` : ""}`}
             onClick={() => {
               const scrollEl = scrollContainer.current;
               if (scrollEl)
@@ -146,25 +114,25 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
                   behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
                 });
             }}
-            onMouseEnter={() => setPreviewIndex(node.index)}
-            onMouseLeave={() => setPreviewIndex(null)}
-            onFocus={() => setPreviewIndex(node.index)}
-            onBlur={() => setPreviewIndex(null)}
+            onMouseEnter={(event) => showPreview(node.index, event.currentTarget)}
+            onMouseLeave={() => setPreviewState(null)}
+            onFocus={(event) => showPreview(node.index, event.currentTarget)}
+            onBlur={() => setPreviewState(null)}
           >
             <span />
           </button>
         ))}
-        {preview && (
-          <div
-            className="chat-timeline-preview"
-            role="tooltip"
-            style={{ top: `clamp(0px, ${preview.ratio * 100}%, calc(100% - 72px))` }}
-          >
-            <span>{preview.message.role === "user" ? t("you", "You") : "Serphia"}</span>
-            <p>{preview.message.preview}</p>
-          </div>
-        )}
       </div>
+      {preview && previewState && (
+        <div
+          className="chat-timeline-preview"
+          role="tooltip"
+          style={{ top: `clamp(12px, ${previewState.top}px, calc(100% - 12px))` }}
+        >
+          <span>{preview.user || t("you", "You")}</span>
+          {preview.answer && <p>{preview.answer}</p>}
+        </div>
+      )}
     </nav>
   );
 }

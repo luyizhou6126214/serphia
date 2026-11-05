@@ -134,6 +134,7 @@ export type DesktopUiStatePatch = Partial<DesktopUiState>;
 /** The complete, shared preload surface exposed to the sandboxed renderer. */
 export interface PiBridge {
   platform: NodeJS.Platform;
+  showApplicationMenu: (index: number, x: number, y: number) => Promise<void>;
   isDesktop: true;
   getVersion: () => Promise<string>;
   getUpdateState: () => Promise<DesktopUpdateState>;

@@ -47,6 +47,9 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     icon: path.join(app.getAppPath(), "build", "icon.png"),
     backgroundColor: nativeTheme.shouldUseDarkColors ? DARK_BACKGROUND : LIGHT_BACKGROUND,
     show: false,
+    ...(process.platform === "win32"
+      ? { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#eee8f1", symbolColor: "#55535a", height: 44 } }
+      : {}),
     autoHideMenuBar: process.platform !== "darwin",
     webPreferences: {
       preload: resolvePreloadPath(options.runtimeMainDirectory),
@@ -56,6 +59,18 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
       webSecurity: true,
     },
   });
+  const updateTitleBarOverlay = () => {
+    if (process.platform !== "win32" || win.isDestroyed()) return;
+    const dark = nativeTheme.shouldUseDarkColors;
+    win.setTitleBarOverlay({
+      color: dark ? "#211f23" : "#eee8f1",
+      symbolColor: dark ? "#bbb7bd" : "#55535a",
+      height: 44,
+    });
+  };
+  updateTitleBarOverlay();
+  nativeTheme.on("updated", updateTitleBarOverlay);
+  win.once("closed", () => nativeTheme.removeListener("updated", updateTitleBarOverlay));
   const previewOwnerId = win.webContents.id;
   const rendererUrl = resolveRendererEntry(options.isDev, options.runtimeMainDirectory);
   const crashRecovery = new RendererCrashRecovery();

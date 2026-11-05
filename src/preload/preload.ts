@@ -54,6 +54,7 @@ if (typeof preloadLocation === "string" && isTrustedPreloadLocation(preloadLocat
 
   const bridge: PiBridge = {
     platform: process.platform,
+    showApplicationMenu: (index, x, y) => ipcRenderer.invoke("desktop:show-application-menu", index, x, y),
     isDesktop: true,
     getVersion: () => ipcRenderer.invoke("desktop:get-version"),
     getUpdateState: () => ipcRenderer.invoke("desktop:update:get-state"),

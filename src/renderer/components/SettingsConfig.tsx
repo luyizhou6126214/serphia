@@ -34,8 +34,7 @@ import type { ChatAppearancePreferences, ChatFontSize, ChatLayout } from "@share
 import { APP_WEBSITE_URL } from "@shared/app-links";
 import type { DesktopUpdateState } from "../../contract/desktop";
 import type { ManagedProcessCapability } from "../../contract/processes";
-import { APP_AUTHOR, APP_DISPLAY_NAME, APP_GITHUB_URL, APP_VERSION, PI_VERSION } from "@/lib/app-version";
-import appIconUrl from "../../../build/icon.png";
+import { APP_AUTHOR, APP_GITHUB_URL, APP_VERSION, PI_VERSION } from "@/lib/app-version";
 import { isAutoSessionTitleEnabled, setAutoSessionTitleEnabled } from "../lib/auto-session-title";
 import { getCacheWarmingStatus, setCacheWarmingMode } from "../lib/api-client";
 import { HerdrSettings } from "./herdr/HerdrSettings";
@@ -232,11 +231,6 @@ export function SettingsConfig({
     description: string;
   }[];
   const currentTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
-  const splitPanel =
-    activeTab === "models" ||
-    activeTab === "mcp" ||
-    activeTab === "tools" ||
-    ((activeTab === "skills" || activeTab === "plugins") && Boolean(cwd));
 
   return (
     <div
@@ -321,36 +315,6 @@ export function SettingsConfig({
       </aside>
 
       <main className="settings-page-main" data-settings-group={currentTab.group}>
-        <header className="settings-page-main-heading" data-split={splitPanel || undefined}>
-          <div className="settings-page-heading-inner">
-            <div className="settings-page-heading-icon" aria-hidden="true">
-              {activeTab === "about" ? <img src={appIconUrl} alt="" /> : <currentTab.icon />}
-            </div>
-            <div className="settings-page-heading-copy">
-              <div className="settings-page-heading-title">
-                <h1>{currentTab.label}</h1>
-                {activeTab === "about" && (
-                  <span>
-                    {APP_DISPLAY_NAME} v{APP_VERSION}
-                  </span>
-                )}
-              </div>
-              <p>{currentTab.description}</p>
-            </div>
-            <svg className="settings-page-heading-motif" viewBox="0 0 296 112" fill="none" aria-hidden="true">
-              <g stroke="currentColor">
-                <path d="M80 112V80H160V40H240V0M120 112V100H200V60H280V0M240 112V80H296" />
-                <path d="M0 80H296M0 40H296M160 0V112M200 0V112M280 0V112" opacity=".3" />
-              </g>
-              <g fill="currentColor">
-                <circle cx="160" cy="40" r="2.5" />
-                <circle cx="200" cy="60" r="2.5" />
-                <circle cx="240" cy="80" r="2.5" />
-                <circle cx="280" cy="40" r="2" />
-              </g>
-            </svg>
-          </div>
-        </header>
         <div
           id="settings-tabpanel"
           role="tabpanel"
