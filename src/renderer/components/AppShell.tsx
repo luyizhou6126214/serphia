@@ -886,6 +886,7 @@ export function AppShell({
   );
 
   const isWindows = window.piBridge?.platform === "win32";
+  const isMac = window.piBridge?.platform === "darwin";
   const sessionHeader = (
     <>
       <div
@@ -982,7 +983,7 @@ export function AppShell({
         }
       }
     `}</style>
-      <div className={`app-frame${isWindows ? " is-windows" : ""}`}>
+      <div className={`app-frame${isWindows ? " is-windows" : ""}${isMac ? " is-macos" : ""}`}>
         <header className="app-topbar">
           <div className={`app-topbar-navigation${sidebarOpen && !isMobile ? " with-sidebar" : ""}`}>
             <button

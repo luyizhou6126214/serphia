@@ -49,7 +49,9 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     show: false,
     ...(process.platform === "win32"
       ? { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#eee8f1", symbolColor: "#55535a", height: 44 } }
-      : {}),
+      : process.platform === "darwin"
+        ? { titleBarStyle: "hidden" as const, trafficLightPosition: { x: 14, y: 14 } }
+        : {}),
     autoHideMenuBar: process.platform !== "darwin",
     webPreferences: {
       preload: resolvePreloadPath(options.runtimeMainDirectory),

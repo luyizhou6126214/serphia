@@ -4307,6 +4307,24 @@ html.dark .composer-menu {
   }
 }
 
+/* macOS integrates the native traffic lights into the application toolbar. */
+.is-macos .app-topbar {
+  -webkit-app-region: drag;
+}
+.is-macos .app-topbar > :not(.app-topbar-title) {
+  -webkit-app-region: no-drag;
+}
+.is-macos .app-topbar-navigation {
+  box-sizing: border-box;
+  width: 180px;
+  padding-left: 78px;
+}
+@media (min-width: 641px) {
+  .is-macos .app-topbar-navigation.with-sidebar {
+    width: 292px;
+  }
+}
+
 /* Windows uses the first row as the draggable native title bar. */
 .is-windows .app-topbar {
   -webkit-app-region: drag;
