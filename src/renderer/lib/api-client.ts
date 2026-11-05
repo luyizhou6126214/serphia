@@ -195,6 +195,10 @@ export async function getSessionEntryContent(id: string, entryId: string, blockI
   return call("sessions.entryContent", { id, entryId, blockIndex });
 }
 
+export async function getSessionTrajectoryContext(id: string, leafId?: string) {
+  return call("sessions.trajectoryContext", { id, leafId });
+}
+
 export async function newAgent(params: ApiParams<"agent.new">) {
   return call("agent.new", params);
 }

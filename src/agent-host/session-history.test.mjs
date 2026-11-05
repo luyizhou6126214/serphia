@@ -2,11 +2,16 @@ import { importTestBundle } from "#test-bundle";
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
-const { buildSessionHistoryPage, decodeHistoryCursor, readSessionEntryContent, StaleHistoryCursorError } =
-  await importTestBundle("src/agent-host/session-history", {
-    packages: "external",
-    entryPoints: [path.join(import.meta.dirname, "session-history.ts")],
-  });
+const {
+  buildSessionHistoryPage,
+  buildTrajectoryContext,
+  decodeHistoryCursor,
+  readSessionEntryContent,
+  StaleHistoryCursorError,
+} = await importTestBundle("src/agent-host/session-history", {
+  packages: "external",
+  entryPoints: [path.join(import.meta.dirname, "session-history.ts")],
+});
 
 const timestamp = "2026-08-06T00:00:00.000Z";
 
@@ -36,6 +41,40 @@ function toolResult(toolCallId, text) {
     message: { role: "toolResult", toolCallId, content: [{ type: "text", text }], timestamp: 2 },
   };
 }
+
+test("trajectory context projects system prompts, custom context and context edits only", () => {
+  const entries = chain([
+    {
+      type: "message",
+      message: {
+        role: "system",
+        content: "base",
+        sections: { preamble: "You are an agent.", tools: "<tools></tools>", empty: "" },
+      },
+    },
+    { type: "custom", customType: "runtime-context", data: { cwd: "E:\\code" } },
+    { type: "custom", customType: "pi-desktop-channel-source", data: { runId: "hidden" } },
+    { type: "context_edit", targetId: "target-1", replacement: { content: "replacement" } },
+    user("hello"),
+  ]);
+
+  const context = buildTrajectoryContext(entries);
+  assert.deepEqual(
+    context.map((entry) => entry.kind),
+    ["system", "context", "context"],
+  );
+  assert.equal(context[0].title, "system");
+  assert.deepEqual(context[0].sections, ["preamble", "tools"]);
+  assert.match(context[0].text, /base/);
+  assert.match(context[0].text, /## preamble/);
+  assert.doesNotMatch(context[0].text, /## empty/);
+  assert.equal(context[1].title, "runtime-context");
+  assert.match(context[1].text, /E:\\\\code/);
+  assert.equal(context[2].title, "context_edit");
+  assert.match(context[2].text, /target-1/);
+  assert.match(context[2].text, /replacement/);
+  assert.deepEqual(buildTrajectoryContext(entries, null), []);
+});
 
 test("history pages preserve complete turns and reconstruct the full display history", () => {
   const entries = chain([

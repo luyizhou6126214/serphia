@@ -1,0 +1,52 @@
+.chat-width-handle {
+  position: absolute;
+  bottom: 0;
+  z-index: 20;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  --chat-width-handle-y: 50%;
+}
+
+.chat-width-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    transparent calc(var(--chat-width-handle-y, 50%) - 34px),
+    color-mix(in srgb, var(--text-dim) 58%, transparent) calc(var(--chat-width-handle-y, 50%) - 7px),
+    color-mix(in srgb, var(--text-dim) 58%, transparent) calc(var(--chat-width-handle-y, 50%) + 7px),
+    transparent calc(var(--chat-width-handle-y, 50%) + 34px)
+  );
+  filter: blur(0.35px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.chat-width-handle[data-side="left"]::after {
+  right: 0;
+}
+
+.chat-width-handle[data-side="right"]::after {
+  left: 0;
+}
+
+.chat-width-handle:hover::after,
+.chat-width-handle[data-dragging="true"]::after {
+  opacity: 1;
+}
+
+.chat-width-handle[data-dragging="true"] {
+  z-index: 30;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-width-handle::after {
+    transition: none;
+  }
+}

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { abortedAssistantEntryIds } from "./agent-settlement";
-import type { HistoryWindow, PagedContextInfo } from "../contract/types";
+import type { HistoryWindow, PagedContextInfo, TrajectoryContextEntry } from "../contract/types";
 import type {
   AgentMessage,
   DeferredContentRef,
@@ -93,6 +93,106 @@ function buildEntryPath(entries: SessionEntry[], leafId?: string | null): Sessio
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
   return path.reverse();
+}
+
+const CONTEXT_PREVIEW_BYTES = 2 * 1024;
+const CONTEXT_DETAIL_BYTES = 64 * 1024;
+const INTERNAL_CUSTOM_TYPES = new Set(["pi-desktop-channel-source", "pi-desktop-channel-source-cancelled"]);
+
+function boundedUtf8(text: string, maxBytes: number): string {
+  const buffer = Buffer.from(text, "utf8");
+  if (buffer.length <= maxBytes) return text;
+  let preview = buffer.subarray(0, maxBytes).toString("utf8");
+  if (preview.endsWith("�")) preview = preview.slice(0, -1);
+  return `${preview}\n\n… [truncated]`;
+}
+
+function entryTime(timestamp: string): number | undefined {
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function firstNonEmptyLine(text: string): string {
+  return (
+    text
+      .split(/\r?\n/)
+      .find((line) => line.trim().length > 0)
+      ?.trim() ?? ""
+  );
+}
+
+function serializeCustomData(data: unknown): string {
+  try {
+    const serialized = JSON.stringify(data, null, 2);
+    return typeof serialized === "string" ? serialized : String(data);
+  } catch {
+    return String(data);
+  }
+}
+
+/**
+ * Project persisted context records that do not map to chat messages: system
+ * prompts, custom context entries, and context edits. Compaction and
+ * custom_message records already arrive through the message history.
+ */
+export function buildTrajectoryContext(entries: SessionEntry[], leafId?: string | null): TrajectoryContextEntry[] {
+  const path = buildEntryPath(entries, leafId);
+  const result: TrajectoryContextEntry[] = [];
+  for (const entry of path) {
+    if (entry.type === "message" && entry.message.role === "system") {
+      const message = entry.message;
+      const sections = message.sections
+        ? Object.entries(message.sections)
+            .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+            .map(([key, value]) => ({ key, value: value as string }))
+        : [];
+      const sectionText = sections.map(({ key, value }) => `## ${key}\n${value}`).join("\n\n");
+      const text = [message.content, sectionText].filter((part) => part.trim().length > 0).join("\n\n");
+      if (!text) continue;
+      result.push({
+        entryId: entry.id,
+        kind: "system",
+        timestamp: entryTime(entry.timestamp),
+        title: "system",
+        preview: firstNonEmptyLine(text) || "system",
+        text: boundedUtf8(text, CONTEXT_DETAIL_BYTES),
+        ...(sections.length > 0 ? { sections: sections.map(({ key }) => key) } : {}),
+      });
+      continue;
+    }
+    if (entry.type === "custom") {
+      if (INTERNAL_CUSTOM_TYPES.has(entry.customType)) continue;
+      const text = entry.data === undefined || entry.data === null ? entry.customType : serializeCustomData(entry.data);
+      result.push({
+        entryId: entry.id,
+        kind: "context",
+        timestamp: entryTime(entry.timestamp),
+        title: entry.customType,
+        preview: boundedUtf8(firstNonEmptyLine(text) || entry.customType, CONTEXT_PREVIEW_BYTES),
+        text: boundedUtf8(text, CONTEXT_DETAIL_BYTES),
+      });
+      continue;
+    }
+    if (entry.type === "context_edit") {
+      const replacement = entry.replacement?.content;
+      const replacementText =
+        typeof replacement === "string"
+          ? replacement
+          : Array.isArray(replacement)
+            ? serializeCustomData(replacement)
+            : "";
+      const text = [`Target: ${entry.targetId}`, replacementText].filter((part) => part.trim().length > 0).join("\n\n");
+      result.push({
+        entryId: entry.id,
+        kind: "context",
+        timestamp: entryTime(entry.timestamp),
+        title: "context_edit",
+        preview: boundedUtf8(`Context edit: ${entry.targetId}`, CONTEXT_PREVIEW_BYTES),
+        text: boundedUtf8(text, CONTEXT_DETAIL_BYTES),
+      });
+    }
+  }
+  return result;
 }
 
 function deriveContextSettings(path: SessionEntry[]): Pick<PagedContextInfo, "thinkingLevel" | "model"> {

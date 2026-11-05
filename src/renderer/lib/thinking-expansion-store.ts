@@ -13,6 +13,18 @@ export class ThinkingExpansionStore {
     return () => this.listeners.delete(listener);
   };
 
+  has(key: string): boolean {
+    return this.values.has(key);
+  }
+
+  set(key: string, expanded: boolean): void {
+    this.values.delete(key);
+    this.values.set(key, expanded);
+    this.defaultExpanded = expanded;
+    this.prune();
+    this.emit();
+  }
+
   getSnapshot = (key: string): boolean => {
     if (this.values.has(key)) return this.values.get(key)!;
     // Capture the default on first observation. Later toggles may change the

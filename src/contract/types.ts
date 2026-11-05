@@ -70,6 +70,25 @@ export interface EntryContentResult {
   deferredContent: DeferredContentRef;
 }
 
+/** Context-only session records projected for the trajectory ledger. */
+export interface TrajectoryContextEntry {
+  entryId: string;
+  kind: "system" | "context";
+  timestamp?: number;
+  /** `system`, `context_edit`, or a persisted custom-entry type. */
+  title: string;
+  preview: string;
+  /** Bounded readable content; system sections are retained as headings. */
+  text: string;
+  /** System-prompt section names, when the entry is a system message. */
+  sections?: string[];
+}
+
+export interface TrajectoryContextResult {
+  entries: TrajectoryContextEntry[];
+  historyRevision: string;
+}
+
 export interface SessionRuntimeState {
   model?: { provider: string; id: string };
   agentSettled?: { aborted: boolean };

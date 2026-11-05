@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { useI18n } from "@/i18n";
 import type { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
+import { workStepDisplayPolicy, type WorkStepDisplay } from "@shared/work-step-display";
 
 interface Props {
   messageCount: number;
@@ -8,10 +9,22 @@ interface Props {
   children: ReactNode;
   stateKey: string;
   expansionStore: ThinkingExpansionStore;
+  workStepDisplay: WorkStepDisplay;
 }
 
-export function ProcessDetailsGroup({ messageCount, toolCallCount, children, stateKey, expansionStore }: Props) {
-  const getSnapshot = useMemo(() => () => expansionStore.getSnapshot(stateKey), [expansionStore, stateKey]);
+export function ProcessDetailsGroup({
+  messageCount,
+  toolCallCount,
+  children,
+  stateKey,
+  expansionStore,
+  workStepDisplay,
+}: Props) {
+  const policy = workStepDisplayPolicy(workStepDisplay);
+  const getSnapshot = useMemo(
+    () => () => (expansionStore.has(stateKey) ? expansionStore.getSnapshot(stateKey) : policy.defaultProcessExpanded),
+    [expansionStore, policy.defaultProcessExpanded, stateKey],
+  );
   const expanded = useSyncExternalStore(expansionStore.subscribe, getSnapshot, getSnapshot);
   const { language, t } = useI18n();
   const parts = [
@@ -28,13 +41,21 @@ export function ProcessDetailsGroup({ messageCount, toolCallCount, children, sta
     );
   }
 
+  if (!policy.groupProcess) {
+    return (
+      <div className="process-details-group" data-ungrouped="true">
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="process-details-group" data-expanded={expanded}>
       <button
         className="process-details-toggle"
         type="button"
         aria-expanded={expanded}
-        onClick={() => expansionStore.toggle(stateKey)}
+        onClick={() => expansionStore.set(stateKey, !expanded)}
         title={
           expanded
             ? t("collapseProcessDetails", "Collapse process details")

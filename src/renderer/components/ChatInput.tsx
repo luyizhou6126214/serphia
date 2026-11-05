@@ -25,6 +25,7 @@ import React, {
   KeyboardEvent,
 } from "react";
 import { scaledChatFont } from "@/lib/chat-appearance";
+import { CHAT_COLUMN_PADDING, CHAT_INPUT_RIGHT_PADDING } from "@/lib/chat-layout";
 import type { CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import { buildAtInsertText, extractAtQuery, type AtQueryMatch, type FileIndexEntry } from "@/lib/file-fuzzy";
 import { useFileSuggestions } from "@/hooks/useFileSuggestions";
@@ -726,8 +727,9 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       style={{
         flexShrink: 0,
         background: "transparent",
-        padding: "12px 16px",
-        paddingRight: isMobile || welcome ? 16 : 48, // align the conversation dock with the message column
+        padding: `12px ${CHAT_COLUMN_PADDING}px`,
+        // Keep the composer column on the message column by reserving the same minimap gutter.
+        paddingRight: isMobile || welcome ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING,
       }}
     >
       {/* Hidden file input */}

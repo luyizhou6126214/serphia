@@ -3996,6 +3996,20 @@ html.dark .composer-menu {
 .process-details-body :is(.chat-message-model, .chat-message-meta) {
   display: none;
 }
+.process-details-group[data-ungrouped="true"] {
+  margin: 0 0 22px;
+  padding: 2px 0 2px 18px;
+  border-left: 1px solid var(--border);
+}
+.process-details-group[data-ungrouped="true"] .chat-message {
+  margin-bottom: 12px;
+}
+.process-details-group[data-ungrouped="true"] .chat-message:last-child {
+  margin-bottom: 0;
+}
+.process-details-group[data-ungrouped="true"] :is(.chat-message-model, .chat-message-meta) {
+  display: none;
+}
 .chat-message-assistant:has(.execution-step):not(:has(.chat-assistant-prose)) {
   margin-bottom: 14px;
 }

@@ -1,3 +1,5 @@
+import { DEFAULT_WORK_STEP_DISPLAY, isWorkStepDisplay, type WorkStepDisplay } from "./work-step-display.ts";
+
 export const CHAT_FONT_SIZES = ["small", "standard", "large", "extra-large"] as const;
 export const CHAT_LAYOUTS = ["fixed", "wide"] as const;
 export const CHAT_ASSISTANT_WIDTHS = ["comfortable", "full"] as const;
@@ -9,6 +11,8 @@ export type ChatAssistantWidth = (typeof CHAT_ASSISTANT_WIDTHS)[number];
 export interface ChatAppearancePreferences {
   fontSize: ChatFontSize;
   layout: ChatLayout;
+  /** How much work-step detail the transcript unfolds by default. */
+  workStepDisplay: WorkStepDisplay;
   /** Legacy saved preference; replies now always fill the conversation column. */
   assistantWidth?: ChatAssistantWidth;
 }
@@ -16,6 +20,7 @@ export interface ChatAppearancePreferences {
 export const DEFAULT_CHAT_APPEARANCE: ChatAppearancePreferences = Object.freeze({
   fontSize: "standard",
   layout: "fixed",
+  workStepDisplay: DEFAULT_WORK_STEP_DISPLAY,
   assistantWidth: "comfortable",
 });
 
@@ -47,6 +52,7 @@ export function isChatAppearancePreferences(value: unknown): value is ChatAppear
   return (
     isChatFontSize(record.fontSize) &&
     isChatLayout(record.layout) &&
+    (record.workStepDisplay === undefined || isWorkStepDisplay(record.workStepDisplay)) &&
     (record.assistantWidth === undefined || isChatAssistantWidth(record.assistantWidth))
   );
 }
@@ -58,6 +64,7 @@ export function normalizeChatAppearance(value: unknown): ChatAppearancePreferenc
     fontSize: isChatFontSize(record.fontSize) ? record.fontSize : DEFAULT_CHAT_APPEARANCE.fontSize,
     layout:
       record.layout === "full" ? "wide" : isChatLayout(record.layout) ? record.layout : DEFAULT_CHAT_APPEARANCE.layout,
+    workStepDisplay: isWorkStepDisplay(record.workStepDisplay) ? record.workStepDisplay : DEFAULT_WORK_STEP_DISPLAY,
     assistantWidth: isChatAssistantWidth(record.assistantWidth) ? record.assistantWidth : "comfortable",
   };
 }

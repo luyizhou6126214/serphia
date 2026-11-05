@@ -23,6 +23,7 @@ import type {
   SessionDetail,
   SessionInfo,
   TestResult,
+  TrajectoryContextResult,
   WorktreeInfo,
 } from "./types";
 import type {
@@ -246,6 +247,10 @@ export interface Api {
   "sessions.entryContent": {
     params: { id: string; entryId: string; blockIndex?: number };
     result: EntryContentResult;
+  };
+  "sessions.trajectoryContext": {
+    params: { id: string; leafId?: string };
+    result: TrajectoryContextResult;
   };
   "sessions.export": {
     params: { id: string; format?: "md" | "json" | "bundle" };

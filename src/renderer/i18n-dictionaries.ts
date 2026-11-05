@@ -5,6 +5,7 @@ import { enUS as browserEnUS, zhCN as browserZhCN, zhTW as browserZhTW } from ".
 import { enUS as channelsEnUS, zhCN as channelsZhCN, zhTW as channelsZhTW } from "./i18n/channels.ts";
 import { enUS as commonEnUS, zhCN as commonZhCN, zhTW as commonZhTW } from "./i18n/common.ts";
 import { enUS as composerEnUS, zhCN as composerZhCN, zhTW as composerZhTW } from "./i18n/composer.ts";
+import { enUS as contextEnUS, zhCN as contextZhCN, zhTW as contextZhTW } from "./i18n/context.ts";
 import { enUS as filesEnUS, zhCN as filesZhCN, zhTW as filesZhTW } from "./i18n/files.ts";
 import { enUS as executionsEnUS, zhCN as executionsZhCN, zhTW as executionsZhTW } from "./i18n/executions.ts";
 import { enUS as mcpEnUS, zhCN as mcpZhCN, zhTW as mcpZhTW } from "./i18n/mcp.ts";
@@ -13,6 +14,7 @@ import { enUS as modelsEnUS, zhCN as modelsZhCN, zhTW as modelsZhTW } from "./i1
 import { enUS as resourcesEnUS, zhCN as resourcesZhCN, zhTW as resourcesZhTW } from "./i18n/resources.ts";
 import { enUS as sessionEnUS, zhCN as sessionZhCN, zhTW as sessionZhTW } from "./i18n/session.ts";
 import { enUS as settingsEnUS, zhCN as settingsZhCN, zhTW as settingsZhTW } from "./i18n/settings.ts";
+import { enUS as trajectoryEnUS, zhCN as trajectoryZhCN, zhTW as trajectoryZhTW } from "./i18n/trajectory.ts";
 
 export const enUS = mergeDictionaries(
   routingEnUS,
@@ -20,6 +22,7 @@ export const enUS = mergeDictionaries(
   channelsEnUS,
   commonEnUS,
   composerEnUS,
+  contextEnUS,
   filesEnUS,
   executionsEnUS,
   mcpEnUS,
@@ -28,6 +31,7 @@ export const enUS = mergeDictionaries(
   resourcesEnUS,
   sessionEnUS,
   settingsEnUS,
+  trajectoryEnUS,
 );
 export const zhCN = mergeDictionaries(
   routingZhCN,
@@ -35,6 +39,7 @@ export const zhCN = mergeDictionaries(
   channelsZhCN,
   commonZhCN,
   composerZhCN,
+  contextZhCN,
   filesZhCN,
   executionsZhCN,
   mcpZhCN,
@@ -43,6 +48,7 @@ export const zhCN = mergeDictionaries(
   resourcesZhCN,
   sessionZhCN,
   settingsZhCN,
+  trajectoryZhCN,
 );
 export const zhTW = mergeDictionaries(
   routingZhTW,
@@ -50,6 +56,7 @@ export const zhTW = mergeDictionaries(
   channelsZhTW,
   commonZhTW,
   composerZhTW,
+  contextZhTW,
   filesZhTW,
   executionsZhTW,
   mcpZhTW,
@@ -58,6 +65,7 @@ export const zhTW = mergeDictionaries(
   resourcesZhTW,
   sessionZhTW,
   settingsZhTW,
+  trajectoryZhTW,
 );
 
 export const dictionaries = { "en-US": enUS, "zh-CN": zhCN, "zh-TW": zhTW } satisfies Record<

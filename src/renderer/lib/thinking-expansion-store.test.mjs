@@ -28,6 +28,18 @@ test("thinking expansion uses stable ids and synchronizes subscribers without st
   unsubscribe();
 });
 
+test("explicit set records a per-key override without changing unrelated defaults", () => {
+  const store = new ThinkingExpansionStore(4);
+  assert.equal(store.has("group-a"), false);
+  store.set("group-a", true);
+  assert.equal(store.has("group-a"), true);
+  assert.equal(store.getSnapshot("group-a"), true);
+  store.set("group-a", false);
+  assert.equal(store.has("group-a"), true);
+  assert.equal(store.getSnapshot("group-a"), false);
+  assert.equal(store.getSnapshot("group-b"), false);
+});
+
 test("registry isolates sessions, bounds retained stores, and clears deleted sessions", () => {
   const registry = new ThinkingExpansionRegistry(2, 5);
   const first = registry.get("session-1");

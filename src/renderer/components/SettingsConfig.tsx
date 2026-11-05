@@ -31,6 +31,7 @@ import { BrowserSettings } from "./browser/BrowserSettings";
 import { ChannelsConfig } from "./channels/ChannelsConfig";
 import type { ChannelsSnapshot } from "@shared/channel-types";
 import type { ChatAppearancePreferences, ChatFontSize, ChatLayout } from "@shared/chat-appearance";
+import type { WorkStepDisplay } from "@shared/work-step-display";
 import type { DesktopUpdateState } from "../../contract/desktop";
 import type { ManagedProcessCapability } from "../../contract/processes";
 import { APP_AUTHOR, APP_GITHUB_URL, APP_VERSION, PI_VERSION } from "@/lib/app-version";
@@ -931,6 +932,7 @@ function GeneralSettings({
   const cacheWarmingControlId = useId();
   const chatFontSizeControlId = useId();
   const chatLayoutControlId = useId();
+  const workStepDisplayControlId = useId();
   const themeControlId = useId();
   useEffect(() => {
     let disposed = false;
@@ -1209,7 +1211,7 @@ function GeneralSettings({
         <p style={{ margin: "6px 0 16px", fontSize: 12, lineHeight: 1.6, color: "var(--text-dim)" }}>
           {t(
             "conversationSettingsDescription",
-            "Control automatic titles, chat text size, and the conversation reading width.",
+            "Control automatic titles, chat text size, conversation reading width, and work-step detail.",
           )}
         </p>
         <div style={{ display: "grid", gap: 10 }}>
@@ -1310,6 +1312,28 @@ function GeneralSettings({
               <option value="wide">{t("chatLayoutWide", "Expanded width")}</option>
             </select>
           </SettingRow>
+          <SettingRow label={t("workStepDisplay", "Work steps")} controlId={workStepDisplayControlId}>
+            <select
+              id={workStepDisplayControlId}
+              value={chatAppearance.workStepDisplay}
+              disabled={chatAppearanceSaving}
+              onChange={(event) => {
+                void saveChatAppearance({
+                  ...chatAppearance,
+                  workStepDisplay: event.target.value as WorkStepDisplay,
+                });
+              }}
+              style={{ ...selectStyle, cursor: chatAppearanceSaving ? "wait" : "pointer" }}
+            >
+              <option value="compact">{t("workStepDisplayCompact", "Compact")}</option>
+              <option value="standard">{t("workStepDisplayStandard", "Standard")}</option>
+              <option value="detailed">{t("workStepDisplayDetailed", "Detailed")}</option>
+              <option value="verbose">{t("workStepDisplayVerbose", "Verbose")}</option>
+            </select>
+          </SettingRow>
+          <p style={{ margin: "-4px 0 10px", fontSize: 12, lineHeight: 1.55, color: "var(--text-dim)" }}>
+            {t("workStepDisplayDescription", "Choose how much tool-call detail to show in the conversation.")}
+          </p>
         </div>
         {chatAppearanceError && (
           <p role="alert" style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.55, color: "var(--danger)" }}>

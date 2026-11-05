@@ -1112,6 +1112,7 @@ export function AppShell({
                     processDetailsExpansionStore={processDetailsExpansionRegistryRef.current.get(
                       selectedSession?.id ?? `new:${effectiveNewSessionCwd ?? "untitled"}`,
                     )}
+                    workStepDisplay={chatAppearance.workStepDisplay}
                   />
                 </SessionProfiler>
               ) : defaultSessionError ? (

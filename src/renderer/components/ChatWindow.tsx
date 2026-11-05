@@ -15,19 +15,26 @@ import type {
   SessionTreeNode,
 } from "@/lib/types";
 import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
+import { countToolCalls, hasDisplayableProcessMessage } from "@/lib/chat-process";
 import { scaledChatFont } from "@/lib/chat-appearance";
+import { CHAT_COLUMN_PADDING, CHAT_INPUT_RIGHT_PADDING, CHAT_MINIMAP_WIDTH } from "@/lib/chat-layout";
 import {
   countToolCallBlocks,
-  getDisplayableAssistantBlocks,
   isAssistantFailure,
   isAssistantAborted,
   splitFinalAssistantBlocks,
 } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
+import { LiveProcessRows } from "./LiveProcessRows";
 import { ProcessDetailsGroup } from "./ProcessDetailsGroup";
 import { SessionProfiler } from "./SessionProfiler";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs, type ChatMinimapMessage } from "./ChatMinimap";
+import type { WorkStepDisplay } from "@shared/work-step-display";
+import { SessionViewTabs, type SessionView } from "./SessionViewTabs";
+import { ChatWidthHandles } from "./ChatWidthHandles";
+import { ContextView } from "./context/ContextView";
+import { TrajectoryView } from "./trajectory/TrajectoryView";
 import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
 import { useMcpSettingsCommand } from "@/hooks/useMcpSettingsRequests";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -64,11 +71,8 @@ interface Props {
   onOpenFile?: (filePath: string) => void;
   thinkingExpansionStore: ThinkingExpansionStore;
   processDetailsExpansionStore: ThinkingExpansionStore;
+  workStepDisplay: WorkStepDisplay;
 }
-
-const CHAT_MINIMAP_WIDTH = 52;
-const CHAT_COLUMN_PADDING = 16;
-const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
 
 function toMinimapMessage(message: AgentMessage | Partial<AgentMessage>): ChatMinimapMessage | null {
   if (message.role !== "user" && message.role !== "assistant") return null;
@@ -108,23 +112,6 @@ function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endI
     if (messages[candidateIdx]?.role === "assistant") return candidateIdx;
   }
   return -1;
-}
-
-function countToolCalls(messages: AgentMessage[], indices: number[]): number {
-  let count = 0;
-  for (const idx of indices) {
-    const msg = messages[idx];
-    if (msg?.role !== "assistant") continue;
-    count += countToolCallBlocks(getDisplayableAssistantBlocks(msg as AssistantMessage));
-  }
-  return count;
-}
-
-function hasDisplayableProcessMessage(message: AgentMessage): boolean {
-  if (message.role === "assistant") {
-    return getDisplayableAssistantBlocks(message as AssistantMessage).length > 0;
-  }
-  return message.role === "custom";
 }
 
 function withAssistantBlocks(
@@ -188,9 +175,15 @@ export function ChatWindow({
   onOpenFile,
   thinkingExpansionStore,
   processDetailsExpansionStore,
+  workStepDisplay,
 }: Props) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
+  const chatRootRef = useRef<HTMLDivElement>(null);
+  const [sessionView, setSessionView] = useState<SessionView>("chat");
+  useEffect(() => {
+    setSessionView("chat");
+  }, [session?.id]);
   // Promotion keeps this view mounted; selecting another session remounts it.
   const [draftPromotionFrom] = useState(() =>
     !session && newSessionCwd !== null ? `new:${newSessionCwd}` : undefined,
@@ -219,6 +212,11 @@ export function ChatWindow({
     isCompacting,
     compactResult,
     displayModel: displayModelValue,
+    data,
+    activeLeafId,
+    contextUsage,
+    sessionStats,
+    systemPrompt,
     slashCommands,
     slashCommandsLoading,
     queuedMessages,
@@ -323,6 +321,8 @@ export function ChatWindow({
   }, [hasOlder, loadOlder, loadingOlder, messages.length, scrollContainerRef]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
+  const showSessionViews = !isEmptyNew && messages.length > 0;
+  const activeSessionView: SessionView = showSessionViews ? sessionView : "chat";
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   const chatViewportHeight = useObservedElementHeight(scrollContainerRef);
 
@@ -416,6 +416,7 @@ export function ChatWindow({
 
   return (
     <div
+      ref={chatRootRef}
       className="chat-appearance-scope relative flex h-full flex-col overflow-hidden"
       style={{ background: "var(--assistant-bg)" }}
       onDragEnter={handleDragEnter}
@@ -492,8 +493,15 @@ export function ChatWindow({
 
       {extensionCustomUi && <ExtensionCustomPanel request={extensionCustomUi} onInput={sendExtensionCustomInput} />}
 
+      {showSessionViews && <SessionViewTabs value={activeSessionView} onChange={setSessionView} />}
+
       {isEmptyNew ? (
-        <div className="relative z-[1] flex min-h-0 flex-[1_1_0] flex-col items-center justify-end overflow-y-auto px-4 pt-8">
+        <div
+          className="relative z-[1] flex min-h-0 flex-[1_1_0] flex-col items-center justify-end overflow-y-auto px-4 pt-8"
+          aria-hidden={activeSessionView !== "chat" || undefined}
+          inert={activeSessionView !== "chat" || undefined}
+          style={{ display: activeSessionView === "chat" ? undefined : "none" }}
+        >
           <div className="chat-content-column">
             <header className="chat-welcome" aria-labelledby="chat-welcome-title">
               <div className="chat-welcome-scene">
@@ -522,7 +530,15 @@ export function ChatWindow({
         </div>
       ) : (
         <>
-          <div className="chat-conversation-enter relative z-[1] flex min-h-0 flex-[1_1_0] overflow-hidden">
+          <div
+            id="session-view-chat"
+            className="chat-conversation-enter relative z-[1] flex min-h-0 flex-[1_1_0] overflow-hidden"
+            role="tabpanel"
+            aria-label={t("sessionViewChat", "Chat")}
+            aria-hidden={activeSessionView !== "chat" || undefined}
+            inert={activeSessionView !== "chat" || undefined}
+            style={{ display: activeSessionView === "chat" ? undefined : "none" }}
+          >
             <div
               style={{
                 position: "absolute",
@@ -664,6 +680,7 @@ export function ChatWindow({
                                 : undefined
                             }
                             thinkingExpansionStore={thinkingExpansionStore}
+                            workStepDisplay={workStepDisplay}
                           />
                         </SessionProfiler>
                       );
@@ -703,9 +720,19 @@ export function ChatWindow({
                         endIdx === messages.length &&
                         userIdx === lastUserIdx;
                       if (isLiveTail) {
-                        for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
-                          rendered.push(renderMessage(renderIdx));
-                        }
+                        rendered.push(renderMessage(userIdx));
+                        rendered.push(
+                          <LiveProcessRows
+                            key={`process-group-live:${entryIds[userIdx] ?? userIdx}`}
+                            messages={messages}
+                            userIdx={userIdx}
+                            endIdx={endIdx}
+                            entryId={entryIds[userIdx]}
+                            expansionStore={processDetailsExpansionStore}
+                            workStepDisplay={workStepDisplay}
+                            renderMessage={renderMessage}
+                          />,
+                        );
                         idx = endIdx;
                         continue;
                       }
@@ -750,6 +777,7 @@ export function ChatWindow({
                           <ProcessDetailsGroup
                             stateKey={processGroupKey}
                             expansionStore={processDetailsExpansionStore}
+                            workStepDisplay={workStepDisplay}
                             messageCount={processCount}
                             toolCallCount={
                               countToolCalls(messages, visibleProcessIndices) +
@@ -810,6 +838,7 @@ export function ChatWindow({
                         onOpenFile={onOpenFile}
                         entryId="streaming"
                         thinkingExpansionStore={thinkingExpansionStore}
+                        workStepDisplay={workStepDisplay}
                       />
                     </SessionProfiler>
                   )}
@@ -843,6 +872,49 @@ export function ChatWindow({
         </>
       )}
 
+      {activeSessionView === "trajectory" && (
+        <div
+          id="session-view-trajectory"
+          role="tabpanel"
+          aria-label={t("sessionViewTrajectory", "Trajectory")}
+          style={{ display: "flex", flex: 1, minHeight: 0 }}
+        >
+          <TrajectoryView
+            messages={messages}
+            entryIds={entryIds}
+            runningToolCallIds={runningToolCallIds}
+            streamingMessage={streamState.streamingMessage}
+            agentRunning={agentRunning}
+            agentPhase={agentPhase}
+            hasOlder={hasOlder}
+            loadingOlder={loadingOlder}
+            onLoadOlder={loadOlder}
+            modelNames={modelNames}
+            sessionId={currentSessionId}
+            leafId={activeLeafId}
+          />
+        </div>
+      )}
+
+      {activeSessionView === "context" && (
+        <div
+          id="session-view-context"
+          role="tabpanel"
+          aria-label={t("sessionViewContext", "Context")}
+          style={{ display: "flex", flex: 1, minHeight: 0 }}
+        >
+          <ContextView
+            messages={messages}
+            contextUsage={contextUsage}
+            sessionStats={sessionStats}
+            systemPrompt={systemPrompt}
+            toolNames={data?.toolNames}
+            model={displayModelValue}
+            modelNames={modelNames}
+          />
+        </div>
+      )}
+
       <div
         className="chat-input-transition-dock relative z-[2] w-full flex-shrink-0 self-center"
         data-position={isEmptyNew ? "welcome" : "conversation"}
@@ -863,6 +935,12 @@ export function ChatWindow({
       </div>
 
       <div className="chat-input-bottom-spacer" data-expanded={isEmptyNew ? "true" : "false"} aria-hidden="true" />
+
+      <ChatWidthHandles
+        rootRef={chatRootRef}
+        visible={!isMobile && activeSessionView === "chat"}
+        top={showSessionViews ? 38 : 0}
+      />
     </div>
   );
 }

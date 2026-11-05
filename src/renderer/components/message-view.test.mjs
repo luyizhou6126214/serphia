@@ -53,6 +53,33 @@ test("a historical tool without a canonical result is not displayed as still run
   assert.doesNotMatch(html, /stream-caret/);
 });
 
+test("work-step modes control tool previews and expanded rows", () => {
+  const message = {
+    role: "assistant",
+    content: [
+      { type: "thinking", thinking: "reasoning fixture" },
+      { type: "toolCall", toolCallId: "fixture-call", toolName: "read", input: { path: "fixture.ts" } },
+      { type: "text", text: "answer" },
+    ],
+    model: "fixture-model",
+    provider: "fixture-provider",
+  };
+
+  const compact = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: "compact" }));
+  assert.doesNotMatch(compact, /fixture\.ts/);
+  assert.doesNotMatch(compact, /reasoning fixture/);
+
+  const standard = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: "standard" }));
+  assert.match(standard, /fixture\.ts/);
+  assert.match(standard, /reasoning fixture/);
+  assert.doesNotMatch(standard, /&quot;path&quot;/);
+
+  const verbose = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: "verbose" }));
+  assert.match(verbose, /fixture\.ts/);
+  assert.match(verbose, /&quot;path&quot;/);
+  assert.match(verbose, /reasoning fixture/);
+});
+
 test("keeps the user copy action without timestamp or branch actions", () => {
   const html = renderToStaticMarkup(
     createElement(MessageView, {

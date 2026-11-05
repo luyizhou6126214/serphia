@@ -29,6 +29,7 @@ import {
 import {
   buildHistoryRevision,
   buildSessionHistoryPage,
+  buildTrajectoryContext,
   decodeHistoryCursor,
   readSessionEntryContent,
   StaleHistoryCursorError,
@@ -48,6 +49,7 @@ type SessionHandlers = {
   context: NonNullable<ApiHandler["sessions.context"]>;
   contextPage: NonNullable<ApiHandler["sessions.contextPage"]>;
   entryContent: NonNullable<ApiHandler["sessions.entryContent"]>;
+  trajectoryContext: NonNullable<ApiHandler["sessions.trajectoryContext"]>;
   export: NonNullable<ApiHandler["sessions.export"]>;
   delete: NonNullable<ApiHandler["sessions.delete"]>;
   rename: NonNullable<ApiHandler["sessions.rename"]>;
@@ -284,6 +286,17 @@ export function createSessionHandlers({
           originalBytes: Buffer.byteLength(JSON.stringify(content), "utf8"),
           contentType: content.type,
         },
+      };
+    },
+    trajectoryContext: async ({ id, leafId }) => {
+      if (leafId !== undefined && (typeof leafId !== "string" || !leafId.length || leafId.length > 512))
+        throw new RpcError({ code: "BAD_REQUEST", message: "Invalid trajectory branch" });
+      const filePath = await resolveSessionPath(id);
+      if (!filePath) throw new RpcError({ code: "NOT_FOUND", message: "Session not found" });
+      const { manager, entries } = getSessionContentSnapshot(filePath);
+      return {
+        entries: buildTrajectoryContext(entries, leafId ?? manager.getLeafId()),
+        historyRevision: buildHistoryRevision(filePath, id),
       };
     },
 

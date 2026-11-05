@@ -22,6 +22,7 @@ export const enUS: Record<string, string> = {
   forkSession: "New session — creates an independent copy from here",
 
   conversationTimeline: "Conversation timeline",
+  chatWidthHandle: "Drag to resize the conversation and composer. Double-click to reset.",
   timelineLoadedHistory: "Timeline shows loaded history",
   you: "You",
   completed: "Completed",
@@ -253,6 +254,7 @@ export const zhCN: Record<string, string> = {
   forkSession: "New session — creates an independent copy from here",
 
   conversationTimeline: "会话时间轴",
+  chatWidthHandle: "拖动调整会话与输入框宽度；双击恢复默认。",
   timelineLoadedHistory: "时间轴仅显示已加载的会话记录",
   you: "你",
   completed: "已完成",
@@ -479,6 +481,7 @@ export const zhTW: Record<string, string> = {
   forkSession: "New session — creates an independent copy from here",
 
   conversationTimeline: "對話時間軸",
+  chatWidthHandle: "拖動調整會話與輸入框寬度；雙擊恢復預設。",
   timelineLoadedHistory: "時間軸僅顯示已載入的對話紀錄",
   you: "你",
   completed: "已完成",

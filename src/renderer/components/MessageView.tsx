@@ -18,6 +18,7 @@ import { useI18n } from "@/i18n";
 import { useTheme } from "@/hooks/useTheme";
 import { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
 import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
+import { workStepDisplayPolicy, type WorkStepDisplay, type WorkStepDisplayPolicy } from "@shared/work-step-display";
 import type {
   AgentMessage,
   UserMessage,
@@ -50,6 +51,7 @@ interface Props {
   prevTimestamp?: number;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   thinkingExpansionStore?: ThinkingExpansionStore;
+  workStepDisplay?: WorkStepDisplay;
 }
 
 export const MessageView = memo(function MessageView({
@@ -71,6 +73,7 @@ export const MessageView = memo(function MessageView({
   prevTimestamp,
   onLoadDeferredContent,
   thinkingExpansionStore,
+  workStepDisplay,
 }: Props) {
   if (message.role === "user") {
     return (
@@ -104,6 +107,7 @@ export const MessageView = memo(function MessageView({
         onLoadDeferredContent={onLoadDeferredContent}
         entryId={entryId}
         thinkingExpansionStore={thinkingExpansionStore}
+        workStepDisplay={workStepDisplay}
       />
     );
   }
@@ -509,6 +513,7 @@ function AssistantMessageView({
   onLoadDeferredContent,
   entryId,
   thinkingExpansionStore,
+  workStepDisplay,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -523,8 +528,10 @@ function AssistantMessageView({
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   entryId?: string;
   thinkingExpansionStore?: ThinkingExpansionStore;
+  workStepDisplay?: WorkStepDisplay;
 }) {
   const { t } = useI18n();
+  const workStepPolicy = workStepDisplayPolicy(workStepDisplay);
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const blockItems = (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
@@ -718,6 +725,7 @@ function AssistantMessageView({
             onLoadDeferredContent={onLoadDeferredContent}
             thinkingStateKey={`${entryId ?? "assistant"}:${originalIndex}`}
             thinkingExpansionStore={thinkingExpansionStore}
+            workStepPolicy={workStepPolicy}
           />
         ))}
         <DeferredContentActions
@@ -769,6 +777,7 @@ function BlockView({
   onLoadDeferredContent,
   thinkingStateKey,
   thinkingExpansionStore,
+  workStepPolicy,
 }: {
   block: AssistantContentBlock;
   toolResults?: ReadonlyMap<string, ToolResultMessage>;
@@ -781,6 +790,7 @@ function BlockView({
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   thinkingStateKey: string;
   thinkingExpansionStore?: ThinkingExpansionStore;
+  workStepPolicy: WorkStepDisplayPolicy;
 }) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
@@ -795,6 +805,8 @@ function BlockView({
           stateKey={thinkingStateKey}
           store={thinkingExpansionStore}
           isStreaming={isStreaming}
+          defaultExpanded={workStepPolicy.defaultThinkingExpanded}
+          showPreview={workStepPolicy.showStepPreview}
         />
         <DeferredContentActions content={[block]} onLoad={onLoadDeferredContent} />
       </>
@@ -812,6 +824,8 @@ function BlockView({
           duration={duration}
           running={runningToolCallIds?.has(tc.toolCallId)}
           onLoadDeferredContent={onLoadDeferredContent}
+          defaultExpanded={workStepPolicy.defaultToolExpanded}
+          showPreview={workStepPolicy.showStepPreview}
         />
         <DeferredContentActions content={[block]} onLoad={onLoadDeferredContent} />
       </>
@@ -847,20 +861,28 @@ function ThinkingBlock({
   stateKey,
   store,
   isStreaming,
+  defaultExpanded = false,
+  showPreview = false,
 }: {
   block: ThinkingContent;
   duration?: number;
   stateKey: string;
   store?: ThinkingExpansionStore;
   isStreaming?: boolean;
+  defaultExpanded?: boolean;
+  showPreview?: boolean;
 }) {
   const localStoreRef = useRef<ThinkingExpansionStore | null>(null);
   if (!localStoreRef.current) localStoreRef.current = new ThinkingExpansionStore(1);
   const stateStore = store ?? localStoreRef.current;
-  const getSnapshot = useMemo(() => () => stateStore.getSnapshot(stateKey), [stateKey, stateStore]);
+  const getSnapshot = useMemo(
+    () => () => (stateStore.has(stateKey) ? stateStore.getSnapshot(stateKey) : defaultExpanded),
+    [defaultExpanded, stateKey, stateStore],
+  );
   const expanded = useSyncExternalStore(stateStore.subscribe, getSnapshot, getSnapshot);
   const { t } = useI18n();
-  const toggleExpanded = () => stateStore.toggle(stateKey);
+  const toggleExpanded = () => stateStore.set(stateKey, !expanded);
+  const preview = block.thinking.replace(/\s+/g, " ").trim().slice(0, 140);
   return (
     <div
       className="execution-step thinking-step"
@@ -870,6 +892,7 @@ function ThinkingBlock({
       <button type="button" className="execution-step-toggle" onClick={toggleExpanded} aria-expanded={expanded}>
         <Brain size={15} strokeWidth={1.6} className="execution-step-icon" aria-hidden="true" />
         <span className="execution-step-name">{t("thinkingLabel", "thinking")}</span>
+        {!expanded && showPreview && preview && <span className="execution-step-preview">{preview}</span>}
         {duration !== undefined && <span className="execution-step-duration">{duration}s</span>}
         <ChevronRight size={13} className="execution-step-chevron" aria-hidden="true" />
       </button>
@@ -888,14 +911,21 @@ function ToolCallBlock({
   duration,
   running,
   onLoadDeferredContent,
+  defaultExpanded = false,
+  showPreview = false,
 }: {
   block: ToolCallContent;
   result?: ToolResultMessage;
   duration?: number;
   running?: boolean;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
+  defaultExpanded?: boolean;
+  showPreview?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded]);
   const { t } = useI18n();
   const inputStr = JSON.stringify(block.input, null, 2);
   const isEditTool = isEditToolName(block.toolName);
@@ -939,7 +969,9 @@ function ToolCallBlock({
           <Terminal size={15} strokeWidth={1.6} className="execution-step-icon" aria-hidden="true" />
         )}
         <span className="execution-step-name">{block.toolName}</span>
-        <span className="execution-step-preview">{!expanded && browserSummary ? browserSummary : preview}</span>
+        {showPreview && (
+          <span className="execution-step-preview">{!expanded && browserSummary ? browserSummary : preview}</span>
+        )}
         {!isRunning && !isError && result && (
           <Check size={12} className="execution-step-check" aria-label={t("completed", "Completed")} />
         )}

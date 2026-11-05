@@ -7,6 +7,7 @@ const settingsSource = readFileSync(new URL("./SettingsConfig.tsx", import.meta.
 const cssSource = readFileSync(new URL("../globals.css", import.meta.url), "utf8");
 const chatWindowSource = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+const chatLayoutSource = readFileSync(new URL("../lib/chat-layout.ts", import.meta.url), "utf8");
 const toolbarSource = readFileSync(new URL("./composer/ComposerToolbar.tsx", import.meta.url), "utf8");
 const messageViewSource = readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8");
 
@@ -54,6 +55,24 @@ test("the full-width dock applies the chat width once after reserving the minima
   assert.match(chatWindowSource, /paddingRight:\s*isMobile \? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING/);
   assert.doesNotMatch(chatWindowSource, /maxWidth:\s*"var\(--chat-content-max-width\)"/);
   assert.doesNotMatch(chatInputSource, /maxWidth:\s*"var\(--chat-content-max-width\)"/);
+});
+
+test("the composer dock reserves the same minimap gutter as the message column", () => {
+  const minimapWidth = Number(/CHAT_MINIMAP_WIDTH = (\d+)/.exec(chatLayoutSource)?.[1]);
+  const columnPadding = Number(/CHAT_COLUMN_PADDING = (\d+)/.exec(chatLayoutSource)?.[1]);
+  const timelineBlock = /\.chat-timeline \{([^}]*)\}/.exec(cssSource)?.[1] ?? "";
+  const timelineRail = Number(/width: (\d+)px;/.exec(timelineBlock)?.[1]);
+  const timelineMargin = Number(/margin-right: (\d+)px;/.exec(timelineBlock)?.[1]);
+
+  assert.match(chatLayoutSource, /CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING \+ CHAT_MINIMAP_WIDTH/);
+  // The shared constants must keep tracking the real `.chat-timeline` rail, or the composer drifts again.
+  assert.equal(minimapWidth, timelineRail + timelineMargin);
+  assert.equal(columnPadding, 16);
+  assert.match(
+    chatInputSource,
+    /paddingRight: isMobile \|\| welcome \? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING/,
+  );
+  assert.doesNotMatch(chatInputSource, /paddingRight: isMobile \|\| welcome \? 16 : 48/);
 });
 
 test("chat text uses the shared scale while glyph-only icons remain fixed", () => {
