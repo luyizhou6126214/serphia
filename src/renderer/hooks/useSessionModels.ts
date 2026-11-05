@@ -4,8 +4,8 @@ import { listModels, cancelModelsRefresh, refreshModels as requestModelsRefresh 
 import { LatestRequestGate } from "@/lib/latest-request-gate";
 import { useI18n } from "@/i18n";
 import type { NoticeType } from "@/lib/notice-queue";
+import { readLastModel, type SelectedModel } from "@/lib/last-session-selection";
 
-type SelectedModel = { provider: string; modelId: string };
 type ModelEntry = { id: string; name: string; provider: string; virtual?: boolean };
 
 export interface SessionModelsOptions {
@@ -51,6 +51,10 @@ export function useSessionModels({ isNew, cwd, refreshKey, addNotice }: SessionM
       setModelList(nextList);
       setModelCatalog(d.catalog);
       if (isNew) {
+        const saved = readLastModel();
+        if (saved && nextList.some((m) => m.id === saved.modelId && m.provider === saved.provider)) {
+          setNewSessionModel((current) => current ?? saved);
+        }
         const match = d.defaultModel
           ? nextList.find((m) => m.id === d.defaultModel?.modelId && m.provider === d.defaultModel?.provider)
           : undefined;

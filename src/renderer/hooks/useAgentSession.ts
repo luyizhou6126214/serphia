@@ -1,3 +1,4 @@
+import { readLastThinkingLevel, saveLastModel, saveLastThinkingLevel } from "@/lib/last-session-selection";
 import { sessionModelForDisplay, sessionStatsForDisplay } from "@shared/session-model-display";
 import type { ThinkingLevelOption } from "@shared/thinking-levels";
 import { useState, useCallback, useRef, useEffect, useReducer } from "react";
@@ -215,7 +216,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   } = turnState;
   const dispatch = useCallback((action: StreamAction) => dispatchTurn({ type: "stream", action }), []);
   const [toolPreset, setToolPreset] = useState<ToolPreset>("default");
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>(() =>
+    isNew ? readLastThinkingLevel() : "auto",
+  );
   const [contextUsage, setContextUsage] = useState<{
     percent: number | null;
     contextWindow: number;
@@ -936,6 +939,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         request = modelRequestGate.begin();
       if (!ownsView()) return;
       if (isNew) {
+        saveLastModel({ provider, modelId });
         setNewSessionModel({ provider, modelId });
         setPendingModel({ provider, modelId });
         const sid = sessionIdRef.current ?? (await ensuringNewSessionRef.current);
@@ -951,7 +955,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!sid) return;
       try {
         await sendAgentCommand(sid, { type: "set_model", provider, modelId });
-        if (ownsView() && modelRequestGate.isCurrent(request)) setCurrentModelOverride({ provider, modelId });
+        if (ownsView() && modelRequestGate.isCurrent(request)) {
+          saveLastModel({ provider, modelId });
+          setCurrentModelOverride({ provider, modelId });
+        }
       } catch (e) {
         console.error("Failed to set model:", e);
       }
@@ -1233,6 +1240,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     async (level: ThinkingLevelOption) => {
       if (!isActive()) return;
       runtimeGate.touch("thinking");
+      saveLastThinkingLevel(level);
       setThinkingLevel(level);
       if (level === "auto") return; // "auto" leaves pi's current setting untouched
       const sid = sessionIdRef.current ?? (await ensuringNewSessionRef.current);

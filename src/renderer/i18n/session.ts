@@ -1,5 +1,6 @@
 // Translation entries owned by the session domain.
 export const enUS: Record<string, string> = {
+  sessionWelcomeTagline: "Ideas,\nin motion.",
   searchPanelPlaceholder: "Search chats or run a command",
   searchQuickActions: "Quick actions",
   searchOpenFolder: "Open folder",
@@ -230,6 +231,7 @@ export const enUS: Record<string, string> = {
 };
 
 export const zhCN: Record<string, string> = {
+  sessionWelcomeTagline: "让灵感，\n蜿蜒成形。",
   searchPanelPlaceholder: "搜索会话或运行命令",
   searchQuickActions: "快捷操作",
   searchOpenFolder: "打开文件夹",
@@ -455,6 +457,7 @@ export const zhCN: Record<string, string> = {
 };
 
 export const zhTW: Record<string, string> = {
+  sessionWelcomeTagline: "讓靈感，\n蜿蜒成形。",
   searchPanelPlaceholder: "搜尋會話或執行命令",
   searchQuickActions: "快速操作",
   searchOpenFolder: "開啟資料夾",

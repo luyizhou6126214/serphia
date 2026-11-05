@@ -41,6 +41,7 @@ import { useI18n } from "@/i18n";
 import type { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
 import { skillInvocationCommandText } from "@shared/skill-invocation";
 import { localizedExtensionConfirmCopy } from "@/lib/extension-ui-copy";
+import serphiaMascot from "@/assets/serphia-mascot.png";
 
 interface Props {
   session: SessionInfo | null;
@@ -494,7 +495,28 @@ export function ChatWindow({
       {isEmptyNew ? (
         <div className="relative z-[1] flex min-h-0 flex-[1_1_0] flex-col items-center justify-end overflow-y-auto px-4 pt-8">
           <div className="chat-content-column">
-            <div className="chat-welcome-heading">{"Serphia"}</div>
+            <header className="chat-welcome" aria-labelledby="chat-welcome-title">
+              <div className="chat-welcome-scene">
+                <img
+                  className="chat-welcome-mascot"
+                  src={serphiaMascot}
+                  alt=""
+                  width={112}
+                  height={112}
+                  draggable={false}
+                />
+                <h1 className="chat-welcome-heading" id="chat-welcome-title">
+                  {t("sessionWelcomeTagline", "Ideas,\nin motion.")
+                    .split("\n")
+                    .map((line, index) => (
+                      <span className="chat-welcome-line" key={line}>
+                        {index > 0 ? " " : ""}
+                        {line}
+                      </span>
+                    ))}
+                </h1>
+              </div>
+            </header>
             <NoticeShelf notices={notices} align="right" />
           </div>
         </div>

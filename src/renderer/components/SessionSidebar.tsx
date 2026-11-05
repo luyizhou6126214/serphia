@@ -493,7 +493,10 @@ export function SessionSidebar({
               selectedProject={selectedProject}
               homeDir={homeDir}
               allSessions={allSessions}
-              setSelectedCwd={addProject}
+              setSelectedCwd={(cwd) => {
+                addProject(cwd);
+                if (cwd) handleNewSession(cwd);
+              }}
             />
           </div>
           {groups.filter((group) => !isPinned(group.path)).map(renderProject)}

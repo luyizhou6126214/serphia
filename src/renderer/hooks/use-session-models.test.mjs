@@ -236,3 +236,21 @@ test("a remote refresh failure restores idle controls while preserving cached mo
   assert.equal(fixture.notices[0].type, "error");
   assert.match(fixture.notices[0].message, /Cached models remain available/);
 });
+
+test("a new session restores the last selected model when it is available", async (t) => {
+  const values = new Map([["serphia-last-model", JSON.stringify({ provider: "fixture", modelId: "saved" })]]);
+  globalThis.localStorage = { getItem: (key) => values.get(key) ?? null };
+  t.after(() => delete globalThis.localStorage);
+  const input = catalog("default");
+  input.models.push({ id: "saved", provider: "fixture", name: "Saved" });
+  const fixture = await mount(t, input);
+  assert.deepEqual(fixture.current.newSessionModel, { provider: "fixture", modelId: "saved" });
+});
+
+test("an unavailable last selected model falls back to the configured default", async (t) => {
+  globalThis.localStorage = { getItem: () => JSON.stringify({ provider: "fixture", modelId: "missing" }) };
+  t.after(() => delete globalThis.localStorage);
+  const fixture = await mount(t);
+  assert.equal(fixture.current.newSessionModel, null);
+  assert.equal(fixture.current.newSessionDefaultModel.modelId, "cached");
+});

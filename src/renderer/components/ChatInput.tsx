@@ -1,8 +1,29 @@
-import { ArrowUp } from "lucide-react";
+import {
+  ArrowUp,
+  Blocks,
+  Copy,
+  FileText,
+  Minimize2,
+  Pencil,
+  Puzzle,
+  RefreshCw,
+  ScrollText,
+  Server,
+  Terminal,
+} from "lucide-react";
 import { ComposerToolbar, type ComposerToolbarOptions } from "./composer/ComposerToolbar";
 import { useComposerDraft } from "@/hooks/useComposerDraft";
 import { useComposerSubmission, type ComposerActions } from "@/hooks/useComposerSubmission";
-import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import React, {
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useImperativeHandle,
+  forwardRef,
+  KeyboardEvent,
+} from "react";
 import { scaledChatFont } from "@/lib/chat-appearance";
 import type { CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import { buildAtInsertText, extractAtQuery, type AtQueryMatch, type FileIndexEntry } from "@/lib/file-fuzzy";
@@ -179,11 +200,21 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const { t, language } = useI18n();
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState(320);
   const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
   const [atMenuOpen, setAtMenuOpen] = useState(false);
   const [atActiveIndex, setAtActiveIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const slashAnchorRef = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
+  const atMenuRef = useRef<HTMLDivElement>(null);
+  const atScrollRef = useRef<HTMLDivElement>(null);
+  const atDismissedRef = useRef(false);
+  const atKeyboardNavigationRef = useRef(false);
+  const slashScrollRef = useRef<HTMLDivElement>(null);
+  const slashDismissedRef = useRef(false);
+  const slashKeyboardNavigationRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openAttachmentPicker = useCallback(() => fileInputRef.current?.click(), []);
   const isComposingRef = useRef(false);
@@ -325,14 +356,6 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     return SLASH_SOURCES.map((source) => groups.get(source)!).filter((group) => group.items.length > 0);
   })();
 
-  const slashCommandCountLabel =
-    filteredSlashCommands.length === 1
-      ? slashQuery
-        ? t("oneMatch", "1 match")
-        : t("oneCommand", "1 command")
-      : slashQuery
-        ? t("matchCount", "{count} matches").replace("{count}", String(filteredSlashCommands.length))
-        : t("commandCount", "{count} commands").replace("{count}", String(filteredSlashCommands.length));
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText || attachedFiles.length > 0 || attachedImages.length > 0;
 
@@ -350,13 +373,14 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
 
   const { tokenKey: atTokenKey, state: activeSuggestionState, matches: atMatches } = useFileSuggestions(cwd, atQuery);
 
-  // A changed token reopens the menu; Escape closes it until the next edit.
   useEffect(() => {
     if (atTokenKey === null) {
       setAtMenuOpen(false);
       setAtActiveIndex(0);
+      atDismissedRef.current = false;
       return;
     }
+    if (atDismissedRef.current) return;
     setAtMenuOpen(true);
     setAtActiveIndex(0);
   }, [atTokenKey]);
@@ -405,8 +429,15 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   }, [atMatches.length]);
 
   useEffect(() => {
-    if (!atMenuOpen) return;
-    atItemRefs.current[atActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (!atMenuOpen || !atKeyboardNavigationRef.current) return;
+    atKeyboardNavigationRef.current = false;
+    const item = atItemRefs.current[atActiveIndex];
+    const container = atScrollRef.current;
+    if (!item || !container) return;
+    const itemRect = item.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    if (itemRect.top < containerRect.top) container.scrollTop += itemRect.top - containerRect.top;
+    else if (itemRect.bottom > containerRect.bottom) container.scrollTop += itemRect.bottom - containerRect.bottom;
   }, [atActiveIndex, atMenuOpen]);
 
   const applySlashCommand = useCallback(
@@ -483,26 +514,31 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       if (slashMenuOpen && slashQuery !== null) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
+          slashKeyboardNavigationRef.current = true;
           setSlashActiveIndex(getNextSlashIndex("down"));
           return;
         }
         if (e.key === "ArrowUp") {
           e.preventDefault();
+          slashKeyboardNavigationRef.current = true;
           setSlashActiveIndex(getNextSlashIndex("up"));
           return;
         }
         if (e.key === "ArrowRight") {
           e.preventDefault();
+          slashKeyboardNavigationRef.current = true;
           setSlashActiveIndex(getNextSlashIndex("right"));
           return;
         }
         if (e.key === "ArrowLeft") {
           e.preventDefault();
+          slashKeyboardNavigationRef.current = true;
           setSlashActiveIndex(getNextSlashIndex("left"));
           return;
         }
         if (e.key === "Escape") {
           e.preventDefault();
+          slashDismissedRef.current = true;
           setSlashMenuOpen(false);
           return;
         }
@@ -518,16 +554,19 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       if (atMenuOpen && atQuery !== null && !isComposing) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
+          atKeyboardNavigationRef.current = true;
           setAtActiveIndex((i) => Math.min(Math.max(0, atMatches.length - 1), i + 1));
           return;
         }
         if (e.key === "ArrowUp") {
           e.preventDefault();
+          atKeyboardNavigationRef.current = true;
           setAtActiveIndex((i) => Math.max(0, i - 1));
           return;
         }
         if (e.key === "Escape") {
           e.preventDefault();
+          atDismissedRef.current = true;
           setAtMenuOpen(false);
           return;
         }
@@ -592,8 +631,10 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       setSlashMenuOpen(false);
       setSlashActiveIndex(0);
       slashCommandsRequestedRef.current = false;
+      slashDismissedRef.current = false;
       return;
     }
+    if (slashDismissedRef.current) return;
     setSlashMenuOpen(true);
     setSlashActiveIndex(0);
     if (!slashCommandsRequestedRef.current && onLoadSlashCommands) {
@@ -603,6 +644,50 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       });
     }
   }, [slashQuery, onLoadSlashCommands]);
+
+  useLayoutEffect(() => {
+    if (!slashMenuOpen && !atMenuOpen) return;
+    const anchor = slashAnchorRef.current;
+    const boundary = anchor?.closest(".chat-appearance-scope");
+    if (!anchor || !boundary) return;
+    const updateHeight = () => {
+      const available = anchor.getBoundingClientRect().top - boundary.getBoundingClientRect().top - 16;
+      setSlashMenuMaxHeight(Math.max(0, Math.min(320, window.innerHeight * 0.56, available)));
+    };
+    updateHeight();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateHeight);
+    observer?.observe(anchor);
+    observer?.observe(boundary);
+    window.addEventListener("resize", updateHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, [slashMenuOpen, atMenuOpen, welcome]);
+
+  useEffect(() => {
+    if (!slashMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (slashMenuRef.current?.contains(target) || textareaRef.current?.contains(target))) return;
+      slashDismissedRef.current = true;
+      setSlashMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [slashMenuOpen]);
+
+  useEffect(() => {
+    if (!atMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (atMenuRef.current?.contains(target) || textareaRef.current?.contains(target))) return;
+      atDismissedRef.current = true;
+      setAtMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [atMenuOpen]);
 
   useEffect(() => {
     if (slashActiveIndex >= filteredSlashCommands.length) {
@@ -615,8 +700,15 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   }, [filteredSlashCommands.length]);
 
   useEffect(() => {
-    if (!slashMenuOpen) return;
-    slashItemRefs.current[slashActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (!slashMenuOpen || !slashKeyboardNavigationRef.current) return;
+    slashKeyboardNavigationRef.current = false;
+    const item = slashItemRefs.current[slashActiveIndex];
+    const container = slashScrollRef.current;
+    if (!item || !container) return;
+    const itemRect = item.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    if (itemRect.top < containerRect.top) container.scrollTop += itemRect.top - containerRect.top;
+    else if (itemRect.bottom > containerRect.bottom) container.scrollTop += itemRect.bottom - containerRect.bottom;
   }, [slashActiveIndex, slashMenuOpen]);
 
   const compactSavedTokens = compactResult
@@ -874,7 +966,287 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             {compactResultText}
           </div>
         )}
-        <div className="chat-composer-card" data-streaming={isStreaming}>
+        <div ref={slashAnchorRef} className="chat-composer-card" data-streaming={isStreaming}>
+          {slashMenuOpen && slashQuery !== null && (
+            <div
+              ref={slashMenuRef}
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: "calc(100% + 8px)",
+                zIndex: 120,
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 16,
+                boxShadow: "0 -6px 20px rgba(0,0,0,0.08)",
+                overflow: "hidden",
+                maxHeight: slashMenuMaxHeight,
+              }}
+            >
+              <div
+                ref={slashScrollRef}
+                className="slash-menu-scroll"
+                style={{ maxHeight: slashMenuMaxHeight, overflowY: "auto", padding: "8px" }}
+              >
+                {slashCommandsLoading && (
+                  <div style={{ padding: "6px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
+                    {t("loadingCommands", "Loading commands…")}
+                  </div>
+                )}
+                {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
+                  <div style={{ padding: "6px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
+                    {t("noSlashCommandsFound", "No extension, prompt, or skill commands found")}
+                  </div>
+                ) : (
+                  groupedSlashCommands.map((group) => (
+                    <section key={group.source} style={{ marginBottom: 6 }}>
+                      {group.source !== "builtin" && group.source !== "extension" && (
+                        <div style={{ padding: "6px 6px 4px", color: "var(--text-dim)", fontSize: scaledChatFont(11) }}>
+                          {SLASH_SOURCE_GROUP_LABEL[group.source]}
+                        </div>
+                      )}
+                      {group.items.map(({ command, index }) => {
+                        const active = index === slashActiveIndex;
+                        const builtinIcons: Record<string, typeof Terminal> = {
+                          compact: Minimize2,
+                          copy: Copy,
+                          name: Pencil,
+                          reload: RefreshCw,
+                          session: ScrollText,
+                          mcp: Server,
+                        };
+                        const Icon =
+                          builtinIcons[command.name] ??
+                          (command.source === "skill"
+                            ? Blocks
+                            : command.source === "extension"
+                              ? Puzzle
+                              : command.source === "prompt"
+                                ? FileText
+                                : Terminal);
+                        const scope = command.source === "skill" ? command.sourceInfo?.scope : undefined;
+                        const scopeLabel =
+                          scope === "project"
+                            ? t("skillScopeProject", "project")
+                            : scope === "user"
+                              ? t("slashSkillScopeUser", "User (global)")
+                              : scope === "temporary"
+                                ? t("slashSkillScopeTemporary", "Temporary")
+                                : t("slashSkillScopeUnknown", "Unknown scope");
+                        return (
+                          <button
+                            key={`${command.source}:${command.name}`}
+                            ref={(node) => {
+                              slashItemRefs.current[index] = node;
+                            }}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              applySlashCommand(command);
+                            }}
+                            onMouseEnter={() => {
+                              slashKeyboardNavigationRef.current = false;
+                              setSlashActiveIndex(index);
+                            }}
+                            title={command.description}
+                            style={{
+                              width: "100%",
+                              minWidth: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "6px",
+                              border: 0,
+                              borderRadius: 6,
+                              background: active ? "var(--bg-selected)" : "transparent",
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              textAlign: "left",
+                            }}
+                          >
+                            <Icon size={15} style={{ flexShrink: 0, color: "var(--text-dim)" }} />
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                maxWidth: "40%",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                fontSize: scaledChatFont(12),
+                              }}
+                            >
+                              {command.source === "skill"
+                                ? command.name.replace(/^skill:/, "")
+                                : command.name === "mcp"
+                                  ? "MCP"
+                                  : command.name.charAt(0).toUpperCase() + command.name.slice(1)}
+                            </span>
+                            {command.description && (
+                              <span
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  fontSize: scaledChatFont(12),
+                                  color: "var(--text-dim)",
+                                }}
+                              >
+                                {command.description}
+                              </span>
+                            )}
+                            {command.source === "skill" && (
+                              <span
+                                style={{
+                                  marginLeft: "auto",
+                                  flexShrink: 0,
+                                  fontSize: scaledChatFont(11),
+                                  color: "var(--text-dim)",
+                                }}
+                              >
+                                {scopeLabel}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </section>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {atMenuOpen &&
+            atQuery !== null &&
+            (() => {
+              const suggestionStatus = activeSuggestionState?.status ?? "loading";
+              const suggestionsLoading = suggestionStatus === "loading";
+              const matchCountLabel =
+                atMatches.length === 1
+                  ? t("oneMatch", "1 match")
+                  : t("matchCount", "{count} matches").replace("{count}", String(atMatches.length));
+              const resultHint = activeSuggestionState?.degradedReason
+                ? ` · ${t("fileSearchDegraded", "limited to this folder")}`
+                : activeSuggestionState?.truncated
+                  ? ` · ${t("fileIndexTruncated", "index truncated")}`
+                  : "";
+              return (
+                <div
+                  ref={atMenuRef}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: "calc(100% + 8px)",
+                    zIndex: 120,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 16,
+                    boxShadow: "0 -6px 20px rgba(0,0,0,0.08)",
+                    overflow: "hidden",
+                    maxHeight: slashMenuMaxHeight,
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <div
+                    aria-live="polite"
+                    style={{
+                      padding: "8px 10px",
+                      borderBottom: "1px solid var(--border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: scaledChatFont(11),
+                      color: "var(--text-dim)",
+                    }}
+                  >
+                    <span>
+                      {suggestionsLoading
+                        ? t("loadingProjectFiles", "Loading files…")
+                        : `${t("filesAndMatchCount", "Files · {count}").replace(
+                            "{count}",
+                            matchCountLabel,
+                          )}${resultHint}`}
+                    </span>
+                    <span style={{ fontFamily: "var(--font-mono)" }}>Tab / Enter</span>
+                  </div>
+                  <div
+                    ref={atScrollRef}
+                    className="slash-menu-scroll"
+                    style={{ minHeight: 0, overflowY: "auto", padding: 8 }}
+                  >
+                    {atMatches.length === 0 ? (
+                      <div style={{ padding: "6px 8px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
+                        {suggestionsLoading
+                          ? t("searching", "Searching…")
+                          : suggestionStatus === "error"
+                            ? t("fileSuggestionsUnavailable", "File suggestions are temporarily unavailable")
+                            : t("noMatchingProjectFiles", "No matching files")}
+                      </div>
+                    ) : (
+                      atMatches.map((entry, index) => {
+                        const active = index === atActiveIndex;
+                        const name = entry.path.split("/").pop() ?? entry.path;
+                        const dirPrefix = entry.path.slice(0, entry.path.length - name.length);
+                        return (
+                          <button
+                            key={`${entry.isDir ? "d" : "f"}:${entry.path}`}
+                            ref={(node) => {
+                              atItemRefs.current[index] = node;
+                            }}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              applyAtCompletion(entry);
+                            }}
+                            onMouseEnter={() => {
+                              atKeyboardNavigationRef.current = false;
+                              setAtActiveIndex(index);
+                            }}
+                            style={{
+                              width: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "6px 8px",
+                              border: "none",
+                              borderRadius: 6,
+                              background: active ? "var(--bg-selected)" : "none",
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: scaledChatFont(12.5),
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                              {entry.isDir ? <FolderIcon size={14} /> : getFileIcon(name, 14)}
+                            </span>
+                            <span
+                              style={{
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {dirPrefix && <span style={{ color: "var(--text-dim)" }}>{dirPrefix}</span>}
+                              {name}
+                              {entry.isDir && <span style={{ color: "var(--text-dim)" }}>/</span>}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           {/* Image previews */}
           {attachedImages.length > 0 && (
             <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
@@ -1047,266 +1419,6 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
 
           {/* Main input */}
           <div style={{ position: "relative" }}>
-            {slashMenuOpen && slashQuery !== null && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: "calc(100% + 8px)",
-                  zIndex: 120,
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                  overflow: "hidden",
-                  maxHeight: "min(56vh, 460px)",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    borderBottom: "1px solid var(--border)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    fontSize: scaledChatFont(11),
-                    color: "var(--text-dim)",
-                  }}
-                >
-                  <span>
-                    {slashCommandsLoading
-                      ? t("loadingCommands", "Loading commands…")
-                      : t("slashCommandsWithCount", "Slash commands · {count}").replace(
-                          "{count}",
-                          slashCommandCountLabel,
-                        )}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-mono)" }}>Tab / Enter</span>
-                </div>
-                <div style={{ maxHeight: "calc(min(56vh, 460px) - 34px)", overflowY: "auto", padding: 10 }}>
-                  {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                    <div style={{ padding: "2px 2px 4px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
-                      {t("noSlashCommandsFound", "No extension, prompt, or skill commands found")}
-                    </div>
-                  ) : (
-                    groupedSlashCommands.map((group) => (
-                      <section key={group.source} style={{ marginBottom: 12 }}>
-                        <div
-                          style={{
-                            position: "sticky",
-                            top: -10,
-                            zIndex: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 8,
-                            padding: "4px 0 6px",
-                            background: "var(--bg)",
-                            color: "var(--text-dim)",
-                            fontSize: scaledChatFont(10),
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          <span>{SLASH_SOURCE_GROUP_LABEL[group.source]}</span>
-                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>{group.items.length}</span>
-                        </div>
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                            gap: 8,
-                          }}
-                        >
-                          {group.items.map(({ command, index }) => {
-                            const active = index === slashActiveIndex;
-                            return (
-                              <button
-                                key={`${command.source}:${command.name}`}
-                                ref={(node) => {
-                                  slashItemRefs.current[index] = node;
-                                }}
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  applySlashCommand(command);
-                                }}
-                                onMouseEnter={() => setSlashActiveIndex(index)}
-                                style={{
-                                  width: "100%",
-                                  minWidth: 0,
-                                  minHeight: 58,
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: 4,
-                                  justifyContent: "center",
-                                  padding: "9px 10px",
-                                  border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                                  borderRadius: 7,
-                                  background: active ? "var(--bg-selected)" : "var(--bg-panel)",
-                                  color: "var(--text)",
-                                  cursor: "pointer",
-                                  textAlign: "left",
-                                  boxShadow: active
-                                    ? "0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent)"
-                                    : "none",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    fontSize: scaledChatFont(13),
-                                    fontFamily: "var(--font-mono)",
-                                    overflowWrap: "anywhere",
-                                    wordBreak: "break-word",
-                                  }}
-                                >
-                                  /{command.name}
-                                </span>
-                                {command.description && (
-                                  <span
-                                    style={{
-                                      display: "-webkit-box",
-                                      WebkitBoxOrient: "vertical",
-                                      WebkitLineClamp: 2,
-                                      overflow: "hidden",
-                                      fontSize: scaledChatFont(11),
-                                      lineHeight: 1.35,
-                                      color: "var(--text-dim)",
-                                    }}
-                                  >
-                                    {command.description}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-            {atMenuOpen &&
-              atQuery !== null &&
-              (() => {
-                const suggestionStatus = activeSuggestionState?.status ?? "loading";
-                const suggestionsLoading = suggestionStatus === "loading";
-                const matchCountLabel =
-                  atMatches.length === 1
-                    ? t("oneMatch", "1 match")
-                    : t("matchCount", "{count} matches").replace("{count}", String(atMatches.length));
-                const resultHint = activeSuggestionState?.degradedReason
-                  ? ` · ${t("fileSearchDegraded", "limited to this folder")}`
-                  : activeSuggestionState?.truncated
-                    ? ` · ${t("fileIndexTruncated", "index truncated")}`
-                    : "";
-                return (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: "calc(100% + 8px)",
-                      zIndex: 120,
-                      background: "var(--bg)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                      overflow: "hidden",
-                      maxHeight: "min(48vh, 400px)",
-                    }}
-                  >
-                    <div
-                      aria-live="polite"
-                      style={{
-                        padding: "8px 10px",
-                        borderBottom: "1px solid var(--border)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 8,
-                        fontSize: scaledChatFont(11),
-                        color: "var(--text-dim)",
-                      }}
-                    >
-                      <span>
-                        {suggestionsLoading
-                          ? t("loadingProjectFiles", "Loading files…")
-                          : `${t("filesAndMatchCount", "Files · {count}").replace(
-                              "{count}",
-                              matchCountLabel,
-                            )}${resultHint}`}
-                      </span>
-                      <span style={{ fontFamily: "var(--font-mono)" }}>Tab / Enter</span>
-                    </div>
-                    <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
-                      {atMatches.length === 0 ? (
-                        <div style={{ padding: "6px 8px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
-                          {suggestionsLoading
-                            ? t("searching", "Searching…")
-                            : suggestionStatus === "error"
-                              ? t("fileSuggestionsUnavailable", "File suggestions are temporarily unavailable")
-                              : t("noMatchingProjectFiles", "No matching files")}
-                        </div>
-                      ) : (
-                        atMatches.map((entry, index) => {
-                          const active = index === atActiveIndex;
-                          const name = entry.path.split("/").pop() ?? entry.path;
-                          const dirPrefix = entry.path.slice(0, entry.path.length - name.length);
-                          return (
-                            <button
-                              key={`${entry.isDir ? "d" : "f"}:${entry.path}`}
-                              ref={(node) => {
-                                atItemRefs.current[index] = node;
-                              }}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                applyAtCompletion(entry);
-                              }}
-                              onMouseEnter={() => setAtActiveIndex(index)}
-                              style={{
-                                width: "100%",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                padding: "6px 8px",
-                                border: "none",
-                                borderRadius: 6,
-                                background: active ? "var(--bg-selected)" : "none",
-                                color: "var(--text)",
-                                cursor: "pointer",
-                                textAlign: "left",
-                                fontSize: scaledChatFont(12.5),
-                                fontFamily: "var(--font-mono)",
-                              }}
-                            >
-                              <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-                                {entry.isDir ? <FolderIcon size={14} /> : getFileIcon(name, 14)}
-                              </span>
-                              <span
-                                style={{
-                                  minWidth: 0,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {dirPrefix && <span style={{ color: "var(--text-dim)" }}>{dirPrefix}</span>}
-                                {name}
-                                {entry.isDir && <span style={{ color: "var(--text-dim)" }}>/</span>}
-                              </span>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
             <div className="chat-composer-shell">
               <textarea
                 ref={textareaRef}
