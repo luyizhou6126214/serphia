@@ -61,6 +61,11 @@ export function App() {
 
     connect();
 
+    // A slow host may become ready after the initial connection attempt timed out.
+    const offStatus = window.piBridge?.onHostStatus?.((payload) => {
+      if (payload.status === "ready") connect();
+    });
+
     const offRestart = window.piBridge?.onHostRestarted?.((payload) => {
       console.warn("[pi-desktop] host restarted:", payload.reason);
       resetRpc();
@@ -86,6 +91,7 @@ export function App() {
 
     return () => {
       cancelled = true;
+      offStatus?.();
       offRestart?.();
       offCrash?.();
       offMenuDiag?.();

@@ -1,12 +1,10 @@
-import { Brain, Check, ChevronRight, CircleAlert, Copy, GitFork, LoaderCircle, Pencil, Terminal } from "lucide-react";
+import { Check, ChevronDown, Copy, GitFork, History, LoaderCircle, Pencil } from "lucide-react";
 import { formatTime } from "@/lib/message-metadata";
-import { memo, useState, useRef, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useState, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { MarkdownBody } from "./MarkdownBody";
-import { ToolResultImages } from "./ToolResultImages";
 import { ReplyImage } from "./ReplyImage";
 import { DeferredContentActions } from "./DeferredContentActions";
 import { AssistantOutcome } from "./AssistantOutcome";
-import { scaledChatFont } from "@/lib/chat-appearance";
 import { getToolResultDisplayText } from "@/lib/tool-result-display";
 import { useCopyFeedback } from "@/hooks/useCopyFeedback";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
@@ -17,8 +15,7 @@ import { parseSkillInvocation, skillInvocationCommandText, type SkillInvocation 
 import { useI18n } from "@/i18n";
 import { useTheme } from "@/hooks/useTheme";
 import { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
-import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
-import { workStepDisplayPolicy, type WorkStepDisplay, type WorkStepDisplayPolicy } from "@shared/work-step-display";
+import { workStepDisplayPolicy, type WorkStepDisplay } from "@shared/work-step-display";
 import type {
   AgentMessage,
   UserMessage,
@@ -31,15 +28,16 @@ import type {
   ToolCallContent,
   ThinkingContent,
 } from "@/lib/types";
+import { ReasoningRow } from "./chat/ReasoningRow";
+import { ToolCallRow, browserResultSummary, browserTabIdFromResult, isBrowserToolName } from "./chat/ToolCallRow";
 
 interface Props {
   message: AgentMessage;
   isStreaming?: boolean;
   toolResults?: ReadonlyMap<string, ToolResultMessage>;
-  toolCallDurations?: ReadonlyMap<string, number>;
   runningToolCallIds?: ReadonlySet<string>;
-  modelNames?: Record<string, string>;
   cwd?: string;
+  home?: string;
   onOpenFile?: (filePath: string) => void;
   entryId?: string;
   onFork?: (entryId: string) => void;
@@ -48,20 +46,19 @@ interface Props {
   prevAssistantEntryId?: string;
   onEditContent?: (content: string) => void;
   showTimestamp?: boolean;
-  prevTimestamp?: number;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
+  hideCopy?: boolean;
 }
 
 export const MessageView = memo(function MessageView({
   message,
   isStreaming,
   toolResults,
-  toolCallDurations,
   runningToolCallIds,
-  modelNames,
   cwd,
+  home,
   onOpenFile,
   entryId,
   onFork,
@@ -70,10 +67,10 @@ export const MessageView = memo(function MessageView({
   prevAssistantEntryId,
   onEditContent,
   showTimestamp,
-  prevTimestamp,
   onLoadDeferredContent,
   thinkingExpansionStore,
   workStepDisplay,
+  hideCopy,
 }: Props) {
   if (message.role === "user") {
     return (
@@ -97,17 +94,16 @@ export const MessageView = memo(function MessageView({
         message={message as AssistantMessage}
         isStreaming={isStreaming}
         toolResults={toolResults}
-        toolCallDurations={toolCallDurations}
         runningToolCallIds={runningToolCallIds}
-        modelNames={modelNames}
         cwd={cwd}
+        home={home}
         onOpenFile={onOpenFile}
         showTimestamp={showTimestamp}
-        prevTimestamp={prevTimestamp}
         onLoadDeferredContent={onLoadDeferredContent}
         entryId={entryId}
         thinkingExpansionStore={thinkingExpansionStore}
         workStepDisplay={workStepDisplay}
+        hideCopy={hideCopy}
       />
     );
   }
@@ -154,7 +150,7 @@ function MessageActionButton({
   return (
     <button
       type="button"
-      className={`message-icon-action ${className}`.trim()}
+      className={`dsh-message-action ${className}`.trim()}
       data-tooltip={label}
       aria-label={label}
       onClick={onClick}
@@ -233,35 +229,36 @@ function UserMessageView({
 
   return (
     <div
-      className="chat-message chat-message-user"
-      style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}
+      className="chat-message chat-message-user dsh-user-row"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 6,
-          maxWidth: "68ch",
-          width: "100%",
-          justifyContent: "flex-end",
-        }}
-      >
+      <div className="dsh-user-stack">
+        {imageBlocks.length > 0 && (
+          <div className="dsh-user-attachments">
+            {imageBlocks.map((img, i) => {
+              // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
+              // pi-ai on-disk format uses flat {data, mimeType} — handle both
+              const flat = img as unknown as { data?: string; mimeType?: string };
+              const src = img.source
+                ? img.source.type === "base64"
+                  ? `data:${img.source.media_type};base64,${img.source.data}`
+                  : (img.source.url ?? "")
+                : flat.data
+                  ? `data:${flat.mimeType};base64,${flat.data}`
+                  : "";
+              return <img key={i} className="dsh-user-image" src={src} alt="" />;
+            })}
+          </div>
+        )}
         <div
-          className="chat-user-bubble"
+          className="dsh-user-bubble"
           data-message-source={messageSource}
-          style={{
-            minWidth: 0,
-            maxWidth: "100%",
-            background: messageSource === "local" ? "var(--chat-user-bg)" : bubbleStyle.background,
-            borderRadius: 18,
-            padding: "12px 18px",
-            fontSize: scaledChatFont(13.5),
-            lineHeight: 1.55,
-            color: messageSource === "local" ? "var(--text)" : bubbleStyle.foreground,
-            wordBreak: "break-word",
-          }}
+          style={
+            messageSource === "local"
+              ? undefined
+              : { background: bubbleStyle.background, color: bubbleStyle.foreground }
+          }
         >
           {skillInvocation && (
             <SkillInvocationView
@@ -270,37 +267,6 @@ function UserMessageView({
               onOpenFile={onOpenFile}
               followedByContent={imageBlocks.length > 0 || Boolean(visibleContent)}
             />
-          )}
-          {imageBlocks.length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: visibleContent ? 8 : 0 }}>
-              {imageBlocks.map((img, i) => {
-                // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
-                // pi-ai on-disk format uses flat {data, mimeType} — handle both
-                const flat = img as unknown as { data?: string; mimeType?: string };
-                const src = img.source
-                  ? img.source.type === "base64"
-                    ? `data:${img.source.media_type};base64,${img.source.data}`
-                    : (img.source.url ?? "")
-                  : flat.data
-                    ? `data:${flat.mimeType};base64,${flat.data}`
-                    : "";
-                return (
-                  <img
-                    key={i}
-                    src={src}
-                    alt=""
-                    style={{
-                      maxWidth: 240,
-                      maxHeight: 240,
-                      borderRadius: 6,
-                      objectFit: "contain",
-                      display: "block",
-                      border: "1px solid color-mix(in srgb, var(--user-fg) 18%, transparent)",
-                    }}
-                  />
-                );
-              })}
-            </div>
           )}
           {visibleContent && (
             <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>
@@ -311,26 +277,11 @@ function UserMessageView({
         </div>
       </div>
 
-      {/* Bottom row: action buttons + timestamp */}
-      <div
-        className="chat-message-meta"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          gap: 6,
-          marginTop: 3,
-        }}
-      >
+      {/* Action row: MessageIconActions parity — copy, branch actions, clock. */}
+      <div className="dsh-user-actions">
         <div
-          className="message-hover-actions"
-          style={{
-            display: "flex",
-            gap: 3,
-            opacity: hovered ? 1 : 0,
-            pointerEvents: hovered ? "auto" : "none",
-            transition: "opacity 0.12s",
-          }}
+          className="dsh-message-actions"
+          style={{ opacity: hovered ? 1 : 0, pointerEvents: hovered ? "auto" : "none" }}
         >
           <MessageActionButton
             label={
@@ -353,14 +304,8 @@ function UserMessageView({
         </div>
         {(canFork || canNavigate) && (
           <div
-            className="message-hover-actions"
-            style={{
-              display: "flex",
-              gap: 3,
-              opacity: hovered || forking ? 1 : 0,
-              pointerEvents: hovered || forking ? "auto" : "none",
-              transition: "opacity 0.12s",
-            }}
+            className="dsh-message-actions"
+            style={{ opacity: hovered || forking ? 1 : 0, pointerEvents: hovered || forking ? "auto" : "none" }}
           >
             {canNavigate && (
               <MessageActionButton
@@ -393,7 +338,7 @@ function UserMessageView({
             )}
           </div>
         )}
-        {time && <time className="chat-message-time">{time}</time>}
+        {time && <time className="dsh-message-clock">{time}</time>}
       </div>
     </div>
   );
@@ -418,78 +363,31 @@ function SkillInvocationView({
 
   return (
     <div
+      className="dsh-skill-invocation"
       data-testid="skill-invocation"
       data-skill-name={invocation.name}
-      style={{
-        overflow: "hidden",
-        marginBottom: followedByContent ? 8 : 0,
-        border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
-        borderRadius: 7,
-        background: "color-mix(in srgb, var(--bg) 88%, transparent)",
-        color: "var(--text)",
-      }}
+      data-followed-by-content={followedByContent || undefined}
     >
       <button
         type="button"
-        className="skill-invocation-toggle"
+        className="dsh-skill-toggle"
         aria-expanded={expanded}
         title={toggleTitle}
         onClick={() => setExpanded((value) => !value)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "7px 9px",
-          borderBottom: expanded ? "1px solid var(--border)" : "none",
-          background: "color-mix(in srgb, var(--bg-panel) 82%, transparent)",
-          color: "var(--text-muted)",
-        }}
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <ChevronDown
+          className="dsh-skill-chevron"
+          size={12}
+          strokeWidth={1.6}
           aria-hidden="true"
-          style={{
-            flexShrink: 0,
-            transform: expanded ? "rotate(90deg)" : "none",
-            transition: "transform 0.15s",
-          }}
-        >
-          <polyline points="4 2.5 7.5 6 4 9.5" />
-        </svg>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: scaledChatFont(11), fontWeight: 650 }}>
-          {t("skillInvocation", "skill")}
-        </span>
-        <span
-          style={{
-            minWidth: 0,
-            overflow: "hidden",
-            color: "var(--text)",
-            fontSize: scaledChatFont(12),
-            fontWeight: 600,
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {invocation.name}
-        </span>
+          data-expanded={expanded || undefined}
+        />
+        <span className="dsh-skill-kind">{t("skillInvocation", "skill")}</span>
+        <span className="dsh-skill-name">{invocation.name}</span>
       </button>
 
       {expanded && (
-        <div
-          style={{
-            maxHeight: "min(52vh, 480px)",
-            overflowY: "auto",
-            padding: "10px 12px 11px",
-            overflowWrap: "anywhere",
-          }}
-        >
+        <div className="dsh-skill-body">
           <MarkdownBody className="markdown-skill-invocation" cwd={cwd} onOpenFile={onOpenFile}>
             {invocation.content}
           </MarkdownBody>
@@ -499,61 +397,61 @@ function SkillInvocationView({
   );
 }
 
+/** Local expansion state for one row, persisted through the session store. */
+function useStoredDisclosure(
+  store: ThinkingExpansionStore | undefined,
+  stateKey: string,
+): { expanded: boolean; toggle: () => void } {
+  const localStoreRef = useMemo(() => new ThinkingExpansionStore(1), []);
+  const stateStore = store ?? localStoreRef;
+  const getSnapshot = useMemo(
+    () => () => (stateStore.has(stateKey) ? stateStore.getSnapshot(stateKey) : false),
+    [stateKey, stateStore],
+  );
+  const expanded = useSyncExternalStore(stateStore.subscribe, getSnapshot, getSnapshot);
+  return useMemo(
+    () => ({ expanded, toggle: () => stateStore.set(stateKey, !expanded) }),
+    [expanded, stateKey, stateStore],
+  );
+}
+
 function AssistantMessageView({
   message,
   isStreaming,
   toolResults,
-  toolCallDurations,
   runningToolCallIds,
-  modelNames,
   cwd,
+  home,
   onOpenFile,
   showTimestamp,
-  prevTimestamp,
   onLoadDeferredContent,
   entryId,
   thinkingExpansionStore,
   workStepDisplay,
+  hideCopy,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
   toolResults?: ReadonlyMap<string, ToolResultMessage>;
-  toolCallDurations?: ReadonlyMap<string, number>;
   runningToolCallIds?: ReadonlySet<string>;
-  modelNames?: Record<string, string>;
   cwd?: string;
+  home?: string;
   onOpenFile?: (filePath: string) => void;
   showTimestamp?: boolean;
-  prevTimestamp?: number;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   entryId?: string;
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
+  hideCopy?: boolean;
 }) {
   const { t } = useI18n();
-  const workStepPolicy = workStepDisplayPolicy(workStepDisplay);
+  const policy = workStepDisplayPolicy(workStepDisplay);
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const blockItems = (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }) && !isEmptyTextBlock(block, { isStreaming }));
   const blocks = blockItems.map(({ block }) => block);
   const { copied, copy } = useCopyFeedback();
-  const streamStartRef = useRef<number | null>(null);
-  const [tps, setTps] = useState<number | null>(null);
-  const blockItemsRef = useRef(blockItems);
-  blockItemsRef.current = blockItems;
-
-  // Streaming-based timing for thinking blocks
-  const blockStartTimesRef = useRef<Map<number, number>>(new Map());
-  const [streamingDurations, setStreamingDurations] = useState<Map<number, number>>(new Map());
-
-  // Thinking duration derived from file timestamps: time from prev message end to this message end
-  // This is the total generation time (thinking + any text before first tool call)
-  const thinkingDurationFromFile = useMemo<number | undefined>(() => {
-    if (!message.timestamp || !prevTimestamp) return undefined;
-    const secs = Math.round((message.timestamp - prevTimestamp) / 1000);
-    return secs > 0 ? secs : undefined;
-  }, [message.timestamp, prevTimestamp]);
 
   const textContent = blocks
     .filter((b): b is TextContent => b.type === "text")
@@ -561,205 +459,58 @@ function AssistantMessageView({
     .join("\n");
 
   const copyContent = () => void copy(textContent);
-
-  useEffect(() => {
-    if (!isStreaming) {
-      // Finalise any un-finished thinking block durations on stream end
-      const now = new Date().getTime();
-      setStreamingDurations((prev: Map<number, number>) => {
-        const next = new Map(prev);
-        for (const [idx, start] of blockStartTimesRef.current) {
-          if (!next.has(idx)) next.set(idx, Math.round((now - start) / 1000));
-        }
-        return next;
-      });
-      streamStartRef.current = null;
-      setTps(null);
-      return;
-    }
-    const tick = () => {
-      const items = blockItemsRef.current;
-      const bs = items.map(({ block }) => block);
-      const now = Date.now();
-
-      // Record start time for each block the first time we see it
-      items.forEach(({ originalIndex }) => {
-        if (!blockStartTimesRef.current.has(originalIndex)) blockStartTimesRef.current.set(originalIndex, now);
-      });
-
-      // When a non-last block has a successor already started, finalise its duration
-      setStreamingDurations((prev: Map<number, number>) => {
-        let changed = false;
-        const next = new Map(prev);
-        for (let i = 0; i < items.length - 1; i++) {
-          const originalIndex = items[i].originalIndex;
-          const nextOriginalIndex = items[i + 1].originalIndex;
-          if (!next.has(originalIndex) && blockStartTimesRef.current.has(originalIndex)) {
-            const start = blockStartTimesRef.current.get(originalIndex)!;
-            const nextStart = blockStartTimesRef.current.get(nextOriginalIndex) ?? now;
-            next.set(originalIndex, Math.round((nextStart - start) / 1000));
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-
-      let chars = 0;
-      for (const b of bs) {
-        if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-        else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-        else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-      }
-      if (chars === 0) return;
-      if (streamStartRef.current === null) streamStartRef.current = now;
-      const elapsed = (now - streamStartRef.current) / 1000;
-      if (elapsed > 0.5) setTps(chars / 4 / elapsed);
-    };
-    const id = setInterval(tick, 300);
-    return () => clearInterval(id);
-  }, [isStreaming]);
+  const lastIndex = blockItems.at(-1)?.originalIndex;
 
   if (!hasRenderableAssistantMessage(message, { isStreaming }) && !isStreaming) return null;
 
   return (
     <div className="chat-message chat-message-assistant">
-      {/* Model label */}
-      <div
-        className="chat-message-model"
-        style={{
-          fontSize: scaledChatFont(12),
-          color: "var(--text-dim)",
-          marginBottom: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontFamily: "var(--font-mono)",
-        }}
-      >
-        {message.provider && (
-          <span>
-            {modelNames?.[`${message.provider}:${message.model}`] ?? modelNames?.[message.model] ?? message.model}
-          </span>
-        )}
-        {isStreaming &&
-          (() => {
-            let chars = 0;
-            for (const b of blocks) {
-              if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-              else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-              else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-            }
-            const est = Math.round(chars / 4);
-            return (
-              <>
-                {est > 0 && (
-                  <span
-                    style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }}
-                    title="Estimated token count while streaming"
-                  >
-                    <span
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 2,
-                        fontSize: scaledChatFont(12),
-                        fontWeight: 400,
-                      }}
-                    >
-                      <svg
-                        width="10"
-                        height="10"
-                        viewBox="0 0 10 10"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <line x1="5" y1="1.5" x2="5" y2="8.5" />
-                        <polyline points="2 6 5 8.5 8 6" />
-                      </svg>
-                      {est}
-                    </span>
-                    {tps !== null &&
-                      (() => {
-                        const bg = "var(--bg-subtle)";
-                        return (
-                          <span
-                            style={{
-                              marginLeft: 6,
-                              padding: "1px 6px",
-                              borderRadius: 4,
-                              background: bg,
-                              color: "var(--text-muted)",
-                              fontSize: scaledChatFont(11),
-                              fontWeight: 400,
-                            }}
-                          >
-                            {tps.toFixed(1)} t/s
-                          </span>
-                        );
-                      })()}
-                  </span>
-                )}
-              </>
-            );
-          })()}
-      </div>
-
-      <div className="chat-assistant-blocks" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {blockItems.map(({ block, originalIndex }) => (
-          <BlockView
-            key={originalIndex}
-            block={block}
-            toolResults={toolResults}
-            isStreaming={isStreaming && originalIndex === blockItems.at(-1)?.originalIndex}
-            streamingDuration={
-              streamingDurations.get(originalIndex) ??
-              (block.type === "thinking" ? thinkingDurationFromFile : undefined)
-            }
-            toolCallDurations={toolCallDurations}
-            runningToolCallIds={runningToolCallIds}
-            cwd={cwd}
-            onOpenFile={onOpenFile}
-            onLoadDeferredContent={onLoadDeferredContent}
-            thinkingStateKey={`${entryId ?? "assistant"}:${originalIndex}`}
-            thinkingExpansionStore={thinkingExpansionStore}
-            workStepPolicy={workStepPolicy}
+      <div className="dsh-assistant">
+        <div className="dsh-flow dsh-assistant-body">
+          {blockItems.map(({ block, originalIndex }) => (
+            <BlockView
+              key={originalIndex}
+              block={block}
+              toolResults={toolResults}
+              isStreaming={isStreaming && originalIndex === lastIndex}
+              runningToolCallIds={runningToolCallIds}
+              cwd={cwd}
+              home={home}
+              onOpenFile={onOpenFile}
+              onLoadDeferredContent={onLoadDeferredContent}
+              stateKeyPrefix={entryId ?? "assistant"}
+              blockIndex={originalIndex}
+              thinkingExpansionStore={thinkingExpansionStore}
+              settledReasoningPreview={policy.settledReasoningPreview}
+              t={t}
+            />
+          ))}
+          <DeferredContentActions
+            content={message.content.filter((block) => block.type !== "image")}
+            onLoad={onLoadDeferredContent}
           />
-        ))}
-        <DeferredContentActions
-          content={message.content.filter((block) => block.type !== "image")}
-          onLoad={onLoadDeferredContent}
-        />
-        <AssistantOutcome message={message} isStreaming={isStreaming} />
-      </div>
+          <AssistantOutcome message={message} isStreaming={isStreaming} />
+        </div>
 
-      <div
-        className="chat-message-meta chat-assistant-meta"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginTop: 4,
-        }}
-      >
-        {textContent && (
-          <MessageActionButton
-            className="chat-message-copy"
-            label={copied ? t("copyMessageCopied", "Copied") : t("copyMessage", "Copy message")}
-            onClick={copyContent}
-            active={copied}
-          >
-            {copied ? (
-              <Check size={15} strokeWidth={1.8} aria-hidden="true" />
-            ) : (
-              <Copy size={15} strokeWidth={1.6} aria-hidden="true" />
+        {!hideCopy && (
+          <div className="dsh-assistant-actions">
+            {textContent && (
+              <MessageActionButton
+                className="dsh-message-action-copy"
+                label={copied ? t("copyMessageCopied", "Copied") : t("copyMessage", "Copy message")}
+                onClick={copyContent}
+                active={copied}
+              >
+                {copied ? (
+                  <Check size={15} strokeWidth={1.8} aria-hidden="true" />
+                ) : (
+                  <Copy size={15} strokeWidth={1.6} aria-hidden="true" />
+                )}
+              </MessageActionButton>
             )}
-          </MessageActionButton>
+            {time && !isStreaming && <time className="dsh-message-clock">{time}</time>}
+          </div>
         )}
-        {time && !isStreaming && <time className="chat-message-time">{time}</time>}
-        {message.usage && !isStreaming && <div className="chat-message-usage">{formatUsage(message.usage)}</div>}
       </div>
     </div>
   );
@@ -769,730 +520,207 @@ function BlockView({
   block,
   toolResults,
   isStreaming,
-  streamingDuration,
-  toolCallDurations,
   runningToolCallIds,
   cwd,
+  home,
   onOpenFile,
   onLoadDeferredContent,
-  thinkingStateKey,
+  stateKeyPrefix,
+  blockIndex,
   thinkingExpansionStore,
-  workStepPolicy,
+  settledReasoningPreview,
+  t,
 }: {
   block: AssistantContentBlock;
   toolResults?: ReadonlyMap<string, ToolResultMessage>;
   isStreaming?: boolean;
-  streamingDuration?: number;
-  toolCallDurations?: ReadonlyMap<string, number>;
   runningToolCallIds?: ReadonlySet<string>;
   cwd?: string;
+  home?: string;
   onOpenFile?: (filePath: string) => void;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
-  thinkingStateKey: string;
+  stateKeyPrefix: string;
+  blockIndex: number;
   thinkingExpansionStore?: ThinkingExpansionStore;
-  workStepPolicy: WorkStepDisplayPolicy;
+  settledReasoningPreview: boolean;
+  t: (key: string, fallback: string) => string;
 }) {
   if (block.type === "text") {
-    return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
+    return (
+      <div className="dsh-assistant-prose" data-flow-part="response">
+        <MarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>
+          {(block as TextContent).text}
+        </MarkdownBody>
+      </div>
+    );
   }
-  if (block.type === "image") return <ReplyImage image={block} onLoad={onLoadDeferredContent} />;
+  if (block.type === "image") {
+    return (
+      <div className="dsh-assistant-image" data-flow-part="response">
+        <ReplyImage image={block} onLoad={onLoadDeferredContent} />
+      </div>
+    );
+  }
   if (block.type === "thinking") {
     return (
-      <>
-        <ThinkingBlock
-          block={block as ThinkingContent}
-          duration={streamingDuration}
-          stateKey={thinkingStateKey}
-          store={thinkingExpansionStore}
-          isStreaming={isStreaming}
-          defaultExpanded={workStepPolicy.defaultThinkingExpanded}
-          showPreview={workStepPolicy.showStepPreview}
-        />
-        <DeferredContentActions content={[block]} onLoad={onLoadDeferredContent} />
-      </>
+      <ThinkingBlock
+        block={block as ThinkingContent}
+        stateKey={`${stateKeyPrefix}:${blockIndex}`}
+        store={thinkingExpansionStore}
+        isStreaming={isStreaming}
+        settledPreview={settledReasoningPreview}
+        t={t}
+      />
     );
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
-    const duration = toolCallDurations?.get(tc.toolCallId);
     return (
-      <>
-        <ToolCallBlock
-          block={tc}
-          result={result}
-          duration={duration}
-          running={runningToolCallIds?.has(tc.toolCallId)}
-          onLoadDeferredContent={onLoadDeferredContent}
-          defaultExpanded={workStepPolicy.defaultToolExpanded}
-          showPreview={workStepPolicy.showStepPreview}
-        />
-        <DeferredContentActions content={[block]} onLoad={onLoadDeferredContent} />
-      </>
+      <ToolBlock
+        block={tc}
+        result={result}
+        running={runningToolCallIds?.has(tc.toolCallId)}
+        stateKey={`${stateKeyPrefix}:tool:${tc.toolCallId}`}
+        store={thinkingExpansionStore}
+        cwd={cwd}
+        home={home}
+        t={t}
+      />
     );
   }
   return null;
 }
 
-function TextBlock({
-  block,
-  isStreaming,
-  cwd,
-  onOpenFile,
-}: {
-  block: TextContent;
-  isStreaming?: boolean;
-  cwd?: string;
-  onOpenFile?: (filePath: string) => void;
-}) {
-  return (
-    <div className="chat-assistant-prose">
-      <MarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>
-        {block.text}
-      </MarkdownBody>
-      {isStreaming && <span className="stream-caret" aria-hidden="true" />}
-    </div>
-  );
-}
-
 function ThinkingBlock({
   block,
-  duration,
   stateKey,
   store,
   isStreaming,
-  defaultExpanded = false,
-  showPreview = false,
+  settledPreview,
+  t,
 }: {
   block: ThinkingContent;
-  duration?: number;
   stateKey: string;
   store?: ThinkingExpansionStore;
   isStreaming?: boolean;
-  defaultExpanded?: boolean;
-  showPreview?: boolean;
+  settledPreview: boolean;
+  t: (key: string, fallback: string) => string;
 }) {
-  const localStoreRef = useRef<ThinkingExpansionStore | null>(null);
-  if (!localStoreRef.current) localStoreRef.current = new ThinkingExpansionStore(1);
-  const stateStore = store ?? localStoreRef.current;
-  const getSnapshot = useMemo(
-    () => () => (stateStore.has(stateKey) ? stateStore.getSnapshot(stateKey) : defaultExpanded),
-    [defaultExpanded, stateKey, stateStore],
-  );
-  const expanded = useSyncExternalStore(stateStore.subscribe, getSnapshot, getSnapshot);
-  const { t } = useI18n();
-  const toggleExpanded = () => stateStore.set(stateKey, !expanded);
-  const preview = block.thinking.replace(/\s+/g, " ").trim().slice(0, 140);
+  const { expanded, toggle } = useStoredDisclosure(store, stateKey);
   return (
-    <div
-      className="execution-step thinking-step"
-      data-expanded={expanded}
-      data-state={isStreaming ? "running" : "complete"}
-    >
-      <button type="button" className="execution-step-toggle" onClick={toggleExpanded} aria-expanded={expanded}>
-        <Brain size={15} strokeWidth={1.6} className="execution-step-icon" aria-hidden="true" />
-        <span className="execution-step-name">{t("thinkingLabel", "thinking")}</span>
-        {!expanded && showPreview && preview && <span className="execution-step-preview">{preview}</span>}
-        {duration !== undefined && <span className="execution-step-duration">{duration}s</span>}
-        <ChevronRight size={13} className="execution-step-chevron" aria-hidden="true" />
-      </button>
-      {expanded && (
-        <div className="thinking-step-content">
-          <MarkdownBody isStreaming={isStreaming}>{block.thinking}</MarkdownBody>
-        </div>
-      )}
-    </div>
+    <ReasoningRow
+      text={block.thinking}
+      running={isStreaming === true}
+      expanded={expanded}
+      onToggle={toggle}
+      settledPreview={settledPreview}
+      title={t("thinkRowTitle", "Think")}
+      runningLabel={t("rowRunning", "Running")}
+    />
   );
 }
 
-function ToolCallBlock({
+function ToolBlock({
   block,
   result,
-  duration,
   running,
-  onLoadDeferredContent,
-  defaultExpanded = false,
-  showPreview = false,
+  stateKey,
+  store,
+  cwd,
+  home,
+  t,
 }: {
   block: ToolCallContent;
   result?: ToolResultMessage;
-  duration?: number;
   running?: boolean;
-  onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
-  defaultExpanded?: boolean;
-  showPreview?: boolean;
+  stateKey: string;
+  store?: ThinkingExpansionStore;
+  cwd?: string;
+  home?: string;
+  t: (key: string, fallback: string) => string;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  useEffect(() => {
-    setExpanded(defaultExpanded);
-  }, [defaultExpanded]);
-  const { t } = useI18n();
-  const inputStr = JSON.stringify(block.input, null, 2);
-  const isEditTool = isEditToolName(block.toolName);
-  const resultDiff = result && !result.isError ? getResultDiff(result) : null;
-
-  // Result display
+  const { expanded, toggle } = useStoredDisclosure(store, stateKey);
   const resultText = getToolResultDisplayText(block.toolName, result, t);
-  const resultIsEmpty = resultText === null ? false : resultText.trim() === "(no output)" || resultText.trim() === "";
-  const isError = result?.isError ?? false;
-  const isHistoryNotice =
-    result &&
-    block.toolName.startsWith("herdr_") &&
-    resultText !==
-      result.content
-        .filter((item) => item.type === "text")
-        .map((item) => item.text)
-        .join("\n");
-  const isRunning = !result && running !== false;
-  const preview = getToolPreview(block);
+  // The projection replaces a persisted payload the session never stored; that
+  // notice is a data-safety fact, so it takes the row's summary slot.
+  const rawResultText =
+    result === undefined
+      ? null
+      : result.content
+          .filter((item) => item.type === "text")
+          .map((item) => item.text)
+          .join("\n");
+  const historyNotice = resultText !== null && rawResultText !== null && resultText !== rawResultText;
   const browserTabId = isBrowserToolName(block.toolName) ? browserTabIdFromResult(resultText) : null;
   const browserSummary =
-    isBrowserToolName(block.toolName) && resultText && !isError ? browserResultSummary(resultText, t) : null;
-
+    isBrowserToolName(block.toolName) && resultText && !result?.isError ? browserResultSummary(resultText, t) : null;
   return (
-    <div
-      className="execution-step tool-step"
-      data-expanded={expanded}
-      data-state={isError ? "error" : isRunning ? "running" : "complete"}
-    >
-      <button
-        type="button"
-        className="execution-step-toggle"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-      >
-        {isError ? (
-          <CircleAlert size={15} className="execution-step-icon" aria-hidden="true" />
-        ) : isRunning ? (
-          <LoaderCircle size={15} className="execution-step-icon execution-spinner" aria-hidden="true" />
-        ) : (
-          <Terminal size={15} strokeWidth={1.6} className="execution-step-icon" aria-hidden="true" />
-        )}
-        <span className="execution-step-name">{block.toolName}</span>
-        {showPreview && (
-          <span className="execution-step-preview">{!expanded && browserSummary ? browserSummary : preview}</span>
-        )}
-        {!isRunning && !isError && result && (
-          <Check size={12} className="execution-step-check" aria-label={t("completed", "Completed")} />
-        )}
-        {duration !== undefined && <span className="execution-step-duration">{duration}s</span>}
-        <ChevronRight size={13} className="execution-step-chevron" aria-hidden="true" />
-      </button>
-
-      {/* ── Expanded: input args ── */}
-      {expanded && !isEditTool && (
-        <pre
-          style={{
-            margin: 0,
-            padding: "8px 12px",
-            color: "var(--tool-fg)",
-            fontSize: scaledChatFont(12),
-            lineHeight: 1.5,
-            overflow: "auto",
-            background: "transparent",
-            borderTop: "none",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}
-        >
-          {inputStr}
-        </pre>
-      )}
-
-      {isRunning && expanded && (
-        <div style={{ padding: "8px 12px", color: "var(--text-dim)" }}>
-          {t("running", "Running…")}
-          <span className="stream-caret" aria-hidden="true" />
-        </div>
-      )}
-      {!result && running === false && (
-        <p style={{ padding: "8px 12px", color: "var(--text-dim)", margin: 0 }}>
-          {t("executionResultMissing", "Result was not recorded in the conversation.")}
-        </p>
-      )}
-
-      {isHistoryNotice && !expanded && !isError && <p className="tool-history-notice">{resultText}</p>}
-      {/* Successful output stays folded; failures remain visible for recovery. */}
-      {result &&
-        (expanded || isError) &&
-        (resultDiff ? (
-          <PairedDiffResult diff={resultDiff} />
-        ) : (
-          <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={isError} collapsed={!expanded} />
-        ))}
-      {result && <ToolResultImages content={result.content} />}
-      {result && <DeferredContentActions content={result.content} onLoad={onLoadDeferredContent} />}
-      {browserTabId && (
-        <button
-          type="button"
-          onClick={() =>
-            window.dispatchEvent(new CustomEvent("pi-desktop:open-browser-tab", { detail: { tabId: browserTabId } }))
-          }
-          style={{
-            width: "100%",
-            minHeight: 30,
-            border: "none",
-            borderTop: "1px solid var(--tool-border)",
-            background: "transparent",
-            color: "var(--accent)",
-            cursor: "pointer",
-            fontSize: scaledChatFont(11),
-            textAlign: "left",
-            padding: "0 12px",
-          }}
-        >
-          Open in Browser →
-        </button>
-      )}
-    </div>
-  );
-}
-
-function isBrowserToolName(value: string): boolean {
-  return value.startsWith("browser_");
-}
-
-function browserTabIdFromResult(value: string | null): string | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value) as { tabId?: unknown; id?: unknown };
-    const tabId = typeof parsed.tabId === "string" ? parsed.tabId : typeof parsed.id === "string" ? parsed.id : null;
-    return tabId && tabId.length <= 128 ? tabId : null;
-  } catch {
-    return null;
-  }
-}
-
-function browserResultSummary(value: string, t: (key: string, fallback: string) => string): string | null {
-  try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    if (typeof parsed.inspectionId === "string" && typeof parsed.changed === "boolean") {
-      const truncated = isRecord(parsed.truncated)
-        ? Object.entries(parsed.truncated)
-            .filter(([, entry]) => entry === true)
-            .map(([key]) => key)
-            .join(", ")
-        : "";
-      return parsed.changed
-        ? formatBrowserSummary(t("browserToolInspectChanged", "Page changed · generation {generation}{truncated}"), {
-            generation: Number(parsed.generation ?? 0),
-            truncated: truncated ? ` · truncated: ${truncated}` : "",
-          })
-        : formatBrowserSummary(t("browserToolInspectUnchanged", "Page unchanged · generation {generation}"), {
-            generation: Number(parsed.generation ?? 0),
-          });
-    }
-    if (typeof parsed.differenceRatio === "number") {
-      return formatBrowserSummary(t("browserToolVisualDifference", "Visual difference: {percent}% · {pixels} pixels"), {
-        percent: (parsed.differenceRatio * 100).toFixed(3),
-        pixels: Number(parsed.differentPixels ?? 0).toLocaleString(),
-      });
-    }
-    if (typeof parsed.total === "number" && typeof parsed.failed === "number" && isRecord(parsed.byResourceType)) {
-      return formatBrowserSummary(
-        t("browserToolNetworkSummary", "Network: {total} requests · {failed} failed · {pending} pending"),
-        {
-          total: parsed.total,
-          failed: parsed.failed,
-          pending: Number(parsed.pending ?? 0),
-        },
-      );
-    }
-    if (Array.isArray(parsed.entries)) {
-      return formatBrowserSummary(t("browserToolConsoleSummary", "Console: {count} entries{truncated}"), {
-        count: parsed.entries.length,
-        truncated: parsed.truncated === true ? " · more available" : "",
-      });
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function formatBrowserSummary(template: string, values: Record<string, string | number>): string {
-  return template.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (match, key: string) =>
-    values[key] === undefined ? match : String(values[key]),
-  );
-}
-
-interface ResultDiff {
-  text: string;
-}
-
-function PairedDiffResult({ diff }: { diff: ResultDiff }) {
-  return (
-    <div
-      style={{
-        borderTop: "1px solid var(--tool-border)",
-        background: "color-mix(in srgb, var(--tool-bg) 92%, #fff)",
-      }}
-    >
-      <SplitPatchView text={diff.text} />
-    </div>
-  );
-}
-
-function SplitPatchView({ text }: { text: string }) {
-  const files = useMemo(() => parseUnifiedPatch(text), [text]);
-  if (!files) return <PatchTextView text={text} />;
-  const showFileHeaders = files.length > 1;
-
-  return (
-    <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--bg)" }}>
-      {files.map((file, fileIndex) => (
-        <div
-          key={fileIndex}
-          style={{
-            minWidth: 0,
-            borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
-            fontFamily: "var(--font-mono)",
-            fontSize: scaledChatFont(12),
-            lineHeight: 1.55,
-          }}
-        >
-          {showFileHeaders && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-                background: "var(--bg-panel)",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              <SplitDiffHeader title={file.oldPath || "Before"} side="left" />
-              <SplitDiffHeader title={file.newPath || "After"} side="right" />
-            </div>
-          )}
-
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
-            {file.rows.map((row, rowIndex) => {
-              if (row.type === "hunk") {
-                return null;
-              }
-
-              return (
-                <div key={rowIndex} style={{ display: "contents" }}>
-                  <SplitDiffCellView cell={row.left} side="left" />
-                  <SplitDiffCellView cell={row.right} side="right" />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SplitDiffHeader({ title, side }: { title: string; side: "left" | "right" }) {
-  return (
-    <div
-      title={title}
-      style={{
-        padding: "5px 10px",
-        color: "var(--text-dim)",
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {title}
-    </div>
-  );
-}
-
-function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" | "right" }) {
-  const bg =
-    cell.type === "added"
-      ? "rgba(34,197,94,0.12)"
-      : cell.type === "removed"
-        ? "rgba(248,113,113,0.13)"
-        : cell.type === "empty"
-          ? "var(--bg-subtle)"
-          : "transparent";
-  const marker = cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
-  const markerColor =
-    cell.type === "added" ? "var(--success)" : cell.type === "removed" ? "var(--danger)" : "var(--text-dim)";
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        minWidth: 0,
-        background: bg,
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-      }}
-    >
-      <span
-        style={{
-          width: 42,
-          padding: "0 6px",
-          textAlign: "right",
-          color: "var(--text-dim)",
-          userSelect: "none",
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        {cell.lineNo ?? ""}
-      </span>
-      <span
-        style={{
-          width: 18,
-          padding: "0 5px",
-          color: markerColor,
-          userSelect: "none",
-          fontWeight: cell.type === "context" || cell.type === "empty" ? 400 : 700,
-          flexShrink: 0,
-        }}
-      >
-        {marker}
-      </span>
-      <span
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: "0 10px 0 0",
-          color: cell.type === "empty" ? "var(--text-dim)" : "var(--text)",
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-        }}
-      >
-        {cell.text || "\u00a0"}
-      </span>
-    </div>
-  );
-}
-
-function PatchTextView({ text }: { text: string }) {
-  const lines = text.split(/\r?\n/);
-
-  return (
-    <div
-      style={{
-        maxHeight: 520,
-        overflowY: "auto",
-        overflowX: "hidden",
-        fontFamily: "var(--font-mono)",
-        fontSize: scaledChatFont(12),
-        lineHeight: 1.55,
-        minWidth: 0,
-      }}
-    >
-      {lines.map((line, i) => {
-        const kind = line.startsWith("@@")
-          ? "hunk"
-          : line.startsWith("+") && !line.startsWith("+++")
-            ? "added"
-            : line.startsWith("-") && !line.startsWith("---")
-              ? "removed"
-              : "context";
-        const bg =
-          kind === "added"
-            ? "rgba(34,197,94,0.12)"
-            : kind === "removed"
-              ? "rgba(248,113,113,0.13)"
-              : kind === "hunk"
-                ? "rgba(96,165,250,0.12)"
-                : "transparent";
-        const color =
-          kind === "added"
-            ? "var(--success)"
-            : kind === "removed"
-              ? "var(--danger)"
-              : kind === "hunk"
-                ? "var(--accent)"
-                : "var(--text)";
-
-        return (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              background: bg,
-              borderLeft:
-                kind === "added"
-                  ? "3px solid var(--success)"
-                  : kind === "removed"
-                    ? "3px solid var(--danger)"
-                    : kind === "hunk"
-                      ? "3px solid var(--accent)"
-                      : "3px solid transparent",
-            }}
-          >
-            <span
-              style={{
-                width: 48,
-                padding: "0 8px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                borderRight: "1px solid var(--border)",
-                textAlign: "right",
-                userSelect: "none",
-                flexShrink: 0,
-              }}
-            >
-              {i + 1}
-            </span>
-            <span style={{ padding: "0 10px", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color }}>
-              {line || "\u00a0"}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function getResultDiff(result: ToolResultMessage): ResultDiff | null {
-  const details = (result as ToolResultMessage & { details?: unknown }).details;
-  if (!isRecord(details)) return null;
-
-  const patch = typeof details.patch === "string" ? details.patch : null;
-  if (patch) return { text: patch };
-
-  const diff = typeof details.diff === "string" ? details.diff : null;
-  if (diff) return { text: diff };
-
-  return null;
-}
-
-function isEditToolName(toolName: string): boolean {
-  const name = toolName.toLowerCase();
-  return (
-    name === "edit" ||
-    name.startsWith("edit_") ||
-    name.endsWith(".edit") ||
-    name.endsWith("_edit") ||
-    name.includes("str_replace") ||
-    name.includes("replace_editor")
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function PairedResult({
-  text,
-  isEmpty,
-  isError,
-  collapsed,
-}: {
-  text: string;
-  isEmpty: boolean;
-  isError: boolean;
-  collapsed?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        borderTop: isError
-          ? "1px solid color-mix(in srgb, var(--danger) 40%, transparent)"
-          : "1px solid var(--tool-border)",
-        background: isError ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "transparent",
-      }}
-    >
-      <pre
-        style={{
-          margin: 0,
-          padding: "8px 12px",
-          color: isError ? "var(--danger)" : isEmpty ? "var(--text-dim)" : "var(--tool-fg)",
-          fontSize: scaledChatFont(12),
-          lineHeight: 1.5,
-          maxHeight: collapsed ? 120 : 400,
-          overflow: "auto",
-          background: "transparent",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          fontStyle: isEmpty ? "italic" : "normal",
-          opacity: isEmpty ? 0.6 : 1,
-        }}
-      >
-        {isEmpty ? "(no output)" : text}
-      </pre>
-    </div>
+    <ToolCallRow
+      block={block}
+      result={result}
+      resultText={resultText}
+      running={running !== false}
+      expanded={expanded}
+      onToggle={toggle}
+      cwd={cwd}
+      home={home}
+      t={t}
+      runningLabel={t("rowRunning", "Running")}
+      preparingLabel={t("rowPreparing", "Preparing tool call")}
+      inputLabel={t("toolRowInput", "IN")}
+      outputLabel={t("toolRowOutput", "OUT")}
+      stoppedLabel={t("rowStopped", "Stopped")}
+      missingResultLabel={t("executionResultMissing", "Result was not recorded in the conversation.")}
+      browserTabId={browserTabId}
+      browserSummary={browserSummary}
+      historyNotice={historyNotice}
+      onOpenBrowserTab={(tabId) =>
+        window.dispatchEvent(new CustomEvent("pi-desktop:open-browser-tab", { detail: { tabId } }))
+      }
+    />
   );
 }
 
 function CompactionMessageView({ message }: { message: CustomMessage }) {
+  const { t } = useI18n();
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
   const [expanded, setExpanded] = useState(false);
-  const time = formatTime(message.timestamp);
+  const firstLine = parsedSummary.body.split(/\r?\n/).find((line) => line.trim() !== "") ?? "";
 
   return (
-    <div className="chat-message chat-message-system" style={{ marginBottom: 16 }}>
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          overflow: "hidden",
-          background: "var(--bg)",
-        }}
-      >
+    <div className="chat-message chat-message-system">
+      <div className="dsh-compaction-row" data-expanded={expanded || undefined}>
         <button
           type="button"
-          className="compaction-summary-toggle"
+          className="dsh-compaction-button"
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
-          title={expanded ? "Collapse compaction summary" : "Expand compaction summary"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "7px 10px",
-            borderBottom: expanded ? "1px solid var(--border)" : "none",
-            background: "var(--bg-panel)",
-            color: "var(--text-muted)",
-          }}
+          title={
+            expanded
+              ? t("collapseCompactionSummary", "Collapse compaction summary")
+              : t("expandCompactionSummary", "View compaction summary")
+          }
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            style={{
-              flexShrink: 0,
-              transform: expanded ? "rotate(90deg)" : "none",
-              transition: "transform 0.15s",
-            }}
-          >
-            <polyline points="4 2.5 7.5 6 4 9.5" />
-          </svg>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: scaledChatFont(11), fontWeight: 650 }}>
-            compaction
+          <span className="dsh-compaction-leading" aria-hidden="true">
+            <History className="dsh-compaction-context-icon" size={14} strokeWidth={1.6} />
+            <ChevronDown className="dsh-compaction-disclosure-icon" size={14} strokeWidth={1.6} />
           </span>
-          <span style={{ color: "var(--text)", fontSize: scaledChatFont(12), fontWeight: 600 }}>
-            Conversation compacted
-          </span>
-          {time && (
-            <time className="chat-message-time" style={{ marginLeft: "auto" }}>
-              {time}
-            </time>
-          )}
+          <span className="dsh-compaction-title">{t("compactionLabel", "Context compacted")}</span>
+          <span className="dsh-compaction-separator" aria-hidden="true" />
+          <span className="dsh-compaction-summary">{firstLine}</span>
         </button>
-
         {expanded && (
-          <div style={{ padding: "11px 13px 12px" }}>
-            <div style={{ marginBottom: 10, color: "var(--text)", fontSize: scaledChatFont(14), lineHeight: 1.5 }}>
-              The conversation history before this point was compacted into the following summary:
-            </div>
+          <div className="dsh-compaction-body">
             {parsedSummary.body ? (
-              <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
+              <MarkdownBody variant="compact" className="markdown-compaction-message">
+                {parsedSummary.body}
+              </MarkdownBody>
             ) : (
-              <span style={{ color: "var(--text-dim)", fontSize: scaledChatFont(12) }}>(no summary)</span>
+              <span className="dsh-compaction-empty">
+                {t("compactionUnavailable", "Compaction summary unavailable")}
+              </span>
             )}
             <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
           </div>
@@ -1503,27 +731,32 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
 }
 
 function CompactionFileMetadata({ readFiles, modifiedFiles }: { readFiles: string[]; modifiedFiles: string[] }) {
+  const { t } = useI18n();
   const total = readFiles.length + modifiedFiles.length;
   if (total === 0) return null;
 
-  const parts = [];
-  if (readFiles.length > 0) parts.push(`${readFiles.length} read`);
-  if (modifiedFiles.length > 0) parts.push(`${modifiedFiles.length} modified`);
+  const parts: string[] = [];
+  if (readFiles.length > 0) parts.push(`${readFiles.length} ${t("compactionRead", "read")}`);
+  if (modifiedFiles.length > 0) parts.push(`${modifiedFiles.length} ${t("compactionModified", "modified")}`);
 
   return (
-    <details className="compaction-file-details">
-      <summary>File context: {parts.join(", ")}</summary>
-      {modifiedFiles.length > 0 && <CompactionFileList title="Modified files" files={modifiedFiles} />}
-      {readFiles.length > 0 && <CompactionFileList title="Read files" files={readFiles} />}
+    <details className="dsh-compaction-files">
+      <summary>
+        {t("compactionFileContext", "File context")}: {parts.join(", ")}
+      </summary>
+      {modifiedFiles.length > 0 && (
+        <CompactionFileList title={t("compactionModifiedFiles", "Modified files")} files={modifiedFiles} />
+      )}
+      {readFiles.length > 0 && <CompactionFileList title={t("compactionReadFiles", "Read files")} files={readFiles} />}
     </details>
   );
 }
 
 function CompactionFileList({ title, files }: { title: string; files: string[] }) {
   return (
-    <div className="compaction-file-section">
-      <div className="compaction-file-title">{title}</div>
-      <ul className="compaction-file-list">
+    <div className="dsh-compaction-file-section">
+      <div className="dsh-compaction-file-title">{title}</div>
+      <ul className="dsh-compaction-file-list">
         {files.map((file) => (
           <li key={file}>{file}</li>
         ))}
@@ -1543,6 +776,7 @@ function CustomMessageView({
   onOpenFile?: (filePath: string) => void;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const isHiddenDisplay = message.display === false;
   const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -1555,175 +789,63 @@ function CustomMessageView({
   const time = formatTime(message.timestamp);
 
   const copyContent = () => void copy(text || detailsText);
+  const preview = text ? previewText(text) : t("extensionMessageHidden", "Extension message");
 
   return (
-    <div className="chat-message chat-message-system" style={{ marginBottom: 16 }}>
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          overflow: "hidden",
-          background: isHiddenDisplay ? "var(--bg-subtle)" : "var(--bg)",
-          opacity: isHiddenDisplay && !contentExpanded ? 0.82 : 1,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "7px 10px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-            color: "var(--text-muted)",
-            fontSize: scaledChatFont(12),
-          }}
+    <div className="chat-message chat-message-system">
+      <div className="dsh-custom-row" data-expanded={contentExpanded || undefined}>
+        <button
+          type="button"
+          className="dsh-custom-button"
+          aria-expanded={contentExpanded}
+          onClick={() => setContentExpanded((value) => !value)}
         >
-          <span
-            style={{
-              color: "var(--text-muted)",
-              fontFamily: "var(--font-mono)",
-              fontSize: scaledChatFont(11),
-              fontWeight: 650,
-            }}
-          >
-            {title}
-          </span>
-          {isHiddenDisplay && (
-            <span style={{ color: "var(--text-dim)", fontSize: scaledChatFont(11) }}>hidden extension message</span>
-          )}
-          {time && (
-            <time className="chat-message-time" style={{ marginLeft: "auto" }}>
-              {time}
-            </time>
-          )}
-        </div>
+          <span className="dsh-custom-kind">{title}</span>
+          <span className="dsh-compaction-separator" aria-hidden="true" />
+          <span className="dsh-custom-summary">{preview}</span>
+          <ChevronDown className="dsh-custom-chevron" size={14} strokeWidth={1.6} aria-hidden="true" />
+        </button>
 
-        {contentExpanded ? (
-          <div style={{ padding: "6px 9px" }}>
+        {contentExpanded && (
+          <div className="dsh-custom-body">
+            {isHiddenDisplay && (
+              <div className="dsh-custom-note">{t("extensionMessageHiddenLabel", "Hidden extension message")}</div>
+            )}
             {images.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: text ? 8 : 0 }}>
+              <div className="dsh-user-attachments">
                 {images.map((img, i) => {
                   const src = imageSource(img);
                   if (!src) return null;
-                  return (
-                    <img
-                      key={i}
-                      src={src}
-                      alt=""
-                      style={{
-                        maxWidth: 240,
-                        maxHeight: 240,
-                        borderRadius: 6,
-                        objectFit: "contain",
-                        display: "block",
-                        border: "1px solid var(--border)",
-                      }}
-                    />
-                  );
+                  return <img key={i} className="dsh-user-image" src={src} alt="" />;
                 })}
               </div>
             )}
             {text ? (
-              <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>
+              <MarkdownBody variant="compact" className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>
                 {text}
               </MarkdownBody>
             ) : (
-              <span style={{ color: "var(--text-dim)", fontSize: scaledChatFont(12) }}>(no message)</span>
+              <span className="dsh-compaction-empty">{t("extensionMessageEmpty", "(no message)")}</span>
             )}
             <DeferredContentActions content={message.content} onLoad={onLoadDeferredContent} />
           </div>
-        ) : (
-          <button
-            onClick={() => setContentExpanded(true)}
-            style={{
-              display: "block",
-              width: "100%",
-              padding: "8px 10px",
-              border: "none",
-              background: "transparent",
-              color: "var(--text-dim)",
-              cursor: "pointer",
-              fontSize: scaledChatFont(12),
-              textAlign: "left",
-            }}
-          >
-            {text ? previewText(text) : "Show extension message"}
-          </button>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "4px 9px",
-            borderTop: "1px solid var(--border)",
-            background: "var(--bg-subtle)",
-          }}
-        >
+        <div className="dsh-custom-footer">
           {text || detailsText ? (
-            <button
-              onClick={copyContent}
-              style={{
-                padding: "3px 7px",
-                border: "none",
-                background: "none",
-                color: copied ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: scaledChatFont(11),
-              }}
-            >
-              {copied ? "Copied" : "Copy"}
+            <button type="button" className="dsh-custom-action" data-active={copied || undefined} onClick={copyContent}>
+              {copied ? t("copyMessageCopied", "Copied") : t("copyMessage", "Copy message")}
             </button>
           ) : null}
-          {(hasDetails || isHiddenDisplay) && (
-            <button
-              onClick={() => {
-                if (isHiddenDisplay) setContentExpanded((v) => !v);
-                else setDetailsExpanded((v) => !v);
-              }}
-              style={{
-                marginLeft: "auto",
-                padding: "3px 7px",
-                border: "none",
-                background: "none",
-                color: "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: scaledChatFont(11),
-              }}
-            >
-              {isHiddenDisplay
-                ? contentExpanded
-                  ? "Collapse"
-                  : "Expand"
-                : detailsExpanded
-                  ? "Hide details"
-                  : "Show details"}
+          {hasDetails && (
+            <button type="button" className="dsh-custom-action" onClick={() => setDetailsExpanded((value) => !value)}>
+              {detailsExpanded ? t("hideDetails", "Hide details") : t("showDetails", "Show details")}
             </button>
           )}
+          {time && <time className="dsh-message-clock">{time}</time>}
         </div>
 
-        {hasDetails && ((isHiddenDisplay && contentExpanded) || (!isHiddenDisplay && detailsExpanded)) && (
-          <pre
-            style={{
-              margin: 0,
-              padding: "9px 10px",
-              borderTop: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              fontSize: scaledChatFont(12),
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 360,
-              overflow: "auto",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {detailsText}
-          </pre>
-        )}
+        {hasDetails && detailsExpanded && <pre className="dsh-custom-details">{detailsText}</pre>}
       </div>
     </div>
   );
@@ -1768,36 +890,4 @@ function previewText(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return "Show extension message";
   return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
-}
-
-function getToolPreview(block: ToolCallContent): string {
-  const input = block.input;
-  if (!input || typeof input !== "object") return "";
-  const keys = Object.keys(input);
-  if (keys.length === 0) return "";
-
-  // Common tool input patterns
-  if ("command" in input) return String(input.command).slice(0, 120);
-  if ("path" in input) return String(input.path).slice(0, 120);
-  if ("file_path" in input) return String(input.file_path).slice(0, 120);
-  if ("pattern" in input) return String(input.pattern).slice(0, 120);
-  if ("query" in input) return String(input.query).slice(0, 120);
-
-  const first = input[keys[0]];
-  return String(first).slice(0, 120);
-}
-
-function formatUsage(usage: {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: { total: number };
-}): string {
-  const parts = [];
-  if (usage.input) parts.push(`${usage.input.toLocaleString()} in`);
-  if (usage.output) parts.push(`${usage.output.toLocaleString()} out`);
-  if (usage.cacheRead) parts.push(`${usage.cacheRead.toLocaleString()} cache`);
-  if (usage.cost?.total) parts.push(`$${usage.cost.total.toFixed(4)}`);
-  return parts.join(" · ");
 }

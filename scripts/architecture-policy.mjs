@@ -18,10 +18,6 @@ export const architecturePolicy = {
         "Browser tab/control owner after capture, snapshot, script, network and input extraction; lifecycle and inspection orchestration remain.",
     },
 
-    "src/renderer/components/MessageView.tsx": {
-      maxLines: 2072,
-      reason: "Existing rich text, attachment and tool rendering; no increase beyond this checkpoint.",
-    },
     "src/renderer/components/channels/ChannelsConfig.tsx": {
       maxLines: 1924,
       reason: "Existing account and pairing UI; preserve behavior while future work separates its forms.",

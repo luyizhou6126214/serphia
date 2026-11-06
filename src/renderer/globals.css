@@ -487,6 +487,9 @@
   --selection: #fed7aa;
   --thinking-bg: #fbfaf8;
   --thinking-border: #d6d3cd;
+  /* Project glyph: neutral outline when closed, tinted accent folder when open. */
+  --project-folder-accent: #4176e6;
+  --project-folder-tint: #dbe5f8;
   --chat-font-scale: 1;
   --chat-content-max-width: 760px;
 }
@@ -531,6 +534,8 @@ html.dark {
   --selection: rgba(234, 88, 12, 0.38);
   --thinking-bg: #1a1815;
   --thinking-border: #4a453c;
+  --project-folder-accent: #7ea2f0;
+  --project-folder-tint: rgba(65, 118, 230, 0.24);
 }
 
 .chat-appearance-scope {
@@ -650,8 +655,8 @@ body {
   color: var(--text) !important;
 }
 
-.message-hover-actions:focus-within,
-.message-hover-action:focus-visible {
+.dsh-message-actions:focus-within,
+.dsh-message-action:focus-visible {
   opacity: 1 !important;
   pointer-events: auto !important;
 }
@@ -728,15 +733,324 @@ html.dark ::-webkit-scrollbar-thumb {
     "PingFang SC", "Noto Sans Mono CJK SC", "Noto Sans Mono", monospace;
 }
 
-/* Streaming caret (design.html) */
-.stream-caret {
-  display: inline-block;
-  width: 7px;
-  height: 15px;
-  background: var(--accent);
-  margin-left: 2px;
-  vertical-align: -2px;
-  animation: blink 0.9s step-start infinite;
+/* ══ DeepSeek Harness presentation layer ══════════════════════════════════
+   The transcript follows DSH's rendering vocabulary: one content-size axis
+   published by the Settings font-size preference, a secondary tier derived
+   from it, and the alias/border/radius tokens the DSH components name. */
+
+:root {
+  --dsh-content-font-size: calc(14px * var(--chat-font-scale, 1));
+  --dsh-content-font-delta: calc(var(--dsh-content-font-size) - 14px);
+  --dsh-content-font-size-secondary: min(
+    calc(var(--dsh-content-font-size) - 1px),
+    max(13px, calc(var(--dsh-content-font-size) - 2px))
+  );
+  --dsh-content-font-delta-secondary: calc(var(--dsh-content-font-size-secondary) - 13px);
+  --dsh-chat-content-width: var(--chat-content-max-width, 748px);
+  --dsh-chat-flow-gap: 6px;
+  --ds-font-family-code: var(--font-mono);
+  --dsh-scrollbar-width: 5px;
+  --dsw-radius-xs: 4px;
+  --dsw-radius-sm: 6px;
+  --dsw-radius-md: 8px;
+  --dsw-radius-lg: 10px;
+  --dsw-radius-xl: 16px;
+  --dsw-focus-ring-color: var(--accent);
+  --dsw-alias-label-primary: var(--text);
+  --dsw-alias-label-secondary: var(--text-muted);
+  --dsw-alias-label-tertiary: var(--text-dim);
+  --dsw-alias-label-caption: color-mix(in srgb, var(--text-dim) 72%, var(--text));
+  --dsw-alias-label-link: var(--accent);
+  --dsw-alias-link: var(--accent);
+  --dsw-alias-border-l1: color-mix(in srgb, var(--border) 62%, transparent);
+  --dsw-alias-border-l2: var(--border);
+  --dsw-alias-border-l3: color-mix(in srgb, var(--text-dim) 42%, var(--border));
+  --dsw-alias-bg-base: var(--bg);
+  --dsw-alias-markdown-inline-code: var(--bg-subtle);
+  --dsw-alias-markdown-code-block: color-mix(in srgb, var(--bg) 92%, var(--bg-panel));
+  --dsw-alias-interactive-bg-hover: color-mix(in srgb, var(--text) 5%, transparent);
+  --dsw-alias-interactive-bg-hover-solid: var(--bg-hover);
+  --dsw-specific-bubble: var(--chat-user-bg);
+  --dsw-specific-input-major: var(--bg-panel);
+  --dsw-alias-state-error-primary: var(--danger);
+  --dsw-alias-state-warn-primary: var(--warning);
+  --dsw-alias-state-warn-label: var(--warning);
+  --dsw-alias-state-success-primary: var(--success);
+  --dsw-alias-label-shimmer: color-mix(in srgb, var(--text-dim) 45%, var(--text));
+  --dsw-alias-label-deep-diving: var(--info);
+  --dsw-font-markdown-code: 400 calc(var(--dsh-content-font-size-secondary) - 1px) /
+    calc(22px + var(--dsh-content-font-delta-secondary)) var(--font-mono);
+  --dsw-font-markdown-code-block-small: 400 12px / 18px var(--font-mono);
+  --dsw-font-xs-13: 400 var(--dsh-content-font-size-secondary) / calc(20px + var(--dsh-content-font-delta-secondary))
+    var(--font-sans);
+  --dsw-font-sm-13: 400 var(--dsh-content-font-size-secondary) / calc(20px + var(--dsh-content-font-delta-secondary))
+    var(--font-sans);
+}
+
+/* The scoped chat palette republishes the size axis so the whole ladder follows
+   the Settings font-size preference on the chat surface. */
+.chat-appearance-scope {
+  --dsh-content-font-size: calc(14px * var(--chat-font-scale, 1));
+  --dsh-content-font-delta: calc(var(--dsh-content-font-size) - 14px);
+  --dsh-content-font-size-secondary: min(
+    calc(var(--dsh-content-font-size) - 1px),
+    max(13px, calc(var(--dsh-content-font-size) - 2px))
+  );
+  --dsh-content-font-delta-secondary: calc(var(--dsh-content-font-size-secondary) - 13px);
+  --dsh-chat-content-width: var(--chat-content-max-width);
+  --dsw-alias-label-primary: var(--text);
+  --dsw-alias-label-secondary: var(--text-muted);
+  --dsw-alias-label-tertiary: var(--text-dim);
+  --dsw-alias-bg-base: var(--bg);
+  --dsw-alias-border-l1: color-mix(in srgb, var(--border) 62%, transparent);
+  --dsw-alias-border-l2: var(--border);
+  --dsw-alias-border-l3: color-mix(in srgb, var(--text-dim) 42%, var(--border));
+  --dsw-alias-markdown-inline-code: var(--bg-subtle);
+  --dsw-alias-markdown-code-block: color-mix(in srgb, var(--bg) 92%, var(--bg-panel));
+  --dsw-alias-interactive-bg-hover: color-mix(in srgb, var(--text) 5%, transparent);
+  --dsw-alias-interactive-bg-hover-solid: var(--bg-hover);
+  --dsw-specific-bubble: var(--chat-user-bg);
+  --dsw-specific-input-major: var(--bg-panel);
+}
+
+.dsh-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/*── TextShimmer: one shared highlight sweeping real, selectable text ────────*/
+
+.dsh-shimmer {
+  position: relative;
+  display: inline-grid;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: top;
+  color: inherit;
+}
+
+.dsh-shimmer-content {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.dsh-shimmer-text {
+  color: inherit;
+}
+
+.dsh-shimmer-text[data-shimmer-text]::after {
+  content: attr(data-shimmer-text);
+}
+
+.dsh-shimmer-decoration {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dsh-shimmer-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-shimmer);
+  mask-image: linear-gradient(105deg, transparent 0%, black 40% 60%, transparent 100%);
+  transform: translateX(-100%);
+  animation-name: dsh-row-shimmer-sweep;
+}
+
+.dsh-shimmer-sweep * {
+  color: inherit !important;
+}
+
+.dsh-shimmer-sweep [data-shimmer-decoration] {
+  background: currentColor;
+}
+
+.dsh-shimmer-highlight {
+  width: 100%;
+  height: 100%;
+  transform: translateX(100%);
+  animation-name: dsh-row-shimmer-highlight;
+}
+
+.dsh-shimmer-sweep,
+.dsh-shimmer-highlight {
+  animation-duration: 1.5s;
+  animation-delay: 0.3s;
+  animation-timing-function: steps(48, end);
+  animation-iteration-count: infinite;
+}
+
+@keyframes dsh-row-shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  66.6667%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes dsh-row-shimmer-highlight {
+  0% {
+    transform: translateX(100%);
+  }
+  66.6667%,
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-shimmer-decoration {
+    display: none;
+  }
+  .dsh-shimmer-sweep,
+  .dsh-shimmer-highlight {
+    animation: none;
+  }
+}
+
+/*── DisclosureRow: the shared 24px process row ────────────────────────────*/
+
+.dsh-disclosure {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.dsh-disclosure-row {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  transition: color 100ms ease;
+}
+
+.dsh-disclosure-row[data-expandable] {
+  cursor: pointer;
+}
+
+.dsh-disclosure-row:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-disclosure-leading {
+  position: relative;
+  flex: none;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+.dsh-disclosure-leading svg:not([data-state]) {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+button.dsh-disclosure-leading {
+  cursor: pointer;
+}
+
+.dsh-disclosure-icon-idle {
+  display: inline-flex;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.dsh-disclosure-chevron-hover {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.dsh-disclosure-row:hover .dsh-disclosure-icon-idle {
+  opacity: 0;
+}
+
+.dsh-disclosure-row:hover .dsh-disclosure-chevron-hover {
+  opacity: 1;
+}
+
+.dsh-disclosure-title {
+  flex: none;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: inherit;
+}
+
+.dsh-row-separator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  margin: 0 8px;
+  background: var(--dsw-alias-label-caption);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-disclosure-row,
+  .dsh-disclosure-icon-idle,
+  .dsh-disclosure-chevron-hover {
+    transition: none;
+  }
+}
+
+/*── Flow rhythm: 6px between rows, 12px around a response ─────────────────*/
+
+.dsh-flow {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dsh-flow > :not([hidden]):not(:empty) ~ :not([hidden]):not(:empty) {
+  margin-top: var(--dsh-chat-flow-gap, 6px);
+}
+
+.dsh-flow > [data-flow-part="response"]:not([hidden]):not(:empty) {
+  --dsh-chat-flow-gap: 12px;
+}
+
+.dsh-flow
+  > [data-flow-part="response"]:not([hidden]):not(:empty)
+  + :not([hidden]):not([data-flow-part="response"]):not(:empty) {
+  --dsh-chat-flow-gap: 12px;
+}
+
+.dsh-flow > [data-flow-part="response"] + [data-flow-part="response"] {
+  --dsh-chat-flow-gap: 16px;
+}
+
+/* A settled Turn's process section is a header row: it keeps 16px clearance
+   from the input above it and from whatever follows. */
+.dsh-flow > [data-flow-part="process"] {
+  --dsh-chat-flow-gap: 16px;
+}
+
+.dsh-flow > [data-flow-part="process"] + :not([hidden]):not(:empty) {
+  --dsh-chat-flow-gap: 16px;
 }
 
 /* Chat area grid paper background */
@@ -791,53 +1105,78 @@ code {
   font-family: var(--font-mono);
 }
 
-/* react-markdown output styles */
+/* react-markdown output: the DeepSeek Harness markdown type ladder. */
 .markdown-body {
-  font-size: calc(14px * var(--chat-font-scale, 1));
-  line-height: 1.85;
-  color: var(--text);
-  word-break: break-word;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary);
 }
 .markdown-body p {
-  margin: 0 0 14px;
-}
-.markdown-body p:last-child {
-  margin-bottom: 0;
+  margin: 16px 0;
 }
 .markdown-body h1,
 .markdown-body h2,
-.markdown-body h3,
-.markdown-body h4,
-.markdown-body h5,
-.markdown-body h6 {
-  font-weight: 600;
-  margin: 26px 0 10px;
-  color: var(--text);
-  line-height: 1.35;
-  letter-spacing: -0.02em;
-}
-.markdown-body > :first-child {
-  margin-top: 0;
+.markdown-body h3 {
+  font-weight: 700;
+  margin: 32px 0 16px;
 }
 .markdown-body h1 {
-  font-size: 1.55em;
+  font-size: calc(21px + var(--dsh-content-font-delta, 0px));
+  line-height: calc(30px + var(--dsh-content-font-delta, 0px));
 }
 .markdown-body h2 {
-  font-size: 1.28em;
+  font-size: calc(19px + var(--dsh-content-font-delta, 0px));
+  line-height: calc(28px + var(--dsh-content-font-delta, 0px));
 }
 .markdown-body h3 {
-  font-size: 1.1em;
-  color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
+  font-size: calc(18px + var(--dsh-content-font-delta, 0px));
+  line-height: calc(26px + var(--dsh-content-font-delta, 0px));
+}
+.markdown-body h4 {
+  margin: 16px 0;
+}
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 16px 0;
+}
+.markdown-body :is(h4, h5, h6) {
+  font-weight: 600;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+.markdown-body :is(h1, h2, h3, h4, h5, h6) strong {
+  font-weight: inherit;
+}
+.markdown-body > :first-child,
+.markdown-body p:first-child {
+  margin-top: 0 !important;
+}
+.markdown-body > *:last-child,
+.markdown-body p:last-child {
+  margin-bottom: 0 !important;
+}
+.markdown-body :is(h4, h5, h6) + :is(ul, ol) {
+  margin-top: 8px;
+}
+.markdown-body :is(h4, h5, h6):has(+ :is(ul, ol)) {
+  margin-bottom: 8px;
 }
 .markdown-body ul,
 .markdown-body ol {
-  padding-left: 22px;
-  margin: 10px 0 16px;
+  margin: 16px 0;
+  padding-left: 18px;
   list-style-position: outside;
 }
+.markdown-body li:not(:first-child) {
+  margin-top: 6px;
+}
 .markdown-body li {
-  margin: 6px 0;
-  padding-left: 2px;
+  padding-left: 0;
+}
+.markdown-body li > :is(ul, ol) {
+  margin-top: 4px;
 }
 .markdown-body ul > li {
   list-style-type: disc;
@@ -846,44 +1185,72 @@ code {
   list-style-type: decimal;
 }
 .markdown-body li > p {
-  margin: 0;
+  margin: 8px 0;
+}
+.markdown-body li > *:first-child {
+  margin-top: 0;
+}
+.markdown-body li > *:last-child:not(.md-code-block) {
+  margin-bottom: 0;
 }
 .markdown-body li::marker {
-  color: var(--text-muted);
-  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 400;
+  line-height: 24px;
+}
+.markdown-body :is(ul, ol) ol {
+  list-style-position: inside;
+  padding-left: 0;
+}
+.markdown-body :is(ul, ol) ol li p {
+  display: inline;
 }
 .markdown-body strong {
   color: inherit;
-  font-weight: 650;
+  font-weight: 600;
 }
 .markdown-body em {
-  color: var(--text-muted);
+  color: inherit;
 }
 .markdown-body a {
-  color: var(--accent);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  position: relative;
+  color: var(--dsw-alias-link);
+  font-weight: 500;
+  text-decoration: none;
+  /* Transparent hit-area padding: literal zero-alpha only, no painted color. */
+  border-left: 3px solid rgb(255 255 255 / 0);
+  border-right: 3px solid rgb(255 255 255 / 0);
+  border-top: 2px solid rgb(255 255 255 / 0);
+  border-bottom: 2px solid rgb(255 255 255 / 0);
+  margin-left: -3px;
+  margin-right: -3px;
 }
-.markdown-body a:hover {
-  text-decoration-color: var(--accent);
+.markdown-body a:hover,
+.markdown-body a:focus {
+  outline: none;
+  text-decoration: underline dotted var(--dsw-alias-link);
+  text-underline-offset: 3px;
+}
+.markdown-body a:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
 }
 .markdown-body img {
   display: block;
+  width: auto;
   max-width: 100%;
   height: auto;
-  margin: 10px 0;
-  border-radius: 6px;
+  margin: 0;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-base);
   object-fit: contain;
 }
 .markdown-image-loading {
   display: block;
   width: min(100%, 320px);
   min-height: 120px;
-  margin: 10px 0;
+  margin: 16px 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-md);
   background: var(--bg-subtle);
   animation: pulse 1.2s ease-in-out infinite;
 }
@@ -891,17 +1258,26 @@ code {
   display: inline-block;
   margin: 6px 0;
   color: var(--text-muted);
-  font-size: calc(12px * var(--chat-font-scale, 1));
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   font-family: var(--font-mono);
 }
-.markdown-body .markdown-inline-code {
-  background: var(--bg-subtle);
-  border-radius: 5px;
-  padding: 1px 5px;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+.markdown-body :not(pre) > code {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 0.875em;
+  line-height: inherit;
+  background-color: var(--dsw-alias-markdown-inline-code);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm);
+  padding: 0 5px;
+  box-shadow: none;
+}
+.markdown-body :is(h1, h2, h3, h4, h5, h6) code {
+  font: inherit;
+  font-family: var(--ds-font-family-code);
 }
 .markdown-body .contains-task-list {
   padding-left: 0;
@@ -913,6 +1289,7 @@ code {
   gap: 7px;
   align-items: start;
   padding-left: 0;
+  margin-top: 6px;
 }
 .markdown-body .task-list-item::marker {
   content: "";
@@ -941,60 +1318,105 @@ code {
   transform: rotate(45deg) translateY(-1px);
 }
 .markdown-body blockquote {
-  border-left: 3px solid color-mix(in srgb, var(--border) 75%, var(--text-muted));
-  border-radius: 0 6px 6px 0;
-  margin: 6px 0;
-  padding: 6px 11px;
-  background: var(--bg-subtle);
-  color: var(--text-muted);
+  border-left: 2px solid var(--dsw-alias-label-caption);
+  border-radius: 0;
+  margin: 16px 0 0;
+  padding: 0 0 0 14px;
+  background: none;
+  color: inherit;
 }
-.markdown-table-wrap {
-  width: 100%;
-  margin: 8px 0;
+.markdown-body pre {
+  margin: 16px 0;
+  font-family: var(--ds-font-family-code);
+  overflow: auto;
+  background: none;
+}
+.markdown-body hr {
+  display: block;
+  border: none;
+  height: 0.5px;
+  margin: 32px 0;
+  background: var(--dsw-alias-border-l2);
+}
+.markdown-body .katex-display {
+  max-width: 100%;
+  margin: 16px 0;
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  padding: 0;
 }
-.markdown-body table {
-  border-collapse: separate;
-  border-spacing: 0;
-  min-width: 100%;
-  font-size: calc(13px * var(--chat-font-scale, 1));
+.markdown-body .katex {
+  font-size: 1.05em;
+}
+
+/* Markdown tables: the wrapper owns the horizontal axis, the table keeps its
+   natural width only for a comparison matrix (four or more columns). */
+.markdown-table-wrap {
+  max-width: 100%;
+  margin: 16px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.markdown-table-wrap:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
+}
+/* Wide tables reveal their horizontal bar on hover (or keyboard focus) instead
+   of keeping it painted: Chromium never repaints state-conditioned scrollbar
+   styles, so the toggle is `overflow-x` itself. */
+.markdown-table-wrap.md-table-wide {
+  overflow-x: hidden;
+  padding-bottom: var(--dsh-scrollbar-width, 5px);
+}
+.markdown-table-wrap.md-table-wide:hover,
+.markdown-table-wrap.md-table-wide:focus-visible {
+  overflow-x: scroll;
+  padding-bottom: 0;
+}
+.markdown-table-wrap table {
+  border-collapse: collapse;
+  width: max-content;
+  max-width: max-content;
+}
+/* Narrower tables fill the column instead: cells wrap down to their minimum
+   readable width and the wrapper only scrolls below that floor. */
+.markdown-table-wrap:not(.md-table-wide) table {
+  width: 100%;
+  max-width: none;
 }
 .markdown-body th,
 .markdown-body td {
   border: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 10px 14px;
-  text-align: left;
+  text-align: start;
   vertical-align: top;
-}
-.markdown-body tr:last-child td {
-  border-bottom: 0;
+  max-width: min(30vw, 320px);
+  min-width: 100px;
+  padding: 10px 16px;
 }
 .markdown-body th {
-  background: var(--bg-panel);
-  color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
-  font-weight: 650;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+  border-top: none;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-weight: 500;
+  line-height: calc(22px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-primary);
+  background: none;
 }
-.markdown-body tbody tr:nth-child(even) td {
-  background: var(--bg-subtle);
+.markdown-body td {
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(22px + var(--dsh-content-font-delta-secondary, 0px));
+  background: none;
 }
-.markdown-body hr {
-  border: none;
-  height: 1px;
-  margin: 12px 0;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
+.markdown-body th:first-child,
+.markdown-body td:first-child {
+  padding-left: 0;
 }
-.markdown-body .katex-display {
-  margin: 0.6em 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 2px 0;
+.markdown-body td:last-child {
+  padding-right: 0;
 }
-.markdown-body .katex {
-  font-size: 1.05em;
+.markdown-body table code {
+  font-size: 11px;
 }
 .markdown-body.markdown-user-message {
   color: inherit;
@@ -1140,30 +1562,35 @@ code {
   margin-top: 3px;
 }
 
+/* Fenced code: one surface and radius from the DSH code-block family, with a
+   line banner that carries the language and the copy control. */
 .markdown-code-block {
   position: relative;
   margin: 16px 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-lg);
   overflow: hidden;
-  background: var(--bg);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 42%, transparent);
+  background: var(--dsw-alias-markdown-code-block);
+  box-shadow: none;
 }
 .markdown-code-header {
-  padding: 8px 12px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: calc(11px * var(--chat-font-scale, 1));
+  padding: 3px 8px 3px 12px;
+  min-height: calc(28px + var(--dsh-content-font-delta, 0px));
+  background: none;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
 .markdown-code-lang {
-  color: var(--text-muted);
+  color: var(--dsw-alias-label-caption);
   font-family: var(--font-mono);
-  font-weight: 650;
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-weight: 400;
 }
 .markdown-code-actions {
   display: flex;
@@ -1171,28 +1598,29 @@ code {
   gap: 6px;
 }
 .markdown-code-action {
-  border: 1px solid transparent;
-  border-radius: 5px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
   padding: 2px 7px;
-  background: var(--bg);
-  color: var(--text-muted);
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   font: inherit;
-  font-size: calc(11px * var(--chat-font-scale, 1));
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: 1.25;
 }
 .markdown-code-action:hover:not(:disabled) {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--border) 70%, var(--text-muted));
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  border-color: transparent;
 }
 .markdown-code-action:disabled {
-  color: var(--text-dim);
+  color: var(--dsw-alias-label-caption);
   cursor: not-allowed;
   opacity: 0.75;
 }
 .markdown-code-action.is-active {
-  background: var(--bg-selected);
-  color: var(--text);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-primary);
 }
 
 .mermaid-block {
@@ -1296,16 +1724,6 @@ span.linenumber {
   100% {
     transform: scale(1);
     opacity: 0;
-  }
-}
-
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
   }
 }
 
@@ -1893,6 +2311,94 @@ span.linenumber {
 }
 .project-sidebar-group-toggle.is-current svg {
   color: var(--text);
+}
+/* Project glyph shared by project rows and the collapsed rail. The open state
+   paints stroke directly so ancestor colour rules cannot cancel the accent. */
+.project-folder-icon {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.project-folder-icon path {
+  transition:
+    stroke 140ms ease,
+    fill 140ms ease;
+}
+.project-folder-icon.is-open path {
+  stroke: var(--project-folder-accent, #4176e6);
+}
+.project-folder-icon.is-open .project-folder-icon-body {
+  fill: var(--project-folder-tint, #dbe5f8);
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-folder-icon path {
+    transition: none;
+  }
+}
+/* Hover feedback for a project row, matching the DeepSeek Harness workspace list:
+   the row eases into its highlight and the row actions fade in with it. */
+.project-sidebar-group-heading,
+.project-sidebar-group-toggle {
+  transition: background-color 120ms ease;
+}
+.project-sidebar-group-actions {
+  transition: opacity 120ms ease;
+}
+.project-sidebar-icon {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+/* Project hover card: 244px dark surface with name, path and first-open time. */
+.project-hover-card {
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #2c2c2e;
+  color: #f4f4f5;
+  font-family: var(--font-sans);
+  box-shadow:
+    0 18px 40px rgba(18, 16, 22, 0.28),
+    0 4px 12px rgba(18, 16, 22, 0.16);
+  pointer-events: none;
+  animation: project-hover-card-enter 120ms ease-out;
+}
+.project-hover-card-title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+.project-hover-card-path,
+.project-hover-card-meta {
+  font-size: 13px;
+  line-height: 20px;
+  color: #a9a9ae;
+  overflow-wrap: anywhere;
+}
+@keyframes project-hover-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-hover-card {
+    animation: none;
+  }
+  .project-sidebar-group-heading,
+  .project-sidebar-group-toggle,
+  .project-sidebar-group-actions,
+  .project-sidebar-icon {
+    transition: none;
+  }
 }
 .project-sidebar-group-name {
   font-weight: 500;
@@ -3545,80 +4051,126 @@ html.dark .composer-menu {
   line-height: 1.5;
 }
 
-/* Conversation rhythm: prose first, supporting metadata second. */
+/* ══ Conversation transcript: DeepSeek Harness message chrome ══════════════ */
+
 .chat-message-scroll {
   padding-top: 28px;
   scroll-padding-block: 24px;
 }
 .chat-message {
   min-width: 0;
-  margin-bottom: 28px;
 }
-.chat-user-bubble {
+
+/*── User message: right-aligned bubble with its action row beneath ────────*/
+
+.dsh-user-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.dsh-user-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  /* The reference bubble cap held as a share of the width axis (525/748 ≈
+     0.702) so it widens with a dragged or adaptive column. */
+  max-width: min(calc(var(--dsh-chat-content-width, 748px) * 0.702), 82%);
+}
+
+.dsh-user-bubble {
+  max-width: 100%;
+  min-width: 0;
+  background: var(--dsw-specific-bubble);
+  border-radius: var(--dsw-radius-xl);
+  /* 42px single-line bubble at the default size: 22 line + 10 vertical padding
+     each side; the Settings font-size preference moves both together. */
+  padding: 10px 16px;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+}
+
+.dsh-user-bubble .markdown-body {
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+}
+.dsh-user-bubble .markdown-body p {
+  /* The bubble owns wrapping so a decorated single-line message stays one line. */
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+}
+.dsh-user-bubble .markdown-body > :last-child,
+.dsh-user-bubble .markdown-body p:last-child {
+  margin-bottom: 0 !important;
+}
+.dsh-user-bubble .markdown-body a,
+.dsh-user-bubble .markdown-body strong,
+.dsh-user-bubble .markdown-body em {
+  color: inherit;
+}
+
+.dsh-user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
   max-width: 100%;
 }
-.chat-user-bubble .markdown-body {
-  font-size: calc(13.5px * var(--chat-font-scale, 1));
-  line-height: 1.75;
+
+.dsh-user-image {
+  display: block;
+  max-width: 240px;
+  max-height: 240px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  object-fit: contain;
 }
-.chat-user-bubble .markdown-body > :last-child {
-  margin-bottom: 0;
+
+.dsh-user-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: calc(28px + var(--dsh-content-font-delta, 0px));
 }
-.chat-message-model {
-  min-height: 16px;
-  margin-bottom: 9px !important;
-  font-family: var(--font-sans) !important;
-  font-size: calc(11px * var(--chat-font-scale, 1)) !important;
-  letter-spacing: 0.01em;
+
+.dsh-message-actions {
+  display: flex;
+  gap: 3px;
+  transition: opacity 0.12s;
 }
-.chat-message-meta {
-  min-height: 25px;
-  opacity: 0.5;
-  transition: opacity 160ms;
-  font-variant-numeric: tabular-nums;
-}
-.chat-message-meta > :is(span, div, time) {
-  font-size: calc(11px * var(--chat-font-scale, 1)) !important;
-}
-.chat-message:is(:hover, :focus-within) .chat-message-meta {
-  opacity: 1;
-}
-.chat-message-time,
-.chat-message-usage {
-  flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: calc(11px * var(--chat-font-scale, 1));
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 140ms;
-  font-variant-numeric: tabular-nums;
-}
-.chat-message:hover :is(.chat-message-time, .chat-message-usage) {
-  opacity: 1;
-  visibility: visible;
-}
-.chat-assistant-meta {
-  opacity: 1;
-}
-.message-icon-action {
+
+/*── IconActions: one 28px hit target with a hover/focus tooltip ───────────*/
+
+.dsh-message-action {
   position: relative;
   overflow: visible;
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: calc(28px + var(--dsh-content-font-delta, 0px));
+  height: calc(28px + var(--dsh-content-font-delta, 0px));
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
-  color: var(--text-dim);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   transition:
     color 140ms,
     background 140ms;
 }
-.message-icon-action::after {
+.dsh-message-action svg {
+  width: calc(15px + var(--dsh-content-font-delta, 0px));
+  height: calc(15px + var(--dsh-content-font-delta, 0px));
+}
+.dsh-message-action::after {
   content: attr(data-tooltip);
   position: absolute;
   width: max-content;
@@ -3627,12 +4179,12 @@ html.dark .composer-menu {
   left: 50%;
   z-index: 30;
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--text);
   color: var(--bg);
   box-shadow: 0 2px 8px #00000018;
   font-family: var(--font-sans);
-  font-size: calc(11px * var(--chat-font-scale, 1));
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   font-weight: 500;
   line-height: 1.4;
   white-space: normal;
@@ -3643,161 +4195,1021 @@ html.dark .composer-menu {
   transform: translateX(-50%);
   transition: opacity 100ms;
 }
-.message-icon-action:is(:hover, :focus-visible)::after {
+.dsh-message-action:is(:hover, :focus-visible)::after {
   visibility: visible;
   opacity: 1;
 }
-.chat-message-copy::after {
+.dsh-message-action-copy::after {
   left: 0;
   transform: none;
 }
-.chat-message-user .message-icon-action::after {
+.dsh-user-row .dsh-message-action::after {
   left: auto;
   right: 0;
   transform: none;
 }
-.message-icon-action:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text);
+.dsh-message-action:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
-.message-icon-action[data-active="true"] {
+.dsh-message-action[data-active="true"] {
   color: var(--success);
 }
-.message-icon-action:disabled {
+.dsh-message-action:disabled {
   opacity: 0.55;
   cursor: default;
 }
-.chat-message-copy {
+.dsh-message-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
+}
+
+.dsh-message-clock {
   flex-shrink: 0;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.chat-assistant-meta:empty {
-  display: none;
-}
+
+/*── Assistant reply: prose blocks and the action row below the body ───────*/
+
 .chat-message-assistant {
   width: 100%;
 }
-.chat-assistant-prose {
+
+.dsh-assistant {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 2px 0;
 }
-.chat-assistant-prose + .execution-step {
-  margin-top: 8px;
-}
-.execution-step + .chat-assistant-prose {
-  margin-top: 14px;
-}
-.execution-step {
-  --tool-bg: var(--bg-panel);
-  position: relative;
+
+.dsh-assistant-body {
   min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  font-size: calc(12px * var(--chat-font-scale, 1));
-  color: var(--text-muted);
-  transition:
-    background 140ms,
-    border-color 140ms;
 }
-.execution-step[data-expanded="true"] {
-  border-color: var(--border);
-  background: var(--bg-panel);
+
+.dsh-assistant-prose {
+  min-width: 0;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary);
 }
-.execution-step[data-state="error"] {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
+
+.dsh-assistant-image {
+  min-width: 0;
 }
-.execution-step-toggle {
+
+.dsh-assistant-actions {
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 34px;
+  gap: 8px;
+  /* Separate from the body's internal gap so the footer spacing stays fixed. */
+  margin-top: 16px;
+  /* Optical align with the 28px action hit targets. */
+  margin-left: -6px;
+  min-height: calc(28px + var(--dsh-content-font-delta, 0px));
+}
+.dsh-assistant-actions:empty {
+  display: none;
+}
+
+/*── Think row: a 24px reasoning disclosure above its compact body ────────*/
+
+.dsh-reasoning-row {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 7px 9px;
+}
+
+.dsh-reasoning-row:not([data-expanded]) {
+  contain: size layout;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-reasoning-disclosure {
+  overflow: hidden;
+}
+
+/* The uncapped body scrolls with the conversation; keep its collapse toggle
+   reachable. */
+.dsh-reasoning-row[data-expanded] [data-open] [data-disclosure-row] {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--dsw-alias-bg-base);
+}
+
+.dsh-reasoning-leading {
+  flex-shrink: 0;
+}
+
+.dsh-reasoning-title {
+  font-weight: 400;
+}
+
+/* Think text reads the secondary tier — one step under the body size, shared
+   with every flow-row title and summary. */
+.dsh-reasoning-summary {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: nowrap;
+}
+
+.dsh-reasoning-summary-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-reasoning-summary[data-streaming] {
+  mask-image: linear-gradient(to right, black calc(100% - 48px), transparent);
+}
+
+.dsh-reasoning-summary[data-streaming] .dsh-reasoning-summary-text {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.dsh-reasoning-row:not([data-preview]) .dsh-row-separator,
+.dsh-reasoning-row:not([data-preview]) .dsh-reasoning-summary {
+  display: none;
+}
+
+.dsh-think-body {
+  /* Indent under the title, which starts at leading (16 + delta) + gap 6. */
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+  min-width: 0;
+}
+
+/*── Tool call row: business glyph, title, dot, filling summary ───────────*/
+
+.dsh-tool-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dsh-tool-leading {
+  flex-shrink: 0;
+}
+
+.dsh-tool-title {
+  font-weight: 400;
+}
+
+.dsh-tool-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+/* A failure keeps its first result line in the error color; an interrupted
+   call keeps the business glyph and turns the summary amber. */
+.dsh-tool-summary[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-tool-summary[data-stopped] {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.dsh-tool-body-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Expanded input/output card: the code-block surface and radius from the
+   terminal family, capped per section so a long input never buries output. */
+.dsh-tool-io-card {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 4px 4px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-markdown-code-block);
+  font: var(--dsw-font-markdown-code-block-small);
+}
+
+.dsh-tool-io-section {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 14px;
+  align-items: baseline;
+  padding: 12px 16px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.dsh-tool-io-section::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--dsw-radius-sm);
+}
+.dsh-tool-io-section::-webkit-scrollbar-track {
+  margin: 6px 0;
+}
+
+.dsh-tool-io-label {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  color: var(--dsw-alias-label-caption);
+}
+
+.dsh-tool-io-divider {
+  flex: none;
+  height: 0.5px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.dsh-tool-io-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-tool-io-text[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-tool-code {
+  margin: 4px 0 4px 4px;
+  padding: 12px 16px;
+  max-height: 260px;
+  overflow: auto;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--font-mono);
+  line-height: 18px;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.dsh-tool-open-browser {
+  margin: 4px 0 2px 4px;
+  padding: 4px 8px;
+  align-self: flex-start;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  cursor: pointer;
+}
+.dsh-tool-open-browser:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* A settled call whose result the session never recorded: one quiet line under
+   the row, in the secondary tier, so the gap is explained rather than empty. */
+.dsh-tool-missing-result {
+  margin: 4px 0 2px 4px;
+  padding: 6px 10px;
+  border: 0.5px dashed var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-lg);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+/*── Edit result: side-by-side patch inside the expanded body ─────────────*/
+
+.dsh-patch-scroll {
+  max-height: 560px;
+  margin: 4px 0 4px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-base);
+}
+
+.dsh-patch-file {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  line-height: 1.55;
+}
+
+.dsh-patch-headers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--bg-panel);
+}
+
+.dsh-patch-header {
+  padding: 5px 10px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-patch-header[data-side="left"] {
+  border-right: 1px solid var(--dsw-alias-border-l1);
+}
+
+.dsh-patch-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.dsh-patch-cell {
+  display: flex;
+  min-width: 0;
+}
+
+.dsh-patch-line-number {
+  flex-shrink: 0;
+  width: 42px;
+  padding: 0 6px;
+  border-right: 1px solid var(--dsw-alias-border-l1);
+  background: var(--bg-panel);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  user-select: none;
+}
+
+.dsh-patch-marker {
+  flex-shrink: 0;
+  width: 18px;
+  padding: 0 5px;
+  font-weight: 400;
+  user-select: none;
+}
+.dsh-patch-marker[data-kind="added"],
+.dsh-patch-marker[data-kind="removed"] {
+  font-weight: 700;
+}
+
+.dsh-patch-text {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px 0 0;
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dsh-patch-text[data-empty] {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-patch-text-scroll {
+  max-height: 520px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  line-height: 1.55;
+}
+
+.dsh-patch-text-row {
+  display: flex;
+}
+
+.dsh-patch-text-line-number {
+  flex-shrink: 0;
+  width: 48px;
+  padding: 0 8px;
+  border-right: 1px solid var(--dsw-alias-border-l1);
+  background: var(--bg-panel);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  user-select: none;
+}
+
+.dsh-patch-text-line {
+  padding: 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*── Process group: live activity header above a capped, faded row stack ──*/
+
+.dsh-process-group {
+  min-width: 0;
+}
+
+.dsh-process-title {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
   border: 0;
-  border-radius: 9px;
-  background: transparent;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size, 14px);
+  text-align: left;
+  cursor: pointer;
+  transition: color 100ms ease;
+}
+
+.dsh-process-title:hover,
+.dsh-process-title:focus-visible {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The leading box and its glyph ride the body font-size delta so the icon
+   keeps its optical share of the row at every Settings size. */
+.dsh-process-leading {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
   color: inherit;
+}
+
+.dsh-process-leading svg {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-process-activity-icon,
+.dsh-process-chevron {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 100ms ease;
+}
+
+.dsh-process-activity-icon {
+  opacity: 1;
+}
+
+.dsh-process-chevron {
+  opacity: 0;
+}
+
+.dsh-process-title:is(:hover, :focus-visible) .dsh-process-activity-icon,
+.dsh-process-title[aria-expanded="true"] .dsh-process-activity-icon {
+  opacity: 0;
+}
+
+.dsh-process-title:is(:hover, :focus-visible) .dsh-process-chevron,
+.dsh-process-title[aria-expanded="true"] .dsh-process-chevron {
+  opacity: 1;
+}
+
+.dsh-process-title[aria-expanded="true"] {
+  padding-bottom: 8px;
+}
+
+.dsh-process-title:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
+  border-radius: var(--dsw-radius-sm);
+}
+
+.dsh-process-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-process-group-body {
+  --dsh-chat-flow-gap: 6px;
+  max-height: min(400px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.dsh-process-group-body.is-faded-top {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 100%);
+}
+
+.dsh-process-group-body.is-faded-bottom {
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 24px), transparent 100%);
+}
+
+.dsh-process-group-body.is-faded-top.is-faded-bottom {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+
+.dsh-process-group-content {
+  display: flex;
+  flex-direction: column;
+}
+.dsh-process-group-content > * {
+  flex-shrink: 0;
+}
+.dsh-process-group-content > :not([hidden]):not(:empty) ~ :not([hidden]):not(:empty) {
+  margin-top: var(--dsh-chat-flow-gap, 6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-process-title,
+  .dsh-process-activity-icon,
+  .dsh-process-chevron {
+    transition: none;
+  }
+}
+
+/*── Settled Turn header: 33px outcome line with a bottom hairline ────────*/
+
+.dsh-turn-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dsh-turn-process {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: calc(33px + var(--dsh-content-font-delta, 0px));
+  padding: 0 0 8px;
+  border: none;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size, 14px);
+  cursor: pointer;
+  text-align: left;
+  transition: color 100ms ease;
+}
+
+.dsh-turn-process:disabled {
+  cursor: default;
+}
+
+.dsh-turn-process:hover:not(:disabled) {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-turn-process:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
+}
+
+.dsh-turn-process-chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  color: inherit;
+  transition: transform 100ms ease;
+}
+
+.dsh-turn-process[data-open] .dsh-turn-process-chevron {
+  transform: rotate(180deg);
+}
+
+.dsh-turn-process-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: inherit;
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The header keeps 16px clearance from the rows it folds; a folded section
+   contributes no margin because the wrapper is hidden. */
+.dsh-turn-section > [data-turn-process-body] {
+  margin-top: 16px;
+}
+
+.dsh-turn-duration-number {
+  font-family: var(--ds-font-family-code);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-turn-process,
+  .dsh-turn-process-chevron {
+    transition: none;
+  }
+}
+
+/*── Running status: divider, swimming mark, shimmering elapsed label ────*/
+
+.dsh-running {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  --dsh-chat-flow-gap: 12px;
+  color: var(--dsw-alias-label-deep-diving);
+  font-size: calc(var(--dsh-content-font-size, 14px) - 2px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-running-divider {
+  width: 100%;
+  height: 0.5px;
+  margin: 8px 0 10px;
+  background: color-mix(in srgb, var(--dsw-alias-border-l1) 75%, var(--dsw-alias-border-l2));
+  pointer-events: none;
+}
+
+.dsh-running-content {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.dsh-running-text {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dsh-running-tail {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+  /* The fixed footprint contains the animation's layout and paint. */
+  contain: strict;
+  overflow: hidden;
+}
+
+.dsh-running-tail-still {
+  display: initial;
+}
+
+.dsh-running-tail-swim {
+  display: none;
+  position: absolute;
+  inset: 0;
+}
+
+@supports (mask-mode: alpha) and (mask-image: url("")) {
+  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+    .dsh-running-tail-swim {
+      display: block;
+      animation: dsh-running-swim 1.8s ease-in-out infinite;
+      will-change: transform;
+    }
+
+    .dsh-running-tail-still {
+      display: none;
+    }
+  }
+}
+
+@keyframes dsh-running-swim {
+  0%,
+  100% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+}
+
+/*── Automatic compaction: one 24px marker with a hover disclosure ───────*/
+
+.dsh-compaction-row {
+  --dsh-compaction-header-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  padding: 2px 0;
+}
+
+.dsh-compaction-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--dsh-compaction-header-height);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: color 100ms ease;
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.execution-step-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.execution-step-icon {
-  flex-shrink: 0;
-  color: var(--text-dim);
-}
-.execution-step-name {
-  flex-shrink: 0;
-  font-weight: 500;
-}
-.execution-step-preview {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-.execution-step-duration {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: calc(11px * var(--chat-font-scale, 1));
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-.execution-step-check {
-  flex-shrink: 0;
-  color: var(--text-dim);
-}
-.execution-step-chevron {
-  flex-shrink: 0;
-  color: var(--text-dim);
-  transition: transform 160ms;
-}
-.execution-step[data-expanded="true"] .execution-step-chevron {
-  transform: rotate(90deg);
-}
-.execution-step[data-state="error"] .execution-step-icon {
-  color: var(--danger);
-}
-.execution-step[data-state="running"] .execution-step-icon {
-  color: var(--accent);
-}
-.execution-spinner {
-  animation: execution-spin 1.5s linear infinite;
-}
-@keyframes execution-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.thinking-step-content {
-  margin: 2px 12px 12px 16px;
-  padding: 3px 0 3px 16px;
-  border-left: 1px solid var(--border);
-}
-.thinking-step-content .markdown-body {
-  color: var(--text-muted);
-  font-size: calc(12px * var(--chat-font-scale, 1));
-  line-height: 1.8;
-}
-.tool-step > pre,
-.tool-step > div > pre {
-  font-family: var(--font-mono);
-}
-.tool-step > pre {
-  border-top: 1px solid var(--border);
-  max-height: 240px;
-  overflow: auto;
+
+/* The summary body flows uncapped with the page, so a long checkpoint summary
+   carries this toggle off the top of the viewport. Pin it while the row is
+   open; the base background masks the prose scrolling under it. */
+.dsh-compaction-row[data-expanded] .dsh-compaction-button {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  border-radius: 0;
+  background: var(--dsw-alias-bg-base);
 }
 
-/* Compact conversation outline, centered alongside the messages. */
+.dsh-compaction-row[data-expanded] .dsh-compaction-button:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.dsh-compaction-button:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-compaction-button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dsh-compaction-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
+}
+
+.dsh-compaction-leading {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  margin-right: 6px;
+  color: inherit;
+}
+
+.dsh-compaction-leading svg {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-compaction-context-icon,
+.dsh-compaction-disclosure-icon {
+  display: inline-flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.dsh-compaction-disclosure-icon {
+  opacity: 0;
+}
+
+.dsh-compaction-button:hover .dsh-compaction-context-icon,
+.dsh-compaction-button:focus-visible .dsh-compaction-context-icon {
+  opacity: 0;
+}
+
+.dsh-compaction-button:hover .dsh-compaction-disclosure-icon,
+.dsh-compaction-button:focus-visible .dsh-compaction-disclosure-icon {
+  opacity: 1;
+}
+
+.dsh-compaction-title {
+  flex: none;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: inherit;
+}
+
+.dsh-compaction-separator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.dsh-compaction-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-compaction-body {
+  /* Indent under the title, which starts at leading (16 + delta) + gap 6. */
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-compaction-empty {
+  color: var(--dsw-alias-label-caption);
+}
+
+.dsh-compaction-files {
+  margin-top: 8px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+.dsh-compaction-files > summary {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.dsh-compaction-file-section {
+  margin-top: 6px;
+}
+
+.dsh-compaction-file-title {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-compaction-file-list {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  overflow-wrap: anywhere;
+}
+
+/*── Extension (custom-type) message: quiet disclosure row ───────────────*/
+
+.dsh-custom-row {
+  padding: 2px 0;
+}
+
+.dsh-custom-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dsh-custom-button:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-custom-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--accent));
+  border-radius: var(--dsw-radius-sm);
+}
+
+.dsh-custom-kind {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-family: var(--font-mono);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-weight: 650;
+}
+
+.dsh-custom-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-custom-chevron {
+  flex: none;
+  color: inherit;
+  transition: transform 120ms ease;
+}
+
+.dsh-custom-row[data-expanded] .dsh-custom-chevron {
+  transform: rotate(180deg);
+}
+
+.dsh-custom-body {
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-custom-note {
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+.dsh-custom-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  padding-left: calc(22px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-custom-action {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  cursor: pointer;
+}
+
+.dsh-custom-action:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-custom-action[data-active] {
+  color: var(--accent);
+}
+
+.dsh-custom-details {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  max-height: 360px;
+  overflow: auto;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--font-mono);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/*── Skill invocation: the user bubble's collapsible instruction card ────*/
+
+.dsh-skill-invocation {
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsh-skill-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 9px;
+  border: none;
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dsh-skill-chevron {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+
+.dsh-skill-chevron[data-expanded] {
+  transform: none;
+}
+
+.dsh-skill-kind {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-weight: 650;
+}
+
+.dsh-skill-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-skill-body {
+  max-height: min(52vh, 480px);
+  overflow-y: auto;
+  padding: 8px 12px 10px;
+  overflow-wrap: anywhere;
+}
+/*── Chat minimap rail: turn ticks beside the transcript ─────────────────*/
+
 .chat-timeline {
   position: relative;
   z-index: 5;
@@ -3886,7 +5298,7 @@ html.dark .composer-menu {
   }
 }
 .chat-timeline-preview > span {
-  font-size: calc(12px * var(--chat-font-scale, 1));
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   font-weight: 600;
   color: var(--text);
   display: -webkit-box;
@@ -3901,7 +5313,7 @@ html.dark .composer-menu {
   -webkit-line-clamp: 3;
   overflow: hidden;
   margin: 5px 0 0;
-  font-size: calc(12px * var(--chat-font-scale, 1));
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: 1.6;
   color: var(--text-muted);
   overflow-wrap: anywhere;
@@ -3914,15 +5326,21 @@ html.dark .composer-menu {
   background: var(--text-dim);
 }
 
+.execution-spinner {
+  animation: execution-spin 1.5s linear infinite;
+}
+@keyframes execution-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 640px) {
   .chat-message-scroll {
     padding-top: 18px;
   }
-  .chat-message {
-    margin-bottom: 22px;
-  }
-  .chat-user-bubble {
-    padding: 10px 14px !important;
+  .dsh-user-bubble {
+    padding: 10px 14px;
   }
   .composer-toolbar-primary {
     gap: 0;
@@ -3940,6 +5358,7 @@ html.dark .composer-menu {
     display: none;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .chat-message *,
   .chat-timeline *,
@@ -3950,72 +5369,51 @@ html.dark .composer-menu {
     scroll-behavior: auto !important;
   }
 }
-.tool-history-notice {
-  margin: 0;
-  padding: 0 10px 8px 33px;
-  font-size: calc(11px * var(--chat-font-scale, 1));
-  color: var(--text-dim);
+
+/*── Terminal Turn outcome: quiet stopped tag and a dot-led failure row ───*/
+
+.dsh-stopped-marker {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
 }
-.process-details-group {
-  margin: 0 0 22px;
+
+.dsh-turn-error {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 2px 0;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.dsh-turn-error-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  justify-self: center;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-turn-error-copy {
   min-width: 0;
+  overflow-wrap: anywhere;
 }
-.process-details-toggle {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  max-width: 100%;
-  min-height: 32px;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: calc(12px * var(--chat-font-scale, 1));
-  text-align: left;
+
+.dsh-turn-error-title {
+  margin-right: 6px;
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 600;
 }
-.process-details-toggle:hover {
-  color: var(--text);
-}
-.process-details-count {
-  margin-left: 10px;
-  color: var(--text-dim);
-  font-size: calc(11px * var(--chat-font-scale, 1));
-}
-.process-details-body {
-  margin: 8px 0 0 5px;
-  padding: 2px 0 2px 18px;
-  border-left: 1px solid var(--border);
-}
-.process-details-body .chat-message {
-  margin-bottom: 12px;
-}
-.process-details-body .chat-message:last-child {
-  margin-bottom: 0;
-}
-.process-details-body :is(.chat-message-model, .chat-message-meta) {
-  display: none;
-}
-.process-details-group[data-ungrouped="true"] {
-  margin: 0 0 22px;
-  padding: 2px 0 2px 18px;
-  border-left: 1px solid var(--border);
-}
-.process-details-group[data-ungrouped="true"] .chat-message {
-  margin-bottom: 12px;
-}
-.process-details-group[data-ungrouped="true"] .chat-message:last-child {
-  margin-bottom: 0;
-}
-.process-details-group[data-ungrouped="true"] :is(.chat-message-model, .chat-message-meta) {
-  display: none;
-}
-.chat-message-assistant:has(.execution-step):not(:has(.chat-assistant-prose)) {
-  margin-bottom: 14px;
-}
-.chat-message-assistant:has(.execution-step):not(:has(.chat-assistant-prose))
-  :is(.chat-message-model, .chat-message-meta) {
-  display: none;
+
+.dsh-turn-error-message {
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* Quiet execution context, aligned with the composer rather than session navigation. */

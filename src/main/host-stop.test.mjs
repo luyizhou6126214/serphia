@@ -20,6 +20,35 @@ const { HostManager } = await importTestBundle("host-stop-grace", {
     },
   ],
 });
+
+test("a slow startup gets a full heartbeat window after the host becomes ready", (t) => {
+  const originalNow = Date.now;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  let now = 90_000;
+  let tick;
+  Date.now = () => now;
+  globalThis.setInterval = (callback) => {
+    tick = callback;
+    return { unref() {} };
+  };
+  globalThis.clearInterval = () => {};
+  t.after(() => {
+    Date.now = originalNow;
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  });
+  const manager = new HostManager("fixture");
+  const messages = [];
+  let killed = 0;
+  manager.child = { postMessage: (message) => messages.push(message), kill: () => killed++ };
+  manager.lastPong = 0;
+  manager.startPing();
+  now += 15_000;
+  tick();
+  assert.equal(killed, 0);
+  assert.deepEqual(messages, [{ type: "ping" }]);
+});
 test("normal Host stop waits for exit and allows the SDK refresh deadline before bounded termination", async (t) => {
   const original = globalThis.setTimeout,
     timers = [];

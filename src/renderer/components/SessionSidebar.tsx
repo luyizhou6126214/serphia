@@ -1,9 +1,11 @@
 import { DeleteOutlined, EditOutlined, EllipsisOutlined, PushpinOutlined, SearchOutlined } from "@ant-design/icons/es";
-import { Folder, FolderOpen } from "lucide-react";
+import { ProjectFolderIcon } from "./ProjectFolderIcon";
+import { PROJECT_HOVER_CARD_WIDTH, ProjectHoverCard, type ProjectHoverCardState } from "./ProjectHoverCard";
 import { call, subscribeRunning } from "@/lib/api-client";
 import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { useI18n } from "@/i18n";
+import { formatAbsoluteDateTime } from "@/lib/locale-format";
 import {
   loadUnreadSessionIds as loadStoredUnreadSessionIds,
   saveUnreadSessionIds as saveStoredUnreadSessionIds,
@@ -56,7 +58,7 @@ export function SessionSidebar({
   onSessionDeleted,
   workspace,
 }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const {
     sessions: allSessions,
     loading,
@@ -97,8 +99,48 @@ export function SessionSidebar({
   const [projectMenu, setProjectMenu] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState<string | null>(null);
   const deletingProjectRef = useRef(false);
+  const [projectHoverCard, setProjectHoverCard] = useState<ProjectHoverCardState | null>(null);
+  const projectHoverTimerRef = useRef<number | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showAllRecent, setShowAllRecent] = useState(false);
+  const hideProjectHoverCard = useCallback(() => {
+    if (projectHoverTimerRef.current !== null) {
+      window.clearTimeout(projectHoverTimerRef.current);
+      projectHoverTimerRef.current = null;
+    }
+    setProjectHoverCard(null);
+  }, []);
+  const scheduleProjectHoverCard = useCallback(
+    (element: HTMLElement, project: { label: string; path: string; created: string | null }) => {
+      if (projectHoverTimerRef.current !== null) window.clearTimeout(projectHoverTimerRef.current);
+      projectHoverTimerRef.current = window.setTimeout(() => {
+        projectHoverTimerRef.current = null;
+        const rect = element.getBoundingClientRect();
+        const left = Math.min(rect.right + 12, window.innerWidth - PROJECT_HOVER_CARD_WIDTH - 12);
+        const top = Math.max(12, Math.min(rect.top - 12, window.innerHeight - 96));
+        const createdLabel = project.created
+          ? t("projectCreatedAt", "Created {date}").replace("{date}", formatAbsoluteDateTime(project.created, language))
+          : null;
+        setProjectHoverCard({ label: project.label, path: project.path, createdLabel, top, left });
+      }, 160);
+    },
+    [language, t],
+  );
+  useEffect(() => {
+    return () => {
+      if (projectHoverTimerRef.current !== null) window.clearTimeout(projectHoverTimerRef.current);
+    };
+  }, []);
+  useEffect(() => {
+    if (!projectHoverCard) return;
+    const hide = () => hideProjectHoverCard();
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [projectHoverCard, hideProjectHoverCard]);
   const togglePin = (path: string) => {
     setPinnedProjects((previous) => {
       const next = previous.some((item) => worktreePathsEqual(item, path))
@@ -350,6 +392,10 @@ export function SessionSidebar({
     const hasSelectedSession = group.sessions.some((session) => session.id === selectedSessionId);
     const current = Boolean(selectedProject && worktreePathsEqual(group.path, selectedProject) && !hasSelectedSession);
     const nodes = buildSessionTree(group.sessions);
+    const projectCreated = group.sessions.reduce<string | null>(
+      (earliest, session) => (!earliest || session.created < earliest ? session.created : earliest),
+      null,
+    );
     return (
       <section key={group.path} className={`project-sidebar-group${expanded ? " is-expanded" : ""}`}>
         <div
@@ -367,12 +413,16 @@ export function SessionSidebar({
             title={group.path}
             aria-expanded={expanded}
             onClick={() => setProjectExpansion((previous) => ({ ...previous, [group.path]: !expanded }))}
+            onMouseEnter={(event) =>
+              scheduleProjectHoverCard(event.currentTarget, {
+                label: group.label,
+                path: group.path,
+                created: projectCreated,
+              })
+            }
+            onMouseLeave={hideProjectHoverCard}
           >
-            {expanded ? (
-              <FolderOpen size={17} strokeWidth={1.8} aria-hidden="true" />
-            ) : (
-              <Folder size={17} strokeWidth={1.8} aria-hidden="true" />
-            )}
+            <ProjectFolderIcon size={17} open={expanded} />
             <span className="project-sidebar-group-name">{group.label}</span>
           </button>
           <div className="project-sidebar-group-actions">
@@ -551,6 +601,7 @@ export function SessionSidebar({
           }
         />
       )}
+      <ProjectHoverCard card={projectHoverCard} />
     </div>
   );
 }

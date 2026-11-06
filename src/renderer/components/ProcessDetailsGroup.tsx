@@ -1,86 +1,93 @@
-import { useMemo, useSyncExternalStore, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useSyncExternalStore } from "react";
 import { useI18n } from "@/i18n";
 import type { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
-import { workStepDisplayPolicy, type WorkStepDisplay } from "@shared/work-step-display";
+import { workStepDisplayPolicy, type WorkStepDisplayPolicy } from "@shared/work-step-display";
+import { ProcessGroup } from "./chat/ProcessGroup";
+import { TurnProcessHeader, type TurnProcessStatus } from "./chat/TurnProcessHeader";
+import type { ProcessActivityKind, ProcessActivitySummary } from "./chat/process-activity";
+
+export type { TurnProcessStatus } from "./chat/TurnProcessHeader";
 
 interface Props {
-  messageCount: number;
-  toolCallCount: number;
-  children: ReactNode;
   stateKey: string;
   expansionStore: ThinkingExpansionStore;
-  workStepDisplay: WorkStepDisplay;
+  /** Frozen policy for this row; usually derived from the live appearance mode. */
+  policy?: WorkStepDisplayPolicy;
+  /** Ranked activity evidence for the settled group title. */
+  summary: ProcessActivitySummary;
+  children: ReactNode;
+  startedAt?: number;
+  endedAt?: number;
+  status?: TurnProcessStatus;
 }
 
+function readStored(store: ThinkingExpansionStore, key: string): boolean | undefined {
+  return store.has(key) ? store.getSnapshot(key) : undefined;
+}
+
+/**
+ * A settled Turn's process section: the whole-Turn header folds the rows behind
+ * it, and the group header inside folds the rows themselves. Following DeepSeek
+ * Harness, a failed or stopped Turn keeps its rows visible and the header only
+ * announces the outcome.
+ */
 export function ProcessDetailsGroup({
-  messageCount,
-  toolCallCount,
-  children,
   stateKey,
   expansionStore,
-  workStepDisplay,
+  policy: policyProp,
+  summary,
+  children,
+  startedAt,
+  endedAt,
+  status = "completed",
 }: Props) {
-  const policy = workStepDisplayPolicy(workStepDisplay);
-  const getSnapshot = useMemo(
-    () => () => (expansionStore.has(stateKey) ? expansionStore.getSnapshot(stateKey) : policy.defaultProcessExpanded),
-    [expansionStore, policy.defaultProcessExpanded, stateKey],
-  );
-  const expanded = useSyncExternalStore(expansionStore.subscribe, getSnapshot, getSnapshot);
-  const { language, t } = useI18n();
-  const parts = [
-    t("processDetails", "Process details"),
-    language !== "en-US"
-      ? `${messageCount} ${t("messagesCount", "messages")}`
-      : `${messageCount} ${messageCount === 1 ? "message" : "messages"}`,
-  ];
-  if (toolCallCount > 0) {
-    parts.push(
-      language !== "en-US"
-        ? `${toolCallCount} ${t("toolCallsCount", "tool calls")}`
-        : `${toolCallCount} ${toolCallCount === 1 ? "tool call" : "tool calls"}`,
-    );
-  }
-
-  if (!policy.groupProcess) {
-    return (
-      <div className="process-details-group" data-ungrouped="true">
-        {children}
-      </div>
-    );
-  }
+  const { t } = useI18n();
+  const policy = policyProp ?? workStepDisplayPolicy(undefined);
+  const settled = status !== "running";
+  const alwaysOpen = status === "failed" || status === "aborted";
+  const groupHeader = policy.stepGrouping !== "none";
+  const foldable = policy.foldCompletedTurns && settled && !alwaysOpen;
+  const turnKey = `${stateKey}:turn`;
+  const getSnapshot = () => readStored(expansionStore, turnKey) ?? !foldable;
+  const turnOpen = useSyncExternalStore(expansionStore.subscribe, getSnapshot, getSnapshot);
+  const announcement =
+    status === "aborted"
+      ? t("turnHeaderStopped", "Stopped")
+      : status === "failed"
+        ? t("turnHeaderFailed", "Failed")
+        : t("turnHeaderWorked", "Completed");
 
   return (
-    <div className="process-details-group" data-expanded={expanded}>
-      <button
-        className="process-details-toggle"
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => expansionStore.set(stateKey, !expanded)}
-        title={
-          expanded
-            ? t("collapseProcessDetails", "Collapse process details")
-            : t("expandProcessDetails", "Expand process details")
-        }
-      >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ flexShrink: 0, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}
+    <div className="dsh-turn-section" data-turn-status={status}>
+      <TurnProcessHeader
+        status={status}
+        startedAt={startedAt}
+        endedAt={endedAt}
+        foldable={foldable}
+        open={turnOpen}
+        onToggle={() => expansionStore.set(turnKey, !turnOpen)}
+        announcement={announcement}
+      />
+      {/* The rows stay mounted while the Turn folds them so their own open
+          state, scroll position, and keyed seats survive a fold toggle. */}
+      <div data-turn-process-body="" hidden={foldable && !turnOpen}>
+        <ProcessGroup
+          stateKey={stateKey}
+          readStored={(key) => readStored(expansionStore, key)}
+          writeStored={(key, expanded) => expansionStore.set(key, expanded)}
+          policy={policy}
+          grouped={groupHeader}
+          settled={settled}
+          running={status === "running"}
+          liveActivity={"thinking" as ProcessActivityKind}
+          livePreparing={false}
+          liveDetail=""
+          summary={summary}
         >
-          <polyline points="4 2.5 7.5 6 4 9.5" />
-        </svg>
-        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          <span>{parts[0]}</span>
-          <span className="process-details-count">{parts.slice(1).join(" · ")}</span>
-        </span>
-      </button>
-      {expanded && <div className="process-details-body">{children}</div>}
+          {children}
+        </ProcessGroup>
+      </div>
     </div>
   );
 }

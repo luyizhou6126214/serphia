@@ -21,7 +21,10 @@ const { MessageView, withGeneratedImageReply } = await importTestBundle("src/ren
     {
       name: "stub-markdown-body",
       setup(buildApi) {
-        buildApi.onResolve({ filter: /^\.\/MarkdownBody$/ }, () => ({
+        // MessageView, the reasoning row, and the tool row all render prose
+        // through MarkdownBody; one stub keeps the KaTeX stylesheet out of the
+        // test bundle.
+        buildApi.onResolve({ filter: /(^|\/)MarkdownBody$/ }, () => ({
           path: "markdown-body",
           namespace: "message-view-test",
         }));
@@ -49,11 +52,13 @@ test("a historical tool without a canonical result is not displayed as still run
       runningToolCallIds: new Set(),
     }),
   );
-  assert.match(html, /Result was not recorded in the conversation/);
+  assert.match(html, /data-state="stopped"/);
+  assert.match(html, /Stopped/);
+  assert.doesNotMatch(html, /dsh-shimmer-decoration/);
   assert.doesNotMatch(html, /stream-caret/);
 });
 
-test("work-step modes control tool previews and expanded rows", () => {
+test("work-step modes control settled reasoning previews but never auto-expand rows", () => {
   const message = {
     role: "assistant",
     content: [
@@ -63,21 +68,34 @@ test("work-step modes control tool previews and expanded rows", () => {
     ],
     model: "fixture-model",
     provider: "fixture-provider",
+    usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 10, cost: { total: 0.01 } },
   };
 
   const compact = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: "compact" }));
-  assert.doesNotMatch(compact, /fixture\.ts/);
-  assert.doesNotMatch(compact, /reasoning fixture/);
+  assert.match(compact, /fixture\.ts/);
+  // The preview text is always in the DOM; the policy decides whether it paints.
+  assert.doesNotMatch(compact, /data-preview/);
+  assert.doesNotMatch(compact, /&quot;path&quot;/);
 
-  const standard = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: "standard" }));
-  assert.match(standard, /fixture\.ts/);
-  assert.match(standard, /reasoning fixture/);
-  assert.doesNotMatch(standard, /&quot;path&quot;/);
+  for (const mode of ["standard", "detailed", "verbose"]) {
+    const html = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: mode }));
+    assert.match(html, /fixture\.ts/);
+    assert.match(html, /data-preview="true"/);
+    assert.match(html, /reasoning fixture/);
+    // Every mode keeps an unopened row folded: argument JSON appears on demand only.
+    assert.doesNotMatch(html, /&quot;path&quot;/);
+  }
+});
 
-  const verbose = renderToStaticMarkup(createElement(MessageView, { message, workStepDisplay: "verbose" }));
-  assert.match(verbose, /fixture\.ts/);
-  assert.match(verbose, /&quot;path&quot;/);
-  assert.match(verbose, /reasoning fixture/);
+test("intermediate process messages do not render the assistant copy action", () => {
+  const html = renderToStaticMarkup(
+    createElement(MessageView, {
+      message: { role: "assistant", content: [{ type: "text", text: "intermediate process text" }] },
+      hideCopy: true,
+    }),
+  );
+  assert.doesNotMatch(html, /data-tooltip="Copy message"/);
+  assert.match(html, /intermediate process text/);
 });
 
 test("keeps the user copy action without timestamp or branch actions", () => {
@@ -204,15 +222,16 @@ test("renders compaction summaries collapsed by default", () => {
       message: {
         role: "custom",
         customType: "compaction",
-        content: "A long summary that should stay hidden until requested.",
+        content: "First line of the summary.\nSecond line stays behind the disclosure.",
         display: true,
       },
     }),
   );
 
   assert.match(html, /aria-expanded="false"/);
-  assert.match(html, /Conversation compacted/);
-  assert.doesNotMatch(html, /A long summary that should stay hidden/);
+  assert.match(html, /Context compacted/);
+  assert.match(html, /First line of the summary\./);
+  assert.doesNotMatch(html, /Second line stays behind the disclosure/);
 });
 
 function renderToolResult(result) {
@@ -373,7 +392,9 @@ test("persisted Herdr failures remain failures and keep safe diagnostic codes vi
     const html = renderToolResult(result);
     assert.match(html, /The tool call failed/);
     assert.match(html, /The original output was not saved in history/);
-    assert.match(html, /var\(--danger\)/);
+    // The row itself carries the failure state; the summary slot owns the color.
+    assert.match(html, /data-state="error"/);
+    assert.match(html, /data-error/);
     if (code) assert.match(html, new RegExp(code));
     assert.doesNotMatch(html, /Sensitive Herdr result|Ask Pi to inspect|private endpoint/);
     assert.equal(JSON.stringify(result), before);
@@ -413,12 +434,13 @@ test("successful output is folded and can be expanded without mistaking it for a
           createElement(MessageView, {
             message: assistant({ content: [{ type: "toolCall", toolCallId: "live", toolName: name, input: {} }] }),
             toolResults: new Map([["live", result]]),
+            workStepDisplay: "standard",
           }),
         );
       });
       const toggle = renderer.root
-        .findAllByType("button")
-        .find((button) => button.props.className === "execution-step-toggle");
+        .findAll((node) => node.props.role === "button" && node.props["data-disclosure-row"] !== undefined)
+        .at(0);
       assert.equal(toggle.props["aria-expanded"], false);
       await act(async () => toggle.props.onClick());
       assert.equal(toggle.props["aria-expanded"], true);
@@ -451,5 +473,5 @@ test("message actions keep accessible tooltip names while rendering icons only",
     assert.ok(html.includes(`data-tooltip="${name}" aria-label="${name}"`));
   }
   assert.doesNotMatch(html, />\s*(?:Copy|Copied|Edit from here|New session|Creating…)\s*</);
-  assert.equal((html.match(/class="message-icon-action"/g) ?? []).length, 3);
+  assert.equal((html.match(/class="dsh-message-action"/g) ?? []).length, 3);
 });

@@ -27,6 +27,19 @@ export function formatRelativeDateTime(
   return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(date);
 }
 
+export function formatAbsoluteDateTime(value: string | number | Date, language: AppLanguage): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(language, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 export function formatFileSize(bytes: number, language: AppLanguage): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "";
   const units = ["B", "KB", "MB", "GB", "TB"];

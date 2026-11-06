@@ -97,3 +97,21 @@ final result: passed
 - 范围仍为正式样式与真实组件的浏览器预览；不将此结果表述为完整 Electron 应用流程验收。
 
 final result: passed
+
+---
+
+# 会话消息渲染对齐 DeepSeek Harness（工作步骤 4 档）
+
+- 要求：会话区的消息与工作步骤展示完全参照 `deepseek-harness`（`E:\code\deepseek-harness`）的消息渲染逻辑复刻，涵盖消息/工具行间距、Markdown 渲染组件、光标（running 指示）等。
+- 参照来源：`packages/client/ui-chat`（ChatView、MessageItem、AssistantMarkdown、ReasoningRow、TurnProcessNodeView、ChatGroupSeat、RunningStatus）、`packages/client/ui-tool`（ToolRow、ToolCallModel）、`packages/client/ui-primitives`（DisclosureRow、TextShimmer、MarkdownText.module.css）、`packages/client/ui-theme/styles/gradient-shadow-text.css`（字号阶梯）。
+- 四档策略改为 DSH 的 `transcriptView` 同构表：`foldCompletedTurns` / `stepGrouping`（collapsed·history·none）/ `liveProcessDetail` / `settledReasoningPreview`。compact、standard 折叠进行中与已完成的步骤；detailed 只对已完成回合分组；verbose 不再分组也不再折叠整回合。
+- 行高与间距：内容字号轴 `--dsh-content-font-size` 由聊天字号偏好派生，正文 14/24（+delta），次级 13/20；同一回合内各行 6px，回答 12px（连续回答 16px），回合头 16px。
+- 组件：新增 `DisclosureRow`（24px 行、16px 前导框、标题 13/24、悬停图标换箭头）、`TextShimmer`（1.5s、steps(48) 扫光）、`ReasoningRow`（Think 行 + 首行预览 + 流式遮罩）、`ToolCallRow`（业务图标 + 标题 + 2px 分隔点 + 省略号摘要）、`TurnProcessHeader`（33px、0.5px 下边线、数字等宽）、`ProcessGroup`（活动标题、最大 400px/50vh 自滚动、上下 24px 渐隐）、`RunningStatus`（分隔线 + 游动标 + 扫光耗时文案）。
+- Markdown：改为 DSH 阶梯（h1 21/30、h2 19/28、h3 18/26、h4 600 14/24、块间距 16、列表缩进 18、行内码 0.875em 带 0.5px 描边且圆角 6、表格 4 列以上自然宽 + 悬停显示横条、引用 2px 竖线）；Thinking 正文使用 compact 变体（13/20、4px 块间距）。
+- 光标：移除原 `.stream-caret` 闪烁方块，改用 DSH 的 `TextShimmer` 扫光与底部运行状态行；工具/思考行的运行态由行内扫光表达。
+- 预览方式：临时 Node 入口把真实 `MessageView`、`ReasoningRow`、`ToolCallRow`、`ProcessDetailsGroup` 渲染成独立 HTML（内联正式 `globals.css`），用 headless Chrome 在 900 宽下截取浅色与深色两版；检查了折叠态、展开态（Thinking 正文、IN/OUT 卡片、补丁卡片）、回合头、运行状态。临时入口与截图已删除。
+- 行为保留：工具结果图片仍折叠可见；Herdr 的“原始输出未保存”提示占用摘要位；缺失结果仍显示说明。
+- 验证：`npm run typecheck`、`npm run lint`、`npm run test`（9 项环境性既有失败：Windows 符号链接、tar.gz、owner-root 等，与本次改动无关）、`npm run build` 通过。`check:renderer-i18n` 仍只报既有 3 个未使用词条；`check:architecture` 仍只有既有的 ChatInput 行数超基线，本次改动使 MessageView 低于 1200 行上限并移除了它的旧预算条目。
+- 未覆盖：未在真实 Electron 窗口内复验（无会话数据、无原生截图通道），上述结论仅针对浏览器预览与测试。
+
+final result: passed

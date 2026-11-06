@@ -271,7 +271,6 @@ export class HostManager {
 
     this.child = child;
     this.childExitSignal = exitSignal;
-    this.lastPong = Date.now();
 
     child.on("spawn", () => {
       appendMainLog("agent-host spawned");
@@ -426,6 +425,9 @@ export class HostManager {
   private startPing(): void {
     this.clearPing();
     this.lastPingTick = Date.now();
+    // Startup may take longer than a heartbeat window. Begin measuring only
+    // once the host is ready and can respond to pings.
+    this.lastPong = this.lastPingTick;
     this.pingTimer = setInterval(() => {
       if (!this.child) return;
       const now = Date.now();

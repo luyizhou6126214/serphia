@@ -4,6 +4,7 @@ import path from "node:path";
 import test, { after } from "node:test";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
+import { workStepDisplayPolicy } from "../../shared/work-step-display.ts";
 
 const previousActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -20,6 +21,7 @@ const { LiveProcessRows, ProcessDetailsGroup, ThinkingExpansionStore } = await i
     },
     tsconfig: path.join(import.meta.dirname, "../../../tsconfig.renderer.json"),
     external: ["react", "react-dom", "react-dom/*"],
+    mainFields: ["module", "main"],
     plugins: [
       {
         name: "stub-i18n",
@@ -30,7 +32,7 @@ const { LiveProcessRows, ProcessDetailsGroup, ThinkingExpansionStore } = await i
           }));
           buildApi.onLoad({ filter: /.*/, namespace: "process-details-group-test" }, () => ({
             contents:
-              'export function useI18n() { return { language: "en", t(_key, fallback) { return fallback; } }; }',
+              'export function useI18n() { return { language: "en-US", t(_key, fallback) { return fallback; } }; }',
             loader: "js",
           }));
         },
@@ -44,48 +46,118 @@ after(() => {
   else globalThis.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
-function renderGroup(expansionStore, stateKey, workStepDisplay = "standard") {
+const READ_SUMMARY = { counts: [{ kind: "read", count: 2 }] };
+
+function renderGroup(expansionStore, stateKey, mode = "standard", status = "completed") {
   return create(
     createElement(
       ProcessDetailsGroup,
-      { expansionStore, stateKey, messageCount: 2, toolCallCount: 1, workStepDisplay },
+      {
+        expansionStore,
+        stateKey,
+        policy: workStepDisplayPolicy(mode),
+        summary: READ_SUMMARY,
+        status,
+        startedAt: 1_000,
+        endedAt: 392_000,
+      },
       createElement("span", null, "persisted process content"),
     ),
   );
 }
 
-test("process details expansion survives a component remount and remains isolated by session store", async () => {
+/** The Turn-level fold wrapper; rows stay mounted while it is hidden. */
+function turnBody(renderer) {
+  return renderer.root.find(
+    (node) => typeof node.type === "string" && node.props["data-turn-process-body"] !== undefined,
+  );
+}
+
+/** The group body; its own fold keeps the rows mounted under `hidden`. */
+function groupBody(renderer) {
+  return renderer.root.find(
+    (node) => typeof node.type === "string" && node.props["data-step-process-body"] !== undefined,
+  );
+}
+
+/** The settled Turn header row. */
+function turnHeader(renderer) {
+  return renderer.root.find((node) => node.type === "button" && node.props.className === "dsh-turn-process");
+}
+
+/** The group's own activity header row. */
+function groupHeader(renderer) {
+  return renderer.root.find((node) => node.type === "button" && node.props.className === "dsh-process-title");
+}
+
+test("the whole-Turn fold survives a remount and stays isolated by session store", async () => {
   const sessionStore = new ThinkingExpansionStore();
   let renderer;
   await act(async () => {
     renderer = renderGroup(sessionStore, "process-group:user-1:assistant-1");
   });
-  assert.equal(renderer.root.findByType("button").props["aria-expanded"], false);
-  assert.equal(renderer.root.findAllByProps({ children: "persisted process content" }).length, 0);
+  assert.equal(turnHeader(renderer).props["aria-expanded"], false);
+  assert.equal(Boolean(turnBody(renderer).props.hidden), true);
 
   await act(async () => {
-    renderer.root.findByType("button").props.onClick();
+    turnHeader(renderer).props.onClick({ currentTarget: { focus() {} } });
   });
-  assert.equal(renderer.root.findByType("button").props["aria-expanded"], true);
-  assert.equal(renderer.root.findAllByProps({ children: "persisted process content" }).length, 1);
+  assert.equal(turnHeader(renderer).props["aria-expanded"], true);
+  assert.equal(Boolean(turnBody(renderer).props.hidden), false);
+  // The group header inside the Turn folds the rows a second time.
+  assert.equal(Boolean(groupBody(renderer).props.hidden), true);
+
+  await act(async () => {
+    groupHeader(renderer).props.onClick({ currentTarget: { focus() {} } });
+  });
+  assert.equal(Boolean(groupBody(renderer).props.hidden), false);
 
   await act(async () => renderer.unmount());
   await act(async () => {
     renderer = renderGroup(sessionStore, "process-group:user-1:assistant-1");
   });
-  assert.equal(renderer.root.findByType("button").props["aria-expanded"], true);
-  assert.equal(renderer.root.findAllByProps({ children: "persisted process content" }).length, 1);
+  assert.equal(turnHeader(renderer).props["aria-expanded"], true);
+  assert.equal(Boolean(groupBody(renderer).props.hidden), false);
   await act(async () => renderer.unmount());
 
   const otherSessionStore = new ThinkingExpansionStore();
   await act(async () => {
     renderer = renderGroup(otherSessionStore, "process-group:user-1:assistant-1");
   });
-  assert.equal(renderer.root.findByType("button").props["aria-expanded"], false);
+  assert.equal(turnHeader(renderer).props["aria-expanded"], false);
   await act(async () => renderer.unmount());
 });
 
-test("live compact turns collapse their process rows into one summary", async () => {
+test("the settled header names the outcome and tabular elapsed time", async () => {
+  const renderer = await act(async () => renderGroup(new ThinkingExpansionStore(), "completed:header", "standard"));
+  const text = JSON.stringify(renderer.toJSON());
+  assert.match(text, /Completed in /);
+  assert.match(text, /dsh-turn-duration-number/);
+  assert.match(text, /Completed/);
+  await act(async () => renderer.unmount());
+});
+
+test("a failed or stopped Turn keeps its process rows visible", async () => {
+  for (const status of ["failed", "aborted"]) {
+    const renderer = await act(async () =>
+      renderGroup(new ThinkingExpansionStore(), `status:${status}`, "standard", status),
+    );
+    assert.equal(turnHeader(renderer).props.disabled, true);
+    assert.equal(Boolean(turnBody(renderer).props.hidden), false);
+    await act(async () => renderer.unmount());
+  }
+});
+
+test("verbose removes the fold so a settled Turn shows its rows inline", async () => {
+  const renderer = await act(async () => renderGroup(new ThinkingExpansionStore(), "group:verbose", "verbose"));
+  assert.equal(turnHeader(renderer).props.disabled, true);
+  assert.equal(Boolean(turnBody(renderer).props.hidden), false);
+  // No group header exists without grouping: the rows are the whole section.
+  assert.equal(renderer.root.findAllByType("button").length, 1);
+  await act(async () => renderer.unmount());
+});
+
+test("grouping modes decide whether the running Turn folds into a live header", async () => {
   const messages = [
     { role: "user", content: "inspect" },
     {
@@ -109,43 +181,18 @@ test("live compact turns collapse their process rows into one summary", async ()
       renderMessage: renderRow,
     });
 
-  const compact = await act(async () => create(renderLive("compact")));
-  assert.equal(compact.root.findAllByType("button").length, 1);
-  assert.equal(compact.root.findAllByProps({ children: "row-1" }).length, 0);
-  assert.equal(compact.root.findAllByProps({ children: "row-2" }).length, 0);
-  await act(async () => compact.unmount());
-
-  const detailed = await act(async () => create(renderLive("detailed")));
-  assert.equal(detailed.root.findAllByProps({ children: "row-1" }).length, 1);
-  assert.equal(detailed.root.findAllByProps({ children: "row-2" }).length, 1);
-  await act(async () => detailed.unmount());
-
-  const verbose = await act(async () => create(renderLive("verbose")));
-  assert.equal(verbose.root.findAllByType("button").length, 0);
-  assert.equal(verbose.root.findAllByProps({ children: "row-1" }).length, 1);
-  assert.equal(verbose.root.findAllByProps({ children: "row-2" }).length, 1);
-  await act(async () => verbose.unmount());
-});
-
-test("work-step modes control grouping and initial expansion", async () => {
   for (const mode of ["compact", "standard"]) {
-    const renderer = await act(async () => renderGroup(new ThinkingExpansionStore(), `group:${mode}`, mode));
-    assert.equal(renderer.root.findByType("button").props["aria-expanded"], false);
-    assert.equal(renderer.root.findAllByProps({ children: "persisted process content" }).length, 0);
-    await act(async () => renderer.unmount());
+    const grouped = await act(async () => create(renderLive(mode)));
+    assert.equal(grouped.root.findAllByType("button").length, 1);
+    assert.equal(Boolean(groupBody(grouped).props.hidden), true);
+    await act(async () => grouped.unmount());
   }
 
-  const detailedStore = new ThinkingExpansionStore();
-  const detailed = await act(async () => renderGroup(detailedStore, "group:detailed", "detailed"));
-  assert.equal(detailed.root.findByType("button").props["aria-expanded"], true);
-  assert.equal(detailed.root.findAllByProps({ children: "persisted process content" }).length, 1);
-  await act(async () => detailed.root.findByType("button").props.onClick());
-  assert.equal(detailedStore.has("group:detailed"), true);
-  assert.equal(detailed.root.findByType("button").props["aria-expanded"], false);
-  await act(async () => detailed.unmount());
-
-  const verbose = await act(async () => renderGroup(new ThinkingExpansionStore(), "group:verbose", "verbose"));
-  assert.equal(verbose.root.findAllByType("button").length, 0);
-  assert.equal(verbose.root.findAllByProps({ children: "persisted process content" }).length, 1);
-  await act(async () => verbose.unmount());
+  for (const mode of ["detailed", "verbose"]) {
+    const inline = await act(async () => create(renderLive(mode)));
+    assert.equal(inline.root.findAllByType("button").length, 0);
+    assert.equal(inline.root.findAllByProps({ children: "row-1" }).length, 1);
+    assert.equal(inline.root.findAllByProps({ children: "row-2" }).length, 1);
+    await act(async () => inline.unmount());
+  }
 });

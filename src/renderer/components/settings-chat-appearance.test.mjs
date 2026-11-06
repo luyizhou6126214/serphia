@@ -79,7 +79,10 @@ test("chat text uses the shared scale while glyph-only icons remain fixed", () =
   assert.match(chatWindowSource, /className="chat-welcome-heading"/);
   assert.match(cssSource, /\.chat-welcome-heading\s*\{[^}]*font-size:\s*calc\(24px \* var\(--chat-font-scale, 1\)\)/);
   assert.match(chatInputSource, /fontSize:\s*scaledChatFont\(14\)/);
-  assert.match(messageViewSource, /fontSize:\s*scaledChatFont\(13\.5\)/);
+  // The transcript's text sizes come from the DSH token ladder, not inline props.
+  assert.match(cssSource, /\.dsh-user-bubble\s*\{[^}]*font-size:\s*var\(--dsh-content-font-size/);
+  assert.match(cssSource, /--dsh-content-font-size:\s*calc\(14px \* var\(--chat-font-scale, 1\)\)/);
+  assert.doesNotMatch(messageViewSource, /scaledChatFont/);
   assert.deepEqual(chatInputSource.match(/fontSize:\s*[0-9]+(?:\.[0-9]+)?/g) ?? [], []);
   assert.deepEqual(toolbarSource.match(/fontSize:\s*[0-9]+(?:\.[0-9]+)?/g) ?? [], []);
   assert.deepEqual(messageViewSource.match(/fontSize:\s*[0-9]+(?:\.[0-9]+)?/g) ?? [], []);

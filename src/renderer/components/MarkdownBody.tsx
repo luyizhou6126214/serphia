@@ -30,6 +30,11 @@ interface MarkdownBodyProps {
   imageBasePath?: string;
   sourceSessionId?: string | null;
   onOpenFile?: (filePath: string) => void;
+  /**
+   * Typography ladder. `compact` is the secondary tier used inside an expanded
+   * Think row: smaller type, tighter block rhythm, inheriting colors.
+   */
+  variant?: "base" | "compact";
 }
 
 type MarkdownRenderContextValue = Pick<
@@ -138,9 +143,22 @@ function MarkdownImg({ src, alt, node: _node, ...props }: MarkdownComponentProps
   );
 }
 
-function MarkdownTable({ children }: MarkdownComponentProps<"table">) {
+/**
+ * Table columns from the first row. Four or more read as a comparison matrix:
+ * the block keeps its natural width and exposes the stable `md-table-wide`
+ * hook so the transcript can widen it past the message column. Narrower tables
+ * fill the column and wrap instead.
+ */
+function columnCount(node: unknown): number {
+  const element = node as { children?: { tagName?: string; children?: unknown[] }[] } | undefined;
+  const firstRow = element?.children?.find((child) => child?.tagName === "tr");
+  return Array.isArray(firstRow?.children) ? firstRow.children.length : 0;
+}
+
+function MarkdownTable({ children, node }: MarkdownComponentProps<"table">) {
+  const wide = columnCount(node) >= 4;
   return (
-    <div className="markdown-table-wrap">
+    <div className={wide ? "markdown-table-wrap md-table-wide" : "markdown-table-wrap"} tabIndex={wide ? 0 : undefined}>
       <table>{children}</table>
     </div>
   );
@@ -170,6 +188,7 @@ export const MarkdownBody = memo(function MarkdownBody({
   imageBasePath,
   sourceSessionId,
   onOpenFile,
+  variant = "base",
 }: MarkdownBodyProps) {
   // Bound synchronous parsing while content grows; settlement renders the original source in full.
   const lightweightPreview = isStreaming && children.length > 2048;
@@ -186,7 +205,11 @@ export const MarkdownBody = memo(function MarkdownBody({
   return (
     <SessionProfiler id="MarkdownBody">
       <MarkdownRenderContext.Provider value={renderContext}>
-        <div className={["markdown-body", className].filter(Boolean).join(" ")}>
+        <div
+          className={["markdown-body", variant === "compact" ? "markdown-compact" : null, className]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {lightweightPreview ? (
             <div data-streaming-preview style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {children}
@@ -371,7 +394,7 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
     );
 
   return (
-    <div className="markdown-code-block">
+    <div className="markdown-code-block md-code-block">
       <div className="markdown-code-header">
         <span className="markdown-code-lang">mermaid</span>
         {previewButton}
@@ -396,7 +419,7 @@ const CodeBlock = memo(function CodeBlock({
   const { copied, copy } = useCopyFeedback();
 
   return (
-    <div className="markdown-code-block">
+    <div className="markdown-code-block md-code-block">
       <div className="markdown-code-header">
         <span className="markdown-code-lang">{lang || "text"}</span>
         <div className="markdown-code-actions">
@@ -411,14 +434,14 @@ const CodeBlock = memo(function CodeBlock({
           language={lang || "text"}
           style={isDark ? vscDarkPlus : vs}
           showLineNumbers
-          lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
+          lineNumberStyle={{ color: "var(--dsw-alias-label-caption, var(--text-dim))", fontStyle: "normal" }}
           customStyle={{
             margin: 0,
-            padding: "11px 13px",
-            fontSize: scaledChatFont(12.5),
-            lineHeight: 1.62,
+            padding: "12px 16px",
+            fontSize: scaledChatFont(12),
+            lineHeight: "18px",
             borderRadius: 0,
-            background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            background: "transparent",
           }}
           codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
         >
@@ -428,13 +451,13 @@ const CodeBlock = memo(function CodeBlock({
         <pre
           style={{
             margin: 0,
-            padding: "11px 13px",
-            fontSize: scaledChatFont(12.5),
-            lineHeight: 1.62,
+            padding: "12px 16px",
+            fontSize: scaledChatFont(12),
+            lineHeight: "18px",
             overflow: "auto",
             whiteSpace: "pre",
             fontFamily: "var(--font-mono)",
-            background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            background: "transparent",
           }}
         >
           <code>{code}</code>
