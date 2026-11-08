@@ -3,6 +3,13 @@ import type { ChannelId } from "../shared/channel-types";
 import type { ManagedProcessCapability } from "./processes";
 import type { ChatAppearancePreferences } from "../shared/chat-appearance";
 import type { HerdrSettings } from "./herdr";
+import type {
+  TerminalAttachResult,
+  TerminalCreateInput,
+  TerminalEvent,
+  TerminalSessionInfo,
+  TerminalSnapshot,
+} from "./terminal";
 import type { PublicToolchainState, ToolchainActionRequest } from "../shared/toolchains/types";
 import type {
   BrowserBoundsInput,
@@ -121,6 +128,18 @@ export interface LocalFileInspection {
   insideCwd: boolean;
 }
 
+/** One installed application the Host verified it can open a workspace in. */
+export interface OpenInAppApplication {
+  /** Stable catalog id; the Renderer owns the localized label for it. */
+  id: string;
+  /** The application's own icon as a PNG data URL, or null when none is extractable. */
+  icon: string | null;
+}
+
+export type OpenInAppFailureCode = "INVALID_REQUEST" | "NOT_INSTALLED" | "LAUNCH_FAILED";
+
+export type OpenInAppOpenResult = { ok: true } | { ok: false; code: OpenInAppFailureCode };
+
 export interface DesktopUiState {
   language?: AppLanguage;
   backgroundMode?: boolean;
@@ -149,12 +168,38 @@ export interface PiBridge {
   requestHostPort: () => void;
   openExternal: (url: string) => Promise<void>;
   showItemInFolder: (fsPath: string) => Promise<void>;
+  /** Local applications this Host verified for opening a workspace directory. */
+  listOpenInApps: () => Promise<OpenInAppApplication[]>;
+  /** Open one workspace directory in a previously listed application. */
+  openInApp: (appId: string, directory: string) => Promise<OpenInAppOpenResult>;
+  /** Discovered shells plus every terminal this Host still holds. */
+  listTerminals: () => Promise<TerminalSnapshot>;
+  /** Start one shell in a workspace directory. */
+  createTerminal: (input: TerminalCreateInput) => Promise<TerminalSessionInfo>;
+  /** Read a terminal's metadata and retained output before streaming it. */
+  attachTerminal: (terminalId: string) => Promise<TerminalAttachResult>;
+  /** Send keystrokes to the terminal's pty. */
+  writeTerminal: (terminalId: string, data: string) => Promise<void>;
+  /** Report the screen's current dimensions. */
+  resizeTerminal: (terminalId: string, cols: number, rows: number) => Promise<void>;
+  /** End one terminal and release its process. */
+  closeTerminal: (terminalId: string) => Promise<void>;
+  /** Host-published terminal output, exit, and close events. */
+  onTerminalEvent: (callback: (event: TerminalEvent) => void) => () => void;
   /** Show the app's rich file context menu after main-process path validation. */
   showFileContextMenu: (request: ShowFileContextMenuRequest) => Promise<ShowFileContextMenuResult>;
   inspectLocalFiles: (request: InspectLocalFilesRequest) => Promise<LocalFileInspection[]>;
   /** Resolve the absolute filesystem path for a dropped/injected File object. */
   getPathForFile?: (file: File) => string | null;
   selectDirectory: () => Promise<string | null>;
+  cloneGithub: (url: string, parent: string, requestId: string) => Promise<string>;
+  onCloneProgress: (
+    callback: (progress: {
+      requestId: string;
+      phase: "counting" | "compressing" | "receiving" | "resolving" | "checkout";
+      percent: number;
+    }) => void,
+  ) => () => void;
   setChannelCredential: (payload: ChannelCredentialWrite) => Promise<void>;
   saveFile: (opts: SaveTextFileOptions) => Promise<string | null>;
   saveBinaryFile: (opts: SaveBinaryFileOptions) => Promise<string | null>;

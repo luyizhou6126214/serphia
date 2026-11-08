@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo, type RefObject } from "react";
 import { useI18n } from "@/i18n";
 
 export interface ChatMinimapMessage {
@@ -17,17 +17,40 @@ interface Props {
 
 interface TimelineNode {
   index: number;
+  /** Offset of the turn's first message inside the transcript. */
   offset: number;
-  user: string;
-  answer: string;
+  /** The turn's prompt preview. */
+  prompt: string;
+  /** The turn's latest answer preview. */
+  response: string;
 }
 
-/** A compact, centered outline for navigating the conversation. */
+/** Vertical pitch between two turn marks, matching DeepSeek Harness's rail. */
+const TURN_SPACING_PX = 10;
+/** Space above the first mark and below the last one. */
+const RAIL_INSET_PX = 6;
+/** Edge band the fade masks reserve on a scrollable rail. */
+const FADE_PX = 16;
+/** The ladder stays centered and compact, like DeepSeek Harness. */
+const MAX_RAIL_HEIGHT_PX = 420;
+/** Band clearance reserved above and below the centered ladder. */
+const RAIL_BAND_CLEARANCE_PX = 96;
+
+/**
+ * The conversation's turn rail, following DeepSeek Harness: one mark per turn
+ * (a prompt and its answer are one mark), a fixed 10px ladder centered in the
+ * transcript band, a hover preview, and a click that jumps to the turn. A
+ * ladder taller than the band scrolls inside the rail, and the active mark is
+ * kept in view — including the last turn once the reader reaches the bottom.
+ */
 export function ChatMinimap({ messages, streamingMessage, scrollContainer, messageRefs, historyTruncated }: Props) {
   const { t } = useI18n();
   const [layout, setLayout] = useState({ nodes: [] as TimelineNode[], activeIndex: -1, visible: false });
-  const [previewState, setPreviewState] = useState<{ index: number; top: number } | null>(null);
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [railMaxHeight, setRailMaxHeight] = useState(MAX_RAIL_HEIGHT_PX);
   const navRef = useRef<HTMLElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const allMessages = useMemo(
     () => (streamingMessage ? [...messages, streamingMessage] : messages),
     [messages, streamingMessage],
@@ -49,18 +72,26 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
           const element = messageRefs.current[index];
           if (!element) return;
           const offset = element.getBoundingClientRect().top - rect.top + scrollEl.scrollTop;
-          nodes.push({ index, offset, user: message.preview, answer: "" });
+          nodes.push({ index, offset, prompt: message.preview, response: "" });
         } else if (message.hasText && nodes.length > 0) {
-          nodes[nodes.length - 1].answer = message.preview;
+          nodes[nodes.length - 1].response = message.preview;
         }
       });
+      // A turn is active once the reader reaches its opening within the top
+      // quarter of the viewport; at the very bottom the newest turn wins, so
+      // the last mark lights up even when its prompt sits above that line.
+      const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= total - 8;
       const currentOffset = scrollEl.scrollTop + Math.min(scrollEl.clientHeight * 0.25, 160);
-      const activeIndex = nodes.findLastIndex((node) => node.offset <= currentOffset);
-      setLayout({
-        nodes,
-        activeIndex: Math.max(0, activeIndex),
-        visible: total > scrollEl.clientHeight + 20,
-      });
+      const activeIndex =
+        nodes.length === 0
+          ? -1
+          : atBottom
+            ? nodes.length - 1
+            : Math.max(
+                0,
+                nodes.findLastIndex((node) => node.offset <= currentOffset),
+              );
+      setLayout({ nodes, activeIndex, visible: total > scrollEl.clientHeight + 20 });
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(measure);
@@ -77,13 +108,52 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
     };
   }, [scrollContainer, messageRefs, allMessages]);
 
-  const preview = layout.nodes.find((node) => node.index === previewState?.index);
-  const showPreview = (index: number, element: HTMLElement) => {
+  // The ladder is capped by the transcript band it centers in.
+  useEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
-    const rect = element.getBoundingClientRect();
-    setPreviewState({ index, top: rect.top + rect.height / 2 - nav.getBoundingClientRect().top });
-  };
+    const fit = () => {
+      setRailMaxHeight(Math.min(MAX_RAIL_HEIGHT_PX, Math.max(0, nav.clientHeight - RAIL_BAND_CLEARANCE_PX)));
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(nav);
+    fit();
+    return () => observer.disconnect();
+  }, []);
+
+  /** Keep the active mark inside the fade-free band of a scrolling rail. */
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || layout.activeIndex < 0) return;
+    const top = RAIL_INSET_PX + layout.activeIndex * TURN_SPACING_PX;
+    const viewTop = scroller.scrollTop;
+    const viewHeight = scroller.clientHeight;
+    if (viewHeight <= 0 || scroller.scrollHeight <= viewHeight + 1) return;
+    const bandTop = viewTop + FADE_PX;
+    const bandBottom = viewTop + viewHeight - FADE_PX;
+    if (top < bandTop || top + TURN_SPACING_PX > bandBottom) {
+      scroller.scrollTop = Math.max(0, top + TURN_SPACING_PX / 2 - viewHeight / 2);
+    }
+  }, [layout.activeIndex, layout.nodes.length]);
+
+  const updateEdges = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const top = scroller.scrollTop > 2;
+    const bottom = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 2;
+    setEdges((current) => (current.top === top && current.bottom === bottom ? current : { top, bottom }));
+  }, []);
+  useEffect(updateEdges, [updateEdges, layout.nodes.length]);
+
+  const markTop = (index: number): number => RAIL_INSET_PX + index * TURN_SPACING_PX;
+  const marksHeight = RAIL_INSET_PX * 2 + layout.nodes.length * TURN_SPACING_PX;
+  const preview = layout.nodes.find((node) => node.index === previewIndex);
+  const previewMark = previewIndex === null ? -1 : layout.nodes.findIndex((node) => node.index === previewIndex);
+  const previewTop = previewMark < 0 ? 0 : markTop(previewMark) - (scrollerRef.current?.scrollTop ?? 0);
+
+  const classes = ["chat-timeline-scroller"];
+  if (edges.top) classes.push("is-faded-top");
+  if (edges.bottom) classes.push("is-faded-bottom");
 
   return (
     <nav
@@ -92,47 +162,58 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
       style={{ visibility: layout.visible ? "visible" : "hidden" }}
       aria-label={t("conversationTimeline", "Conversation timeline")}
     >
-      <div className="chat-timeline-track" onScroll={() => setPreviewState(null)}>
-        {historyTruncated && (
-          <span
-            className="chat-timeline-truncated"
-            title={t("timelineLoadedHistory", "Timeline shows loaded history")}
-          />
-        )}
-        {layout.nodes.map((node, nodeIndex) => (
-          <button
-            key={node.index}
-            type="button"
-            className="chat-timeline-node"
-            data-visible={nodeIndex === layout.activeIndex}
-            aria-label={`${t("you", "You")}: ${node.user}${node.answer ? `. Serphia: ${node.answer}` : ""}`}
-            onClick={() => {
-              const scrollEl = scrollContainer.current;
-              if (scrollEl)
-                scrollEl.scrollTo({
-                  top: Math.max(0, node.offset - 24),
-                  behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-                });
-            }}
-            onMouseEnter={(event) => showPreview(node.index, event.currentTarget)}
-            onMouseLeave={() => setPreviewState(null)}
-            onFocus={(event) => showPreview(node.index, event.currentTarget)}
-            onBlur={() => setPreviewState(null)}
-          >
-            <span />
-          </button>
-        ))}
-      </div>
-      {preview && previewState && (
+      <div className="chat-timeline-frame" style={{ maxHeight: railMaxHeight }}>
         <div
-          className="chat-timeline-preview"
-          role="tooltip"
-          style={{ top: `clamp(12px, ${previewState.top}px, calc(100% - 12px))` }}
+          ref={scrollerRef}
+          className={classes.join(" ")}
+          style={{ maxHeight: railMaxHeight }}
+          onScroll={updateEdges}
         >
-          <span>{preview.user || t("you", "You")}</span>
-          {preview.answer && <p>{preview.answer}</p>}
+          {historyTruncated && (
+            <span
+              className="chat-timeline-truncated"
+              title={t("timelineLoadedHistory", "Timeline shows loaded history")}
+            />
+          )}
+          <div className="chat-timeline-marks" style={{ height: marksHeight }}>
+            {layout.nodes.map((node, nodeIndex) => (
+              <button
+                key={node.index}
+                type="button"
+                className="chat-timeline-node"
+                data-active={nodeIndex === layout.activeIndex}
+                style={{ top: markTop(nodeIndex) }}
+                aria-label={`${t("you", "You")}: ${node.prompt}${node.response ? `. Serphia: ${node.response}` : ""}`}
+                aria-current={nodeIndex === layout.activeIndex ? "true" : undefined}
+                onClick={() => {
+                  const scrollEl = scrollContainer.current;
+                  if (scrollEl)
+                    scrollEl.scrollTo({
+                      top: Math.max(0, node.offset - 24),
+                      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+                    });
+                }}
+                onMouseEnter={() => setPreviewIndex(node.index)}
+                onMouseLeave={() => setPreviewIndex(null)}
+                onFocus={() => setPreviewIndex(node.index)}
+                onBlur={() => setPreviewIndex(null)}
+              >
+                <span />
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+        {preview && (
+          <div
+            className="chat-timeline-preview"
+            role="tooltip"
+            style={{ top: `clamp(0px, calc(${previewTop}px - 36px), calc(100% - 72px))` }}
+          >
+            <span>{preview.prompt || t("you", "You")}</span>
+            {preview.response && <p>{preview.response}</p>}
+          </div>
+        )}
+      </div>
     </nav>
   );
 }

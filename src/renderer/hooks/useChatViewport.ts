@@ -67,6 +67,10 @@ export function useChatViewport({
   const lastScrollTopRef = useRef(0);
   const touchStartClientYRef = useRef<number | null>(null);
   const externalTurnAutoFollowRef = useRef(false);
+  // A local prompt pins itself at the top of the viewport; the turn then starts
+  // following its own output as soon as that output grows past the fold, so a
+  // long answer stays visible without the reader scrolling after every burst.
+  const localFollowPendingRef = useRef(false);
   // Set when the user explicitly re-attaches the viewport to the newest
   // content (clicks "scroll to bottom"); live-follow then stays engaged until
   // the user scrolls away again or the run ends.
@@ -93,6 +97,7 @@ export function useChatViewport({
     interactionRevisionRef.current++;
     pendingScrollToUserRef.current = true;
     completionScrollAllowedRef.current = true;
+    localFollowPendingRef.current = true;
   }, []);
   const beginExternalTurn = useCallback(() => {
     if (!activeRef.current) return;
@@ -199,6 +204,7 @@ export function useChatViewport({
     pendingHistoryPrependRef.current = false;
     completionScrollAllowedRef.current = true;
     externalTurnAutoFollowRef.current = false;
+    localFollowPendingRef.current = false;
     autoFollowMagnetRef.current = true;
     setScrollMagnetEngaged(true);
     pendingScrollToUserRef.current = false;
@@ -211,6 +217,7 @@ export function useChatViewport({
     if (!activeRef.current) return;
     completionScrollAllowedRef.current = false;
     externalTurnAutoFollowRef.current = false;
+    localFollowPendingRef.current = false;
     autoFollowMagnetRef.current = false;
     setScrollMagnetEngaged(false);
   }, []);
@@ -378,7 +385,31 @@ export function useChatViewport({
   }, [messageCount, agentRunning, agentRunningRef, scrollToBottom, scrollUserMsgToTop]);
 
   useEffect(() => {
-    if (!agentRunning || !completionScrollAllowedRef.current) return;
+    if (!agentRunning) {
+      // A pending local follow only applies to the turn that started it.
+      localFollowPendingRef.current = false;
+      return;
+    }
+    if (!completionScrollAllowedRef.current) return;
+    if (!externalTurnAutoFollowRef.current && !autoFollowMagnetRef.current && localFollowPendingRef.current) {
+      // The prompt stays pinned at the top until its answer outgrows the fold;
+      // from then on the viewport follows the streaming tail like DSH does.
+      const container = scrollContainerRef.current;
+      const tail = liveContentEndRef.current;
+      const containerRect =
+        container !== null && typeof container.getBoundingClientRect === "function"
+          ? container.getBoundingClientRect()
+          : null;
+      const tailRect =
+        tail !== null && typeof tail.getBoundingClientRect === "function" ? tail.getBoundingClientRect() : null;
+      const tailVisible =
+        tailRect !== null && containerRect !== null ? tailRect.top <= containerRect.bottom - 16 : true;
+      if (!tailVisible) {
+        localFollowPendingRef.current = false;
+        autoFollowMagnetRef.current = true;
+        setScrollMagnetEngaged(true);
+      }
+    }
     if (!externalTurnAutoFollowRef.current && !autoFollowMagnetRef.current) return;
     const frame = requestAnimationFrame(() => {
       if (!completionScrollAllowedRef.current) return;

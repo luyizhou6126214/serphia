@@ -550,7 +550,8 @@ html.dark {
   --text-muted: #6b6b66;
   --text-dim: #8b8b85;
   --assistant-bg: #ffffff;
-  --chat-user-bg: #f2f2ef;
+  /* DeepSeek Harness user bubble: deepseek-50 in light, neutral-bluish-850 in dark. */
+  --chat-user-bg: #edf3fe;
   --tool-bg: #f7f7f5;
   --tool-fg: #555550;
   --tool-border: #e7e7e2;
@@ -567,7 +568,7 @@ html.dark .chat-appearance-scope {
   --text-muted: #aaa9a2;
   --text-dim: #85857e;
   --assistant-bg: #1b1b1a;
-  --chat-user-bg: #30302d;
+  --chat-user-bg: #2c2c2e;
   --tool-bg: #222221;
   --tool-fg: #b8b8af;
   --tool-border: #383835;
@@ -3475,6 +3476,161 @@ html.dark .app-topbar-button:hover:not(:disabled) {
   background: #38343b;
   color: #fff;
 }
+/* Session-header split opener: the remembered application's icon plus the menu half. */
+.open-in-app {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+.open-in-app-split {
+  display: inline-flex;
+  align-items: stretch;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.open-in-app-main,
+.open-in-app-chevron {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.open-in-app-main {
+  width: 31px;
+}
+.open-in-app-chevron {
+  width: 17px;
+  color: color-mix(in srgb, currentColor 70%, transparent);
+}
+.open-in-app-main:hover:not(:disabled),
+.open-in-app-main:focus-visible,
+.open-in-app-chevron:hover:not(:disabled) {
+  background: #e4dee8;
+  color: #202124;
+}
+.open-in-app-chevron:focus-visible {
+  background: #e4dee8;
+}
+.open-in-app-main:focus-visible,
+.open-in-app-chevron:focus-visible {
+  outline: 2px solid currentColor !important;
+  outline-offset: -3px;
+}
+.open-in-app-main:disabled,
+.open-in-app-chevron:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+.open-in-app-split[data-failed] {
+  color: var(--danger);
+}
+.open-in-app-icon {
+  border-radius: 3px;
+  object-fit: contain;
+}
+.open-in-app-spinner {
+  animation: spin 0.9s linear infinite;
+}
+html.dark .open-in-app-main:hover:not(:disabled),
+html.dark .open-in-app-main:focus-visible,
+html.dark .open-in-app-chevron:hover:not(:disabled),
+html.dark .open-in-app-chevron:focus-visible {
+  background: #38343b;
+  color: #fff;
+}
+
+/* Application menu: the same quiet layered surface as the project picker. */
+.open-in-app-menu {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid #e9e4ec;
+  border-radius: 14px;
+  background: #fdfcfd;
+  color: #2f2e34;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  box-shadow:
+    0 20px 48px rgba(38, 34, 44, 0.16),
+    0 2px 8px rgba(38, 34, 44, 0.06);
+  --open-in-app-hover: #f3f0f5;
+  --open-in-app-current: #eeeaf1;
+  --open-in-app-muted: #6e6975;
+}
+.open-in-app-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.open-in-app-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.open-in-app-item:hover,
+.open-in-app-item:focus-visible {
+  background: var(--open-in-app-hover);
+}
+.open-in-app-item:focus-visible {
+  outline-offset: -2px !important;
+}
+.open-in-app-item.is-current {
+  background: var(--open-in-app-current);
+}
+.open-in-app-item-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
+.open-in-app-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.open-in-app-item.is-current .open-in-app-item-name {
+  font-weight: 600;
+}
+.open-in-app-item-check {
+  flex: 0 0 auto;
+  color: var(--open-in-app-muted);
+}
+.dark .open-in-app-menu {
+  border-color: #413d45;
+  background: #2c292e;
+  color: #f2f0f3;
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  --open-in-app-hover: #38343b;
+  --open-in-app-current: #423c48;
+  --open-in-app-muted: #c6c1ca;
+}
 @media (max-width: 640px) {
   .sidebar-overlay-backdrop {
     top: 44px !important;
@@ -4056,6 +4212,35 @@ html.dark .composer-menu {
 .chat-message-scroll {
   padding-top: 28px;
   scroll-padding-block: 24px;
+  /* The column paints its own full-height bar (ChatScrollbar); the native one
+     would stop above the composer and sit left of the timeline rail. */
+  scrollbar-width: none;
+}
+.chat-message-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/*── Conversation scrollbar: far right, down to the composer's floor ─────*/
+
+.chat-scrollbar {
+  position: absolute;
+  right: 3px;
+  z-index: 8;
+  width: 6px;
+  border-radius: 3px;
+  touch-action: none;
+}
+.chat-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-dim) 38%, transparent);
+  transition: background-color 140ms ease;
+}
+.chat-scrollbar:hover .chat-scrollbar-thumb,
+.chat-scrollbar[data-dragging] .chat-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-dim) 62%, transparent);
 }
 .chat-message {
   min-width: 0;
@@ -5208,7 +5393,7 @@ html.dark .composer-menu {
   padding: 8px 12px 10px;
   overflow-wrap: anywhere;
 }
-/*── Chat minimap rail: turn ticks beside the transcript ─────────────────*/
+/*── Chat timeline rail: one mark per turn, DeepSeek Harness style ───────*/
 
 .chat-timeline {
   position: relative;
@@ -5216,54 +5401,77 @@ html.dark .composer-menu {
   width: 32px;
   margin-right: 20px;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
 }
-.chat-timeline-track {
+/* The frame centers the compact ladder in the transcript band; a taller
+   ladder scrolls inside it instead of pushing marks under the composer. */
+.chat-timeline-frame {
+  position: absolute;
+  top: 50%;
+  right: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: 100%;
-  max-height: min(50%, 360px);
+  width: 28px;
+  transform: translateY(-50%);
+}
+.chat-timeline-scroller {
+  position: relative;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  user-select: none;
 }
-.chat-timeline-track::-webkit-scrollbar {
+.chat-timeline-scroller::-webkit-scrollbar {
   display: none;
 }
+.chat-timeline-scroller.is-faded-top {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+}
+.chat-timeline-scroller.is-faded-bottom {
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 16px), transparent 100%);
+}
+.chat-timeline-scroller.is-faded-top.is-faded-bottom {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+}
+.chat-timeline-marks {
+  position: relative;
+}
 .chat-timeline-node {
-  display: grid;
-  place-items: center;
-  flex: 0 0 10px;
-  width: 32px;
-  min-height: 10px;
-  border: 0;
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 10px;
   padding: 0;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
 }
+/* A turn's mark: a short dash at rest, full width for the active turn. */
 .chat-timeline-node > span {
-  width: 13px;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 20px;
   height: 2px;
   border-radius: 2px;
   background: var(--text-dim);
   opacity: 0.5;
+  transform: translateY(-50%) scaleX(0.6);
+  transform-origin: right center;
   transition:
-    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 220ms ease,
-    background-color 220ms ease;
+    transform 140ms ease,
+    background-color 140ms ease,
+    opacity 140ms ease;
 }
-.chat-timeline-node[data-visible="true"] > span {
-  width: 24px;
-  background: var(--text);
-  opacity: 0.9;
-}
-.chat-timeline-node:is(:hover, :focus-visible) > span {
-  width: 24px;
+.chat-timeline-node[data-active="true"] > span {
   background: var(--text);
   opacity: 1;
+  transform: translateY(-50%) scaleX(1);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 18%, transparent);
+}
+.chat-timeline-node:is(:hover, :focus-visible) > span {
+  background: var(--accent);
+  opacity: 1;
+  transform: translateY(-50%) scaleX(1);
 }
 .chat-timeline-node:focus-visible {
   outline: 1px solid var(--accent);
@@ -5272,7 +5480,7 @@ html.dark .composer-menu {
 }
 .chat-timeline-preview {
   position: absolute;
-  right: 38px;
+  right: calc(100% + 8px);
   z-index: 50;
   width: 300px;
   max-width: calc(100vw - 80px);
@@ -5284,28 +5492,22 @@ html.dark .composer-menu {
     0 8px 28px #00000014,
     0 2px 6px #0000000a;
   pointer-events: none;
-  transform: translateY(-50%);
   animation: chat-timeline-preview-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes chat-timeline-preview-in {
   from {
     opacity: 0;
-    transform: translate(5px, -50%);
+    transform: translateX(5px);
   }
   to {
     opacity: 1;
-    transform: translate(0, -50%);
+    transform: translateX(0);
   }
 }
 .chat-timeline-preview > span {
   font-size: var(--dsh-content-font-size-secondary, 13px);
   font-weight: 600;
   color: var(--text);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
 }
 .chat-timeline-preview p {
   display: -webkit-box;
@@ -5319,11 +5521,283 @@ html.dark .composer-menu {
   overflow-wrap: anywhere;
 }
 .chat-timeline-truncated {
-  flex: 0 0 2px;
+  position: absolute;
+  top: 2px;
+  left: 13px;
   width: 6px;
-  margin: 4px 0;
+  height: 2px;
   border-radius: 2px;
   background: var(--text-dim);
+  opacity: 0.6;
+}
+
+/*── Turn changes: the files one assistant turn edited, with their diffs ──*/
+
+.turn-changes {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.turn-changes-header {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 0;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.turn-changes-header-button {
+  cursor: pointer;
+}
+
+.turn-changes-header-button:hover,
+.turn-changes-header-button:focus-visible {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.turn-changes-header-button:focus-visible,
+.turn-changes-row:focus-visible,
+.turn-changes-toggle:focus-visible,
+.turn-changes-open:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: -2px;
+}
+
+.turn-changes {
+  /* DeepSeek's blue marks the closing card's file tile. */
+  --turn-changes-icon: #4176e6;
+  --turn-changes-icon-soft: rgba(65, 118, 230, 0.1);
+  --turn-changes-icon-border: rgba(65, 118, 230, 0.22);
+}
+html.dark .turn-changes {
+  --turn-changes-icon: #7aaaff;
+  --turn-changes-icon-soft: rgba(122, 170, 255, 0.12);
+  --turn-changes-icon-border: rgba(122, 170, 255, 0.24);
+}
+.turn-changes-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0.5px solid var(--turn-changes-icon-border);
+  border-radius: 9px;
+  background: var(--turn-changes-icon-soft);
+  color: var(--turn-changes-icon);
+}
+
+.turn-changes-titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.turn-changes-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-changes-stat {
+  display: inline-flex;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.turn-changes-added {
+  color: var(--success);
+}
+
+.turn-changes-deleted {
+  color: var(--danger);
+}
+
+.turn-changes-chevron {
+  display: flex;
+  flex: none;
+  color: var(--text-dim);
+}
+
+.turn-changes-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.turn-changes-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 6px 12px 6px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.turn-changes-row:hover,
+.turn-changes-toggle:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.turn-changes-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-changes-row-counts {
+  display: inline-flex;
+  flex: none;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.turn-changes-toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 12px 9px 14px;
+  border: 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.turn-changes-diff {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--bg);
+}
+
+.turn-changes-diff-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 4px 10px 4px 12px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.turn-changes-diff-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-changes-open {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 7px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.turn-changes-open:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.turn-changes-note {
+  margin: 0;
+  padding: 5px 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.turn-changes-diff-body {
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.turn-changes-line {
+  padding: 0 12px;
+  color: var(--text-muted);
+  white-space: pre;
+  tab-size: 4;
+}
+
+.turn-changes-line.is-add {
+  background: var(--success-soft);
+  color: var(--text);
+}
+
+.turn-changes-line.is-remove {
+  background: var(--danger-soft);
+  color: var(--text);
+}
+
+.turn-changes-line.is-hunk {
+  padding-top: 4px;
+  color: var(--text-dim);
+}
+
+.turn-changes-gap {
+  height: 6px;
+  margin: 2px 0;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
 }
 
 .execution-spinner {
@@ -5917,4 +6391,258 @@ html.dark .composer-menu {
 }
 .slash-menu-scroll::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--text-dim) 42%, transparent);
+}
+
+/* GitHub repository clone */
+.github-clone-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(20, 18, 24, 0.24);
+}
+.github-clone-dialog::backdrop {
+  background: rgba(25, 23, 29, 0.42);
+}
+.github-clone-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 26px 26px 22px;
+}
+.github-clone-brand {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.github-clone-heading {
+  flex: 1;
+  min-width: 0;
+}
+.github-clone-heading h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.github-clone-heading p,
+.github-clone-field p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.github-clone-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.github-clone-close:hover {
+  background: var(--bg-hover);
+}
+.github-clone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 0 26px 26px;
+}
+.github-clone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.github-clone-field label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.github-clone-field input,
+.github-clone-location {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+.github-clone-field input {
+  padding: 0 12px;
+  outline: none;
+}
+.github-clone-field input:focus,
+.github-clone-location:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.github-clone-field input::placeholder,
+.github-clone-location .is-placeholder {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+.github-clone-location {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 5px 0 12px;
+  color: var(--text-muted);
+}
+.github-clone-location span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.github-clone-location button,
+.github-clone-cancel {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.github-clone-error {
+  max-height: 110px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.09);
+  color: #d04747;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.github-clone-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 16px 26px;
+  border-top: 1px solid var(--border);
+}
+.github-clone-footer button {
+  min-height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.github-clone-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.github-clone-dialog button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.github-clone-spinner {
+  animation: github-clone-spin 1s linear infinite;
+}
+@keyframes github-clone-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.github-clone-progress {
+  padding: 16px 17px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg);
+}
+.github-clone-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 25px;
+}
+.github-clone-progress-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.github-clone-progress-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.github-clone-progress-percent {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.github-clone-progress-percent small {
+  margin-left: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.github-clone-progress-track {
+  height: 6px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--border);
+}
+.github-clone-progress-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #f7a06e);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.github-clone-progress-track.is-indeterminate .github-clone-progress-fill {
+  width: 35%;
+  transform: translateX(-100%);
+  animation: github-clone-wait 1.5s ease-in-out infinite;
+}
+.github-clone-progress p {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+@keyframes github-clone-wait {
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .github-clone-progress-track.is-indeterminate .github-clone-progress-fill {
+    animation: none;
+    transform: none;
+  }
 }

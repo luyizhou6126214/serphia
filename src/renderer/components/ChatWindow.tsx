@@ -27,6 +27,8 @@ import { summarizeActivity } from "./chat/process-activity";
 import { SessionProfiler } from "./SessionProfiler";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs, type ChatMinimapMessage } from "./ChatMinimap";
+import { useTurnChangeFooters } from "./chat/TurnChangesTail";
+import { ChatScrollbar } from "./chat/ChatScrollbar";
 import type { WorkStepDisplay } from "@shared/work-step-display";
 import { workStepDisplayPolicy } from "@shared/work-step-display";
 import { SessionViewTabs, type SessionView } from "./SessionViewTabs";
@@ -178,6 +180,7 @@ export function ChatWindow({
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const chatRootRef = useRef<HTMLDivElement>(null);
+  const composerDockRef = useRef<HTMLDivElement>(null);
   const [sessionView, setSessionView] = useState<SessionView>("chat");
   useEffect(() => {
     setSessionView("chat");
@@ -322,6 +325,7 @@ export function ChatWindow({
   const showSessionViews = !isEmptyNew && messages.length > 0;
   const activeSessionView: SessionView = showSessionViews ? sessionView : "chat";
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  const turnFooters = useTurnChangeFooters(messages, messageCwd, workspace?.homeDir, onOpenFile);
   const chatViewportHeight = useObservedElementHeight(scrollContainerRef);
 
   const availableThinkingLevels = displayModelValue
@@ -552,10 +556,7 @@ export function ChatWindow({
                 <NoticeShelf notices={notices} floating align="right" />
               </div>
             </div>
-            <div
-              ref={scrollContainerRef}
-              className="chat-message-scroll relative z-[1] flex-1 overflow-y-auto [scrollbar-width:none]"
-            >
+            <div ref={scrollContainerRef} className="chat-message-scroll relative z-[1] flex-1 overflow-y-auto">
               <div
                 style={{
                   paddingLeft: CHAT_COLUMN_PADDING,
@@ -633,6 +634,7 @@ export function ChatWindow({
                           messageOverride?: AgentMessage;
                           showTimestamp?: boolean;
                           flowPart?: "response";
+                          footer?: ReactNode;
                         } = {},
                       ): ReactNode => {
                         const msg = options.messageOverride ?? messages[idx];
@@ -676,6 +678,7 @@ export function ChatWindow({
                               thinkingExpansionStore={thinkingExpansionStore}
                               workStepDisplay={workStepDisplay}
                               hideCopy={renderRole === "process" || renderRole === "process-final"}
+                              footer={options.footer}
                             />
                           </SessionProfiler>
                         );
@@ -828,6 +831,7 @@ export function ChatWindow({
                               renderRole: "final",
                               flowPart: "response",
                               messageOverride: finalAnswerMessage,
+                              footer: turnFooters.get(userIdx),
                             }),
                           );
                         }
@@ -924,6 +928,7 @@ export function ChatWindow({
       )}
 
       <div
+        ref={composerDockRef}
         className="chat-input-transition-dock relative z-[2] w-full flex-shrink-0 self-center"
         data-position={isEmptyNew ? "welcome" : "conversation"}
       >
@@ -943,6 +948,13 @@ export function ChatWindow({
       </div>
 
       <div className="chat-input-bottom-spacer" data-expanded={isEmptyNew ? "true" : "false"} aria-hidden="true" />
+
+      <ChatScrollbar
+        rootRef={chatRootRef}
+        scrollContainer={scrollContainerRef}
+        composerRef={composerDockRef}
+        visible={!isMobile && activeSessionView === "chat" && !isEmptyNew}
+      />
 
       <ChatWidthHandles
         rootRef={chatRootRef}

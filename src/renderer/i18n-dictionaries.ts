@@ -11,6 +11,8 @@ import { enUS as executionsEnUS, zhCN as executionsZhCN, zhTW as executionsZhTW 
 import { enUS as mcpEnUS, zhCN as mcpZhCN, zhTW as mcpZhTW } from "./i18n/mcp.ts";
 import { enUS as herdrEnUS, zhCN as herdrZhCN, zhTW as herdrZhTW } from "./i18n/herdr.ts";
 import { enUS as modelsEnUS, zhCN as modelsZhCN, zhTW as modelsZhTW } from "./i18n/models.ts";
+import { enUS as openInAppEnUS, zhCN as openInAppZhCN, zhTW as openInAppZhTW } from "./i18n/open-in-app.ts";
+import { enUS as rightPanelEnUS, zhCN as rightPanelZhCN, zhTW as rightPanelZhTW } from "./i18n/right-panel.ts";
 import { enUS as resourcesEnUS, zhCN as resourcesZhCN, zhTW as resourcesZhTW } from "./i18n/resources.ts";
 import { enUS as sessionEnUS, zhCN as sessionZhCN, zhTW as sessionZhTW } from "./i18n/session.ts";
 import { enUS as settingsEnUS, zhCN as settingsZhCN, zhTW as settingsZhTW } from "./i18n/settings.ts";
@@ -28,6 +30,8 @@ export const enUS = mergeDictionaries(
   mcpEnUS,
   herdrEnUS,
   modelsEnUS,
+  openInAppEnUS,
+  rightPanelEnUS,
   resourcesEnUS,
   sessionEnUS,
   settingsEnUS,
@@ -45,6 +49,8 @@ export const zhCN = mergeDictionaries(
   mcpZhCN,
   herdrZhCN,
   modelsZhCN,
+  openInAppZhCN,
+  rightPanelZhCN,
   resourcesZhCN,
   sessionZhCN,
   settingsZhCN,
@@ -62,6 +68,8 @@ export const zhTW = mergeDictionaries(
   mcpZhTW,
   herdrZhTW,
   modelsZhTW,
+  openInAppZhTW,
+  rightPanelZhTW,
   resourcesZhTW,
   sessionZhTW,
   settingsZhTW,

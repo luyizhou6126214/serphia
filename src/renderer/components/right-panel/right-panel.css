@@ -1,0 +1,522 @@
+/*
+ * The right panel's own chrome, following the DeepSeek Harness sidebar:
+ * a 38px tab strip whose chips sit in the bottom 28px band, a guide page with
+ * one centred column of entry capsules, and the two strip-end panel controls.
+ * Tokens only, so both themes come from globals.css.
+ */
+
+.rp-strip {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  height: 38px;
+  padding: 10px 6px 0 10px;
+  box-sizing: border-box;
+}
+
+.rp-tabs {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.rp-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.rp-tab {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 80px;
+  max-width: 170px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rp-tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rp-tab.is-active {
+  color: var(--dsw-alias-label-primary);
+  background: var(--bg-hover);
+}
+
+/* A pane's lone guide chip is a label, not a choice: no hover fill. */
+.rp-tab.is-quiet,
+.rp-tab.is-quiet:hover {
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  cursor: default;
+}
+
+.rp-tab:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color) !important;
+  outline-offset: -2px;
+}
+
+.rp-tab-glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rp-tab.is-active .rp-tab-glyph,
+.rp-tab.is-quiet .rp-tab-glyph {
+  color: inherit;
+}
+
+.rp-tab-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A closable chip keeps its title clear of the close control's 20px inset. */
+.rp-tab[data-closable] .rp-tab-title {
+  padding-right: 12px;
+}
+
+/* A count or attention marker after the title, inside the chip's own band. */
+.rp-tab-badge {
+  flex: none;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.rp-tab-badge.is-attention {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* The close rides the chip's trailing 20px and only shows on hover, focus,
+   or the active chip, so nothing shifts when it appears. */
+.rp-tab-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rp-tab:hover .rp-tab-close,
+.rp-tab:focus-within .rp-tab-close,
+.rp-tab.is-active .rp-tab-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rp-tab-close:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rp-strip-fill {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.rp-strip-controls {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+}
+
+.rp-icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.rp-icon-button:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rp-icon-button:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color) !important;
+  outline-offset: -2px;
+}
+
+.rp-icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Guide page ─────────────────────────────────────────────────────────── */
+
+.rp-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 0 24px;
+}
+
+/* The lift: the centred column rises 10% of the pane, and a short pane gives
+   that space up before the capsules clip. */
+.rp-guide::after {
+  content: "";
+  flex: 0 1 10%;
+}
+
+.rp-guide-hero {
+  display: flex;
+  margin-bottom: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rp-guide-notice {
+  max-width: 380px;
+  padding: 10px 14px;
+  border: 0.5px solid var(--dsw-alias-state-error-primary);
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rp-guide-entry {
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: 380px;
+  max-width: 100%;
+  min-height: 56px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--bg-panel);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  overflow: hidden;
+}
+
+.rp-guide-entry:hover {
+  background: var(--bg-hover);
+}
+
+.rp-guide-entry-main {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px 20px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rp-guide-entry-main:focus-visible,
+.rp-guide-entry-menu:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color) !important;
+  outline-offset: -2px;
+}
+
+.rp-guide-entry-main:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The secondary control (a shell menu) keeps the capsule's height and reads as
+   a separate door inside the same frame. */
+.rp-guide-entry-menu {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  border-left: 0.5px solid var(--dsw-alias-border-l3);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.rp-guide-entry-menu:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.rp-guide-entry-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rp-guide-entry-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rp-guide-entry-title {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rp-guide-entry-description {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Keycaps at the capsule's right edge, in the strip's tertiary ink. */
+.rp-keys {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+/* Shell menu opened from a capsule's secondary control. */
+.rp-guide-menu {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid #e9e4ec;
+  border-radius: var(--dsw-radius-lg);
+  background: #fdfcfd;
+  color: #2f2e34;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  box-shadow:
+    0 20px 48px rgba(38, 34, 44, 0.16),
+    0 2px 8px rgba(38, 34, 44, 0.06);
+  --rp-menu-hover: #f3f0f5;
+  --rp-menu-current: #eeeaf1;
+}
+
+.rp-guide-menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.rp-guide-menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rp-guide-menu-item:hover,
+.rp-guide-menu-item:focus-visible {
+  background: var(--rp-menu-hover);
+}
+
+.rp-guide-menu-item:focus-visible {
+  outline-offset: -2px !important;
+}
+
+.rp-guide-menu-item.is-current {
+  background: var(--rp-menu-current);
+}
+
+.rp-guide-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dark .rp-guide-menu {
+  border-color: #413d45;
+  background: #2c292e;
+  color: #f2f0f3;
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  --rp-menu-hover: #38343b;
+  --rp-menu-current: #423c48;
+}
+
+.rp-keys kbd {
+  padding: 1px 5px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--bg);
+  font: inherit;
+}
+
+.rp-keys-plus {
+  opacity: 0.6;
+}
+
+/* ── Bodies ─────────────────────────────────────────────────────────────── */
+
+.rp-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rp-body-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Files body header: the workspace root, with the listing's own actions. */
+.rp-files-header {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.rp-files-root {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.rp-files-root > span {
+  unicode-bidi: plaintext;
+}
+
+.rp-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Fullscreen presentation: the panel covers the frame under the title bar. */
+.right-panel-container.right-panel-fullscreen {
+  position: fixed;
+  top: 44px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  border-left: none;
+  background: var(--bg);
+}
+
+.right-panel-container.right-panel-fullscreen > :not(.right-panel-resizer) {
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+.right-panel-container.right-panel-fullscreen .right-panel-resizer {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-tab,
+  .rp-guide-entry,
+  .rp-icon-button {
+    transition: none;
+  }
+}

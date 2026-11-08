@@ -30,8 +30,8 @@ export function scheduleSettingsConfigPreload(): () => void {
 }
 
 const LazySettingsConfig = lazy(preloadSettingsConfig);
-const LazyTerminalDock = lazy(() =>
-  import("./herdr/TerminalDock").then((module) => ({ default: module.TerminalDock })),
+const LazyTerminalPanel = lazy(() =>
+  import("./terminal/TerminalPanel").then((module) => ({ default: module.TerminalPanel })),
 );
 
 function PanelLoading() {
@@ -120,10 +120,10 @@ export function SettingsConfig(props: Omit<ComponentProps<typeof LazySettingsCon
   );
 }
 
-export function TerminalDock(props: ComponentProps<typeof LazyTerminalDock>) {
+export function TerminalPanel(props: ComponentProps<typeof LazyTerminalPanel>) {
   return (
     <Suspense fallback={<PanelLoading />}>
-      <LazyTerminalDock {...props} />
+      <LazyTerminalPanel {...props} />
     </Suspense>
   );
 }

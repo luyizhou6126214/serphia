@@ -49,8 +49,9 @@ export const architecturePolicy = {
       reason: "Existing Browser service and authorization routing; 22-06 changes must preserve its contracts.",
     },
     "src/renderer/components/ChatWindow.tsx": {
-      maxLines: 1452,
-      reason: "Chat presentation and the explicit temporary draft owner retained across new-session promotion.",
+      maxLines: 1456,
+      reason:
+        "Chat presentation, the explicit temporary draft owner retained across new-session promotion, and the turn changes tail placement.",
     },
     "src/renderer/hooks/useAgentSession.ts": {
       maxLines: 1420,

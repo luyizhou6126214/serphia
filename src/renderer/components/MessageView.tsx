@@ -50,6 +50,8 @@ interface Props {
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
   hideCopy?: boolean;
+  /** Rendered inside the assistant body, above the action row. */
+  footer?: ReactNode;
 }
 
 export const MessageView = memo(function MessageView({
@@ -71,6 +73,7 @@ export const MessageView = memo(function MessageView({
   thinkingExpansionStore,
   workStepDisplay,
   hideCopy,
+  footer,
 }: Props) {
   if (message.role === "user") {
     return (
@@ -104,6 +107,7 @@ export const MessageView = memo(function MessageView({
         thinkingExpansionStore={thinkingExpansionStore}
         workStepDisplay={workStepDisplay}
         hideCopy={hideCopy}
+        footer={footer}
       />
     );
   }
@@ -429,6 +433,7 @@ function AssistantMessageView({
   thinkingExpansionStore,
   workStepDisplay,
   hideCopy,
+  footer,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -443,6 +448,7 @@ function AssistantMessageView({
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
   hideCopy?: boolean;
+  footer?: ReactNode;
 }) {
   const { t } = useI18n();
   const policy = workStepDisplayPolicy(workStepDisplay);
@@ -490,6 +496,7 @@ function AssistantMessageView({
             onLoad={onLoadDeferredContent}
           />
           <AssistantOutcome message={message} isStreaming={isStreaming} />
+          {footer}
         </div>
 
         {!hideCopy && (

@@ -25,7 +25,10 @@ export default defineConfig([
     sourcemap: true,
     // electron-updater is a production runtime dependency and resolves its
     // provider/platform implementation dynamically from the packaged app.
-    external: ["electron", "electron-updater"],
+    // node-pty is a native addon: it must resolve from node_modules (unpacked
+    // from the asar) so its prebuilt .node files and worker scripts keep their
+    // own on-disk paths.
+    external: ["electron", "electron-updater", "node-pty"],
     splitting: false,
     treeshake: true,
     define: piVersionDefine,

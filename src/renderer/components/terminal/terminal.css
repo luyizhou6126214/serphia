@@ -1,0 +1,84 @@
+/*
+ * The terminal body, following the DeepSeek Harness sidebar terminal: the
+ * screen fills the pane on the page's own ground, a quiet status row carries
+ * connecting and ended states, and the emulator's own colours come from the
+ * element it is embedded in.
+ */
+
+.terminal-root {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  padding-top: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.terminal-screen {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.terminal-screen .xterm {
+  height: 100%;
+}
+
+.terminal-screen .xterm-viewport {
+  background: var(--bg) !important;
+}
+
+/* The xterm helper textarea must not paint over the screen's own ink. */
+.terminal-screen .xterm .xterm-helper-textarea {
+  color: transparent;
+}
+
+.terminal-status {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 5px 12px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.terminal-status-button {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.terminal-status-button:hover {
+  background: var(--bg-hover);
+}
+
+.terminal-status-button:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color) !important;
+  outline-offset: -2px;
+}
+
+.terminal-error {
+  margin: 0;
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+  color: var(--danger);
+  background: var(--bg-panel);
+  font-size: 12px;
+}

@@ -86,6 +86,7 @@ async function mount(t, { resetFollow = true } = {}) {
   });
   install("cancelAnimationFrame", (id) => frames.delete(id));
   const calls = [];
+  let liveTop = 100;
   const container = Object.assign(eventTarget(), {
     scrollTop: 1400,
     scrollHeight: 2000,
@@ -94,7 +95,7 @@ async function mount(t, { resetFollow = true } = {}) {
       return null;
     },
     getBoundingClientRect() {
-      return { top: 0 };
+      return { top: 0, bottom: 600 };
     },
     scrollTo(options) {
       calls.push({ target: "user", ...options });
@@ -105,6 +106,9 @@ async function mount(t, { resetFollow = true } = {}) {
     scrollIntoView(options) {
       calls.push({ target: name, ...options });
       container.scrollTop = container.scrollHeight - container.clientHeight;
+    },
+    getBoundingClientRect() {
+      return { top: name === "live" ? liveTop : 0 };
     },
   });
   const live = anchor("live"),
@@ -167,6 +171,9 @@ async function mount(t, { resetFollow = true } = {}) {
     WheelEvent,
     unmount,
     dispose,
+    setLiveTop: (top) => {
+      liveTop = top;
+    },
     advance: (ms) => {
       now += ms;
     },
@@ -205,6 +212,35 @@ test("upward wheel intent releases streaming follow even inside the programmatic
   await fixture.update({ streamState: stream("three") });
   await fixture.flush();
   assert.ok(fixture.calls.some((call) => call.target === "live"));
+});
+
+test("a local prompt stays pinned until its output passes the fold, then follows the tail", async (t) => {
+  const fixture = await mount(t);
+  fixture.advance(2_000);
+  await act(async () => fixture.current.beginLocalTurn());
+  await fixture.update({ agentRunning: true, messageCount: 2, streamState: stream("short") });
+  await fixture.flush();
+  assert.ok(
+    fixture.calls.some((call) => call.target === "user"),
+    "sending a prompt pins it at the top of the viewport",
+  );
+
+  fixture.calls.length = 0;
+  await fixture.update({ streamState: stream("still short") });
+  await fixture.flush();
+  assert.deepEqual(
+    fixture.calls.filter((call) => call.target === "live"),
+    [],
+    "a tail still inside the viewport does not pull the reader down",
+  );
+
+  fixture.setLiveTop(1_000);
+  await fixture.update({ streamState: stream("a much longer answer") });
+  await fixture.flush();
+  assert.ok(
+    fixture.calls.some((call) => call.target === "live"),
+    "the tail leaving the fold starts following the output",
+  );
 });
 
 test("editing cursor keys and pinch zoom do not permanently release follow", async (t) => {

@@ -17,10 +17,14 @@ const mainProcess = read(new URL("../../../main/main.ts", import.meta.url));
 const mainWindow = read(new URL("../../../main/window.ts", import.meta.url));
 
 test("Browser remains a fixed right-panel resource and hides its native surface behind Settings", () => {
-  assert.match(appShell, /const BROWSER_TAB_ID = "browser"/);
+  // The panel strip binds one chip per Main-owned browser tab, and the dock is
+  // drawn only for the chip it is bound to.
+  assert.match(appShell, /panelBrowserTabId/);
+  assert.match(appShell, /kind: "browser"/);
   assert.match(appShell, /t\("browser", "Browser"\)/);
   assert.match(appShell, /rightPanelOpen && !settingsOpen && !browserAuthorization/);
-  assert.match(appShell, /persistRightPanelPreferredWidth\(finalWidth, activeFileTabId === BROWSER_TAB_ID\)/);
+  assert.match(appShell, /persistRightPanelPreferredWidth\(finalWidth, panelWidthKind === "browser"\)/);
+  assert.match(appShell, /tabId=\{activePanelTab\.browserTabId \?\? null\}/);
 });
 
 test("BrowserDock synchronizes native bounds, visibility, session ownership, and tool-result navigation", () => {

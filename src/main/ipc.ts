@@ -16,7 +16,8 @@ import { inspectLocalFiles } from "./file-context-policy";
 import { createHtmlPreviewUrl, releaseHtmlPreviewUrl } from "./protocol";
 import { loadUiState, saveUiState, saveUiStateStrict } from "./window-state";
 import path from "node:path";
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import {
   isToolchainActionRequest,
   type PublicToolchainState,
@@ -26,6 +27,9 @@ import { ToolchainError } from "../shared/toolchains/errors";
 import type { BrowserService } from "./browser/browser-service";
 import { BrowserError } from "./browser/browser-error";
 import { isTrustedDesktopIpcSender } from "./ipc-trust";
+import { createOpenInAppService } from "./open-in-app/host.ts";
+import { createDesktopTerminalService } from "./terminal/host.ts";
+import type { TerminalCreateInput } from "../contract/terminal";
 import { validateDesktopUiStatePatch } from "./ui-state-patch";
 import type {
   BrowserConfirmationKind,
@@ -216,6 +220,47 @@ export function installDesktopIpc(options: DesktopIpcOptions): void {
     }
   });
 
+  // Installed-application resolution and the launch a remembered choice drives.
+  // Both arguments are validated in Main: the Renderer names a catalog id and a
+  // workspace directory, never an executable or argv.
+  const openInApp = createOpenInAppService();
+  trustedHandle("desktop:open-in-app:apps", () => openInApp.list());
+  trustedHandle("desktop:open-in-app:open", async (_event, appId: unknown, directory: unknown) => {
+    const result = await openInApp.open(appId, directory);
+    if (!result.ok) appendMainLog(`open-in-app launch refused code=${result.code}`);
+    return result;
+  });
+
+  // Interactive terminals: the pty lives in Main, the Renderer only names a
+  // discovered shell id and a workspace directory.
+  const terminals = createDesktopTerminalService((event) => {
+    const win = getMainWindow();
+    if (win === null || win.isDestroyed()) return;
+    win.webContents.send("terminal:event", event);
+  });
+  app.once("before-quit", () => {
+    terminals.disposeAll();
+  });
+  trustedHandle("desktop:terminal:list", () => terminals.list());
+  trustedHandle("desktop:terminal:create", (_event, input: unknown) => {
+    if (!isTerminalCreateInput(input)) throw new Error("Invalid terminal request");
+    return terminals.create(input);
+  });
+  trustedHandle("desktop:terminal:attach", (_event, terminalId: unknown) =>
+    terminals.attach(requireTerminalId(terminalId)),
+  );
+  trustedHandle("desktop:terminal:write", (_event, terminalId: unknown, data: unknown) => {
+    if (typeof data !== "string") throw new Error("Invalid terminal input");
+    terminals.write(requireTerminalId(terminalId), data);
+  });
+  trustedHandle("desktop:terminal:resize", (_event, terminalId: unknown, cols: unknown, rows: unknown) => {
+    if (typeof cols !== "number" || typeof rows !== "number") throw new Error("Invalid terminal size");
+    terminals.resize(requireTerminalId(terminalId), cols, rows);
+  });
+  trustedHandle("desktop:terminal:close", (_event, terminalId: unknown) =>
+    terminals.close(requireTerminalId(terminalId)),
+  );
+
   // Rich file context menu, built in main from a real path (Chromium does not
   // reliably fill params.linkURL for file: links in Electron 43, so the renderer
   // resolves the path itself and hands it over here).
@@ -239,6 +284,69 @@ export function installDesktopIpc(options: DesktopIpcOptions): void {
     const recent = [directory, ...(ui.recentCwds ?? []).filter((entry) => entry !== directory)].slice(0, 12);
     saveUiState({ recentCwds: recent });
     return directory;
+  });
+
+  trustedHandle("desktop:clone-github", async (event, url: unknown, parent: unknown, requestId: unknown) => {
+    if (
+      typeof url !== "string" ||
+      typeof parent !== "string" ||
+      !path.isAbsolute(parent) ||
+      typeof requestId !== "string" ||
+      !/^[a-f0-9-]{36}$/i.test(requestId)
+    ) {
+      throw new Error("Invalid repository URL or destination directory");
+    }
+    const match =
+      /^(?:https:\/\/github\.com\/|git@github\.com:)([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/.exec(
+        url.trim(),
+      );
+    if (!match || match[1] === "." || match[1] === ".." || match[2] === "." || match[2] === "..") {
+      throw new Error("Enter a GitHub repository URL, for example https://github.com/owner/repo");
+    }
+    const directory = await realpath(parent);
+    if (!(await stat(directory)).isDirectory()) throw new Error("Destination must be a directory");
+    const target = path.join(directory, match[2]);
+    const remote = url.trim().replace(/\/$/, "");
+    await new Promise<void>((resolve, reject) => {
+      const child = execFile(
+        "git",
+        ["clone", "--progress", "--", remote, target],
+        {
+          timeout: 10 * 60 * 1000,
+          maxBuffer: 1024 * 1024,
+          env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
+          windowsHide: true,
+        },
+        (error, _stdout, stderr) => {
+          if (error) reject(new Error(stderr?.trim() || error.message));
+          else resolve();
+        },
+      );
+      let pending = "";
+      child.stderr?.on("data", (chunk: Buffer | string) => {
+        pending += chunk.toString();
+        const lines = pending.split(/[\r\n]/);
+        pending = (lines.pop() ?? "").slice(-4096);
+        for (const line of lines) {
+          const match =
+            /(?:remote: )?(Counting objects|Compressing objects|Receiving objects|Resolving deltas|Updating files):\s*(\d{1,3})%/.exec(
+              line,
+            );
+          if (!match) continue;
+          const phases = {
+            "Counting objects": "counting",
+            "Compressing objects": "compressing",
+            "Receiving objects": "receiving",
+            "Resolving deltas": "resolving",
+            "Updating files": "checkout",
+          } as const;
+          const phase = phases[match[1] as keyof typeof phases];
+          if (!event.sender.isDestroyed())
+            event.sender.send("desktop:clone-progress", { requestId, phase, percent: Math.min(100, Number(match[2])) });
+        }
+      });
+    });
+    return target;
   });
 
   trustedHandle("desktop:set-channel-credential", (_event, payload: ChannelCredentialWrite) => {
@@ -514,6 +622,26 @@ function toolchainActionConfirmation(request: ToolchainActionRequest): Electron.
     };
   }
   return undefined;
+}
+
+/** Whether a request names a shell (optional), a cwd, and screen dimensions. */
+function isTerminalCreateInput(value: unknown): value is TerminalCreateInput {
+  if (typeof value !== "object" || value === null) return false;
+  const input = value as Record<string, unknown>;
+  return (
+    (input.shellId === undefined || typeof input.shellId === "string") &&
+    typeof input.cwd === "string" &&
+    typeof input.cols === "number" &&
+    typeof input.rows === "number"
+  );
+}
+
+/** One terminal id from the Renderer. */
+function requireTerminalId(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+    throw new Error("Invalid terminal id");
+  }
+  return value;
 }
 
 function validateOptionalToolchainCwd(value: unknown): string | undefined {

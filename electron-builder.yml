@@ -35,6 +35,16 @@ files:
 
 asar: true
 
+# node-pty ships prebuilt N-API addons plus a ConPTY worker script that must be
+# real files on disk: the worker path is derived from the module directory, and
+# a `.node` inside the archive cannot be loaded or forked.
+asarUnpack:
+  - node_modules/node-pty/**
+
+# node-pty is an N-API addon: its shipped prebuilds load in Electron unchanged,
+# so packaging must not try to compile it (or require a C++ toolchain).
+npmRebuild: false
+
 # Signed runtime catalogs plus the current target's small core search tools.
 # Managed Node/Python/Git archives remain download-on-consent and are never shipped.
 extraResources:

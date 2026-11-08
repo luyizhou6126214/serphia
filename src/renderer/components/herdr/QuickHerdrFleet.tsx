@@ -8,7 +8,7 @@ import {
   getQuickChannelBindingPopoverLayout,
   type QuickChannelBindingPopoverLayout,
 } from "@/lib/quick-channel-binding-layout";
-import type { HerdrAgentState, HerdrPane } from "@contract/herdr";
+import type { HerdrAgentState } from "@contract/herdr";
 import { countHerdrAgents, herdrPaneMatchesFilter } from "./fleet-selectors";
 import { getFleetPresentation, getFleetTriggerSpacing } from "./fleet-presentation";
 import { herdrErrorLabel, herdrRuntimeStatusLabel, publicHerdrErrorLabel } from "./herdr-ui-copy";
@@ -17,12 +17,10 @@ const FILTER_STATES: Array<HerdrAgentState | "all"> = ["all", "working", "blocke
 
 export function QuickHerdrFleet({
   isMobile,
-  onOpenTerminal,
   alignRight = false,
   rightInset = 0,
 }: {
   isMobile: boolean;
-  onOpenTerminal: (pane: HerdrPane) => void;
   alignRight?: boolean;
   rightInset?: number;
 }) {
@@ -30,7 +28,7 @@ export function QuickHerdrFleet({
   const { runtime, loading: runtimeLoading, error: runtimeError, refresh: refreshRuntime } = useHerdrRuntime();
   const ready = runtime?.status === "ready";
   const { fleet, loading, error, refresh } = useHerdrFleet(ready);
-  const { interactive, hasFleet, showEmpty } = getFleetPresentation(ready, fleet);
+  const { hasFleet, showEmpty } = getFleetPresentation(ready, fleet);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<HerdrAgentState | "all">("all");
   const [retrying, setRetrying] = useState(false);
@@ -363,19 +361,9 @@ export function QuickHerdrFleet({
                           {panes.map((pane) => {
                             const state = pane.agent?.state ?? "unknown";
                             return (
-                              <button
+                              <div
                                 key={pane.id}
-                                type="button"
-                                disabled={!interactive}
-                                onClick={() => {
-                                  onOpenTerminal(pane);
-                                  closePopover();
-                                }}
-                                title={
-                                  fleet.stale
-                                    ? t("herdrSnapshotStale", "Snapshot stale")
-                                    : t("openTerminal", "Open terminal")
-                                }
+                                data-herdr-pane={pane.id}
                                 style={{
                                   width: "100%",
                                   minHeight: 42,
@@ -390,7 +378,6 @@ export function QuickHerdrFleet({
                                   borderRadius: 8,
                                   background: pane.focused ? "var(--accent-soft)" : "transparent",
                                   color: "var(--text)",
-                                  cursor: fleet.stale ? "default" : "pointer",
                                   opacity: fleet.stale ? 0.65 : 1,
                                 }}
                               >
@@ -420,7 +407,7 @@ export function QuickHerdrFleet({
                                 <span style={{ color: "var(--text-muted)", fontSize: 9 }}>
                                   {pane.agent ? stateLabel(state) : t("shellPane", "Shell pane")}
                                 </span>
-                              </button>
+                              </div>
                             );
                           })}
                         </div>

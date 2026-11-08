@@ -89,6 +89,10 @@ The workspace and key settings. Click an image to view it at full size.
 - Quickly switch models, reasoning levels, tool presets, and notification sounds
 - Attach images, run slash commands, and reference project files with `@`
 - Keep chat and composer content aligned to one reading width, with a mouse- and keyboard-resizable file panel that remembers its width
+- Organize workspace files, terminals, browser tabs, and managed processes behind a Start guide in the right panel; each kind opens as many tabs as you need, with fullscreen and one-click collapse
+- Terminals are real shells in the workspace (PowerShell, cmd, Git Bash, zsh, and whatever else the host offers): pick a shell from the Start guide, open as many terminals as you need, and closing a tab ends its process
+- User messages use the same blue bubble as DeepSeek Harness; the timeline rail gives each turn one mark (a prompt with its answer), centered in the transcript band with a hover preview and click-to-jump, and keeps the active turn (including the last one) in view on long conversations; a thin scrollbar runs along the column's far right down to the composer, and the viewport follows streamed output once it passes the fold
+- Each finished turn closes with the files it changed, their added and deleted lines, and an inline diff you can open in the file viewer
 
 ### Session tools and execution history
 
@@ -120,11 +124,11 @@ Managed background processes support macOS, Linux, and Windows 11 x64. Windows A
 ### Conversational Herdr control from Pi
 
 - Optionally connect to a local Herdr instance and use the original main conversation to inspect the Fleet; create, focus, or rename workspaces, tabs, and panes; explain Agent states; inspect sanitized process details; wait for output; and start, prompt, or wait for Agents.
-- The Pi Session sidebar and main conversation remain the primary surface. The Agent Fleet indicator stays in the title bar's right-side action area on both the initial page and active sessions; the right-side ANSI terminal remains a supporting view for status, troubleshooting, and explicit keyboard takeover.
+- The Pi Session sidebar and main conversation remain the primary surface. The Agent Fleet indicator stays in the title bar's right-side action area on both the initial page and active sessions; Herdr panes are inspected with Agent tools, while the right panel terminal is an independent local shell.
 - Closing a workspace, pane, or Agent requires an interactive local Pi confirmation whose complete copy follows the current UI language. Herdr v0.8.2 has no `agent.stop`, so Agent close explicitly closes its containing pane rather than pretending to stop only the Agent.
-- Herdr is bundled with macOS, Linux, and Windows x64 builds. Developer Tools owns installation, version, update, repair, and removal; Managed mode activates the verified bundled copy without a separate runtime download. Windows supports Fleet and Agent control plus live ANSI observation and explicit keyboard takeover with native Job Object containment.
+- Herdr is bundled with macOS, Linux, and Windows x64 builds. Developer Tools owns installation, version, update, repair, and removal; Managed mode activates the verified bundled copy without a separate runtime download. Windows supports Fleet and Agent control with native Job Object containment.
 - Attach connects only to a user-started system Herdr and never stops it. Managed mode starts, monitors, restarts, and closes only serphia's private server.
-- Pi Sessions and Herdr Sessions remain separate. Closing the serphia terminal view does not close a Herdr pane or Agent, and unknown protocols fail closed.
+- Pi Sessions and Herdr Sessions remain separate. Closing a right-panel terminal ends only its local shell, never a Herdr pane or Agent, and unknown protocols fail closed.
 - In Settings, Herdr sits between Browser and Channels; installation, update, repair, and removal remain centralized under Developer Tools.
 
 ### MCP services and tools
@@ -138,6 +142,7 @@ Managed background processes support macOS, Linux, and Windows 11 x64. Windows A
 
 - Select project directories natively and manage Git branches and worktrees
 - Browse project files, open multiple tabs, download files, or reference them in prompts
+- Open the current project in an installed editor, terminal, or file manager from the header, remembering the last choice
 - Render syntax-highlighted code, Mermaid, and KaTeX in Agent responses and Markdown files, and preview Word (`.docx`) documents
 - Keep sessions aligned with the project through file watching and Git status awareness
 

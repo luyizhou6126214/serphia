@@ -71,10 +71,31 @@ if (typeof preloadLocation === "string" && isTrustedPreloadLocation(preloadLocat
     },
     openExternal: (url) => ipcRenderer.invoke("desktop:open-external", url),
     showItemInFolder: (fsPath) => ipcRenderer.invoke("desktop:show-item-in-folder", fsPath),
+    listOpenInApps: () => ipcRenderer.invoke("desktop:open-in-app:apps"),
+    openInApp: (appId, directory) => ipcRenderer.invoke("desktop:open-in-app:open", appId, directory),
+    listTerminals: () => ipcRenderer.invoke("desktop:terminal:list"),
+    createTerminal: (input) => ipcRenderer.invoke("desktop:terminal:create", input),
+    attachTerminal: (terminalId) => ipcRenderer.invoke("desktop:terminal:attach", terminalId),
+    writeTerminal: (terminalId, data) => ipcRenderer.invoke("desktop:terminal:write", terminalId, data),
+    resizeTerminal: (terminalId, cols, rows) => ipcRenderer.invoke("desktop:terminal:resize", terminalId, cols, rows),
+    closeTerminal: (terminalId) => ipcRenderer.invoke("desktop:terminal:close", terminalId),
+    onTerminalEvent: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, terminalEvent: Parameters<typeof callback>[0]) =>
+        callback(terminalEvent);
+      ipcRenderer.on("terminal:event", handler);
+      return () => ipcRenderer.removeListener("terminal:event", handler);
+    },
     showFileContextMenu: (request) => ipcRenderer.invoke("desktop:file-context-menu", request),
     inspectLocalFiles: (request) => ipcRenderer.invoke("desktop:inspect-local-files", request),
     getPathForFile: (file: File) => (webUtils ? webUtils.getPathForFile(file) : null),
     selectDirectory: () => ipcRenderer.invoke("desktop:select-directory"),
+    cloneGithub: (url, parent, requestId) => ipcRenderer.invoke("desktop:clone-github", url, parent, requestId),
+    onCloneProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof callback>[0]) =>
+        callback(progress);
+      ipcRenderer.on("desktop:clone-progress", handler);
+      return () => ipcRenderer.removeListener("desktop:clone-progress", handler);
+    },
     setChannelCredential: (payload) => ipcRenderer.invoke("desktop:set-channel-credential", payload),
     saveFile: (opts) => ipcRenderer.invoke("desktop:save-file", opts),
     saveBinaryFile: (opts) => ipcRenderer.invoke("desktop:save-binary-file", opts),

@@ -1,15 +1,26 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "@/i18n";
+import { applyBrowserEvent } from "@/lib/browser-tabs";
 import { browserErrorMessage as messageOf } from "./browser-error-message";
 import { browserSurfaceBounds } from "./browser-surface-bounds";
-import type {
-  BrowserDownloadInfo,
-  BrowserEvent,
-  BrowserPermissionRequest,
-  BrowserRendererState,
-} from "../../../contract/browser";
+import type { BrowserDownloadInfo, BrowserPermissionRequest, BrowserRendererState } from "../../../contract/browser";
 
-export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; ownerSessionId: string | null }) {
+/**
+ * The Browser panel. Bound to one Main-owned browser tab (`tabId`), it draws
+ * that tab's toolbar and native surface while the panel strip owns the tabs;
+ * unbound, it keeps its own tab strip for callers that need one.
+ */
+export function BrowserDock({
+  visible,
+  ownerSessionId,
+  tabId = null,
+  onNewTab,
+}: {
+  visible: boolean;
+  ownerSessionId: string | null;
+  tabId?: string | null;
+  onNewTab?: () => void;
+}) {
   const { t } = useI18n();
   const [state, setState] = useState<BrowserRendererState | null>(null);
   const [address, setAddress] = useState("");
@@ -57,11 +68,19 @@ export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; own
     });
   }, [refresh]);
 
-  const activeTab = state?.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
+  const boundTab = tabId === null ? null : (state?.tabs.find((tab) => tab.id === tabId) ?? null);
+  const activeTab = tabId === null ? (state?.tabs.find((tab) => tab.id === state.activeTabId) ?? null) : boundTab;
   const visibleTabs =
     state?.tabs.filter((tab) => tab.ownerSessionId === null || tab.ownerSessionId === ownerSessionId) ?? [];
 
+  // A bound dock shows its own tab: Main's active tab follows the panel tab.
   useEffect(() => {
+    if (tabId === null || !state || !visible || boundTab === null || state.activeTabId === tabId) return;
+    void window.piBridge.browserActivateTab(tabId).catch(handleTabSyncError);
+  }, [boundTab, handleTabSyncError, state, tabId, visible]);
+
+  useEffect(() => {
+    if (tabId !== null) return;
     if (!state || !visible || !state.activeTabId) return;
     const active = state.tabs.find((tab) => tab.id === state.activeTabId);
     if (!active || active.ownerSessionId === null || active.ownerSessionId === ownerSessionId) return;
@@ -70,7 +89,7 @@ export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; own
       .sort((left, right) => right.lastActiveAt - left.lastActiveAt)[0];
     if (replacement) void window.piBridge.browserActivateTab(replacement.id).catch(handleTabSyncError);
     else void window.piBridge.browserSetSurfaceVisible({ visible: false });
-  }, [handleTabSyncError, ownerSessionId, state, visible]);
+  }, [handleTabSyncError, ownerSessionId, state, tabId, visible]);
 
   useEffect(() => {
     const tabId = activeTab?.id;
@@ -166,79 +185,84 @@ export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; own
 
   return (
     <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          minHeight: 34,
-          padding: "3px 5px",
-          borderBottom: "1px solid var(--border)",
-          overflowX: "auto",
-          background: "var(--bg-panel)",
-        }}
-      >
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            title={tab.url}
-            onClick={() => void window.piBridge.browserActivateTab(tab.id).catch((cause) => setError(messageOf(cause)))}
-            style={{
-              maxWidth: 150,
-              minWidth: 72,
-              height: 27,
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "0 7px",
-              background: tab.id === state.activeTabId ? "var(--bg)" : "transparent",
-              color: tab.crashed ? "#d45" : "var(--text-muted)",
-              border: `1px solid ${tab.id === state.activeTabId ? "var(--border)" : "transparent"}`,
-              borderRadius: 5,
-              cursor: "pointer",
-              fontSize: 10,
-            }}
-          >
-            {tab.loading ? (
-              <span aria-label={t("browserLoading", "Loading")}>◌</span>
-            ) : (
-              <span aria-hidden="true">●</span>
-            )}
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-              {tab.title || t("browserNewTab", "New tab")}
-            </span>
-            {tab.advanced || tab.advancedProfile ? (
-              <Badge danger>{t("browserAdvancedModeBadge", "Advanced Browser Mode")}</Badge>
-            ) : null}
-            <span
-              role="button"
-              aria-label={t("browserCloseTab", "Close tab")}
-              tabIndex={0}
-              onClick={(event) => {
-                event.stopPropagation();
-                void window.piBridge.browserCloseTab(tab.id).catch((cause) => setError(messageOf(cause)));
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.stopPropagation();
-                  void window.piBridge.browserCloseTab(tab.id).catch((cause) => setError(messageOf(cause)));
-                }
+      {tabId === null && (
+        <div
+          data-browser-tab-strip
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            minHeight: 34,
+            padding: "3px 5px",
+            borderBottom: "1px solid var(--border)",
+            overflowX: "auto",
+            background: "var(--bg-panel)",
+          }}
+        >
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              title={tab.url}
+              onClick={() =>
+                void window.piBridge.browserActivateTab(tab.id).catch((cause) => setError(messageOf(cause)))
+              }
+              style={{
+                maxWidth: 150,
+                minWidth: 72,
+                height: 27,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "0 7px",
+                background: tab.id === state.activeTabId ? "var(--bg)" : "transparent",
+                color: tab.crashed ? "#d45" : "var(--text-muted)",
+                border: `1px solid ${tab.id === state.activeTabId ? "var(--border)" : "transparent"}`,
+                borderRadius: 5,
+                cursor: "pointer",
+                fontSize: 10,
               }}
             >
-              ×
-            </span>
+              {tab.loading ? (
+                <span aria-label={t("browserLoading", "Loading")}>◌</span>
+              ) : (
+                <span aria-hidden="true">●</span>
+              )}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                {tab.title || t("browserNewTab", "New tab")}
+              </span>
+              {tab.advanced || tab.advancedProfile ? (
+                <Badge danger>{t("browserAdvancedModeBadge", "Advanced Browser Mode")}</Badge>
+              ) : null}
+              <span
+                role="button"
+                aria-label={t("browserCloseTab", "Close tab")}
+                tabIndex={0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void window.piBridge.browserCloseTab(tab.id).catch((cause) => setError(messageOf(cause)));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.stopPropagation();
+                    void window.piBridge.browserCloseTab(tab.id).catch((cause) => setError(messageOf(cause)));
+                  }
+                }}
+              >
+                ×
+              </span>
+            </button>
+          ))}
+          <button
+            type="button"
+            style={iconButtonStyle}
+            title={t("browserNewTab", "New tab")}
+            onClick={() => void createTab()}
+          >
+            ＋
           </button>
-        ))}
-        <button
-          type="button"
-          style={iconButtonStyle}
-          title={t("browserNewTab", "New tab")}
-          onClick={() => void createTab()}
-        >
-          ＋
-        </button>
-      </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -310,6 +334,7 @@ export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; own
           value={profileId}
           onChange={(event) => setProfileId(event.target.value)}
           style={{ ...selectStyle, maxWidth: 90 }}
+          hidden={tabId !== null}
         >
           {state.profiles.map((profile) => (
             <option key={profile.id} value={profile.id}>
@@ -317,6 +342,11 @@ export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; own
             </option>
           ))}
         </select>
+        {tabId !== null && onNewTab !== undefined && (
+          <button style={iconButtonStyle} title={t("browserNewTab", "New tab")} onClick={onNewTab}>
+            ＋
+          </button>
+        )}
         <button
           style={iconButtonStyle}
           disabled={!activeTab}
@@ -359,7 +389,7 @@ export function BrowserDock({ visible, ownerSessionId }: { visible: boolean; own
 
       {!activeTab ? (
         <div style={emptyStyle}>
-          <button style={primaryButtonStyle} onClick={() => void createTab()}>
+          <button style={primaryButtonStyle} onClick={onNewTab ?? (() => void createTab())}>
             {t("browserOpenNewTab", "Open a new tab")}
           </button>
           <div style={{ marginTop: 8, color: "var(--text-dim)" }}>
@@ -512,46 +542,6 @@ function downloadStateLabel(t: Translate, state: BrowserDownloadInfo["state"]): 
     default:
       return t("browserDownloadInterrupted", "interrupted");
   }
-}
-
-function applyBrowserEvent(state: BrowserRendererState, event: BrowserEvent): BrowserRendererState {
-  if (event.type === "tab-created") return { ...state, tabs: [...state.tabs, event.tab] };
-  if (event.type === "tab-updated")
-    return { ...state, tabs: state.tabs.map((tab) => (tab.id === event.tab.id ? event.tab : tab)) };
-  if (event.type === "tab-closed")
-    return {
-      ...state,
-      tabs: state.tabs.filter((tab) => tab.id !== event.tabId),
-      activeTabId: state.activeTabId === event.tabId ? null : state.activeTabId,
-    };
-  if (event.type === "active-tab-changed") return { ...state, activeTabId: event.tabId };
-  if (event.type === "permission-request")
-    return {
-      ...state,
-      permissionRequests: [
-        ...state.permissionRequests.filter((request) => request.id !== event.request.id),
-        event.request,
-      ],
-    };
-  if (event.type === "permission-resolved")
-    return {
-      ...state,
-      permissionRequests: state.permissionRequests.filter((request) => request.id !== event.requestId),
-    };
-  if (event.type === "download")
-    return {
-      ...state,
-      downloads: [...state.downloads.filter((download) => download.id !== event.download.id), event.download].slice(
-        -100,
-      ),
-    };
-  if (event.type === "policy-changed")
-    return {
-      ...state,
-      capabilities: event.snapshot,
-      settings: { ...state.settings, runtime: { ...state.settings.runtime, policyRevision: event.revision } },
-    };
-  return state;
 }
 
 const emptyStyle = {

@@ -24,16 +24,24 @@ import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { SessionInfoPanel } from "./SessionInfoPanel";
 import { SessionPresentationStore } from "@/lib/session-presentation-store";
-import { FileExplorer } from "./FileExplorer";
 import { FileViewer } from "./FileViewer";
-import { TabBar } from "./TabBar";
 import type { SettingsTab } from "./SettingsConfig";
-import { preloadSettingsConfig, scheduleSettingsConfigPreload, SettingsConfig, TerminalDock } from "./DeferredPanels";
+import { preloadSettingsConfig, scheduleSettingsConfigPreload, SettingsConfig, TerminalPanel } from "./DeferredPanels";
 import { useMcpSettingsRequests } from "../hooks/useMcpSettingsRequests";
 import { QuickChannelBinding } from "./channels/QuickChannelBinding";
+import { OpenInAppButton } from "./OpenInAppButton";
 import { BrowserDock } from "./browser/BrowserDock";
 import { BrowserAuthorizationDialog } from "./browser/BrowserAuthorizationDialog";
 import { ProcessPanel } from "./ProcessPanel";
+import { RightPanelStrip } from "./right-panel/RightPanelStrip";
+import { RightPanelGuide, type RightPanelGuideEntry } from "./right-panel/RightPanelGuide";
+import { FilesPanelBody } from "./right-panel/FilesPanelBody";
+import {
+  GuideArtworkBrowser,
+  GuideArtworkFiles,
+  GuideArtworkTerminal,
+  GuideArtworkTools,
+} from "./right-panel/PanelArtwork";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/i18n";
@@ -41,7 +49,18 @@ import { getFileName } from "@/lib/file-paths";
 import { getSessionDisplayTitle } from "@/lib/session-list";
 import { formatNumber } from "@/lib/locale-format";
 import { beginSessionLoadTrace } from "@/lib/session-performance";
-import { reduceFileTabState } from "@/lib/file-tab-state";
+import {
+  FILES_TAB_ID,
+  PROCESSES_TAB_ID,
+  activeRightPanelTab,
+  browserTabId as panelBrowserTabId,
+  createRightPanelState,
+  fileTabId,
+  reduceRightPanelState,
+  rightPanelWidthKind,
+  terminalTabId,
+  type RightPanelTab,
+} from "@/lib/right-panel-tabs";
 import { readSessionIdFromSearch, routerCompat } from "@/lib/router-compat";
 import { SessionProfiler } from "./SessionProfiler";
 import { buildAtMentionText } from "@/lib/file-fuzzy";
@@ -61,21 +80,24 @@ import type { ChannelsSnapshot } from "@shared/channel-types";
 import type { ChatAppearancePreferences } from "@shared/chat-appearance";
 import { worktreePathsEqual } from "@shared/worktree-path";
 import type { BrowserAgentAuthorizationRequest, BrowserAgentAuthorizationDecision } from "../../contract/browser";
+import { browserTabLabel } from "@/lib/browser-tabs";
 import { isManagedProcessActiveState } from "@contract/processes";
 import { QuickHerdrFleet } from "./herdr/QuickHerdrFleet";
-import type { HerdrPane } from "@contract/herdr";
+import { useBrowserPanelTabs } from "@/hooks/useBrowserPanelTabs";
+import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice } from "@/lib/terminal-shells";
+import type { TerminalShellInfo } from "@contract/terminal";
 
-const EXPLORER_TAB_ID = "explorer";
-const BROWSER_TAB_ID = "browser";
-const PROCESSES_TAB_ID = "processes";
-const HERDR_TERMINAL_TAB_ID = "herdr-terminal";
-const HERDR_TERMINAL_PANEL_RATIO = 0.55;
-const HERDR_TERMINAL_EXPANDED_RATIO = 0.72;
+const TERMINAL_PANEL_RATIO = 0.55;
 type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean };
 const sameNavigationView = (a: NavigationView, b: NavigationView) =>
   a.settings === b.settings && a.session?.id === b.session?.id && a.draftCwd === b.draftCwd;
 
 const EMPTY_CHANNELS: ChannelsSnapshot = { accounts: [], statuses: [], pairings: [], bindings: [], activities: [] };
+
+/** One error's message, for the guide's inline notices. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function AppShell({
   chatAppearance,
@@ -189,20 +211,18 @@ export function AppShell({
     setSidebarOpen((open) => !open);
   }, [isMobile]);
 
-  // Right panel — file tabs only
-  const [{ tabs: fileTabs, activeTabId: activeFileTabId }, dispatchFileTab] = useReducer(reduceFileTabState, {
-    tabs: [],
-    activeTabId: EXPLORER_TAB_ID,
-  });
+  // Right panel — one strip over every panel kind, with the guide as its home tab.
+  const [rightPanel, dispatchRightPanel] = useReducer(reduceRightPanelState, undefined, createRightPanelState);
+  const activePanelTab = activeRightPanelTab(rightPanel);
+  const panelWidthKind = rightPanelWidthKind(activePanelTab);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
+  const [guideNotice, setGuideNotice] = useState<string | null>(null);
   const [rightPanelBounds, setRightPanelBounds] = useState(() =>
     getRightPanelWidthBounds(window.innerWidth, sidebarOpen),
   );
   const rightPanelPreferredWidthRef = useRef(RIGHT_PANEL_DEFAULT_WIDTH);
   const rightPanelKindRef = useRef<"files" | "browser" | "processes" | "terminal">("files");
-  const [herdrTerminalPane, setHerdrTerminalPane] = useState<HerdrPane | null>(null);
-  const [herdrTerminalExpanded, setHerdrTerminalExpanded] = useState(false);
-  const herdrTerminalRestoreRef = useRef<{ width: number; sidebarOpen: boolean } | null>(null);
   const [managedProcessCount, setManagedProcessCount] = useState(0);
   const [managedProcessAttention, setManagedProcessAttention] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(() => {
@@ -212,12 +232,24 @@ export function AppShell({
   });
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
   const rightPanelResizeCleanupRef = useRef<(() => void) | null>(null);
-  const rightPanelMaxRatio =
-    activeFileTabId === HERDR_TERMINAL_TAB_ID
-      ? herdrTerminalExpanded
-        ? HERDR_TERMINAL_EXPANDED_RATIO
-        : HERDR_TERMINAL_PANEL_RATIO
-      : undefined;
+  const rightPanelMaxRatio = panelWidthKind === "terminal" ? TERMINAL_PANEL_RATIO : undefined;
+  const browserPanelTabs = useBrowserPanelTabs(selectedSession?.id ?? null);
+  // Shells the Host discovered, plus the remembered choice a new terminal uses.
+  const [terminalShells, setTerminalShells] = useState<readonly TerminalShellInfo[]>([]);
+  const [terminalChoice, setTerminalChoice] = useState<string | null>(() => readTerminalShellChoice());
+  const preferredShell = selectTerminalShell(terminalShells, terminalChoice);
+  useEffect(() => {
+    let cancelled = false;
+    void window.piBridge
+      .listTerminals()
+      .then((snapshot) => {
+        if (!cancelled) setTerminalShells(snapshot.shells);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -243,7 +275,7 @@ export function AppShell({
       refreshCount();
       if (event.reason === "created" && event.activateUi) {
         if (isMobile) setSidebarOpen(false);
-        dispatchFileTab({ type: "select", tabId: PROCESSES_TAB_ID });
+        dispatchRightPanel({ type: "open", tab: { id: PROCESSES_TAB_ID, kind: "processes", title: "" } });
         setRightPanelOpen(true);
       }
     }).then((value) => {
@@ -286,9 +318,9 @@ export function AppShell({
         document.body.style.userSelect = "";
         setRightPanelResizing(false);
         rightPanelResizeCleanupRef.current = null;
-        if (commit && didResize && !herdrTerminalExpanded && finalWidth >= RIGHT_PANEL_MIN_WIDTH) {
+        if (commit && didResize && finalWidth >= RIGHT_PANEL_MIN_WIDTH) {
           rightPanelPreferredWidthRef.current = finalWidth;
-          persistRightPanelPreferredWidth(finalWidth, activeFileTabId === BROWSER_TAB_ID);
+          persistRightPanelPreferredWidth(finalWidth, panelWidthKind === "browser");
         }
       };
       const handlePointerUp = () => cleanup(true);
@@ -302,21 +334,14 @@ export function AppShell({
       window.addEventListener("pointerup", handlePointerUp);
       window.addEventListener("pointercancel", handlePointerCancel);
     },
-    [activeFileTabId, herdrTerminalExpanded, isMobile, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
+    [isMobile, panelWidthKind, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
   );
 
   useEffect(() => () => rightPanelResizeCleanupRef.current?.(), []);
 
   useEffect(() => {
     if (isMobile) return;
-    const nextKind =
-      activeFileTabId === BROWSER_TAB_ID
-        ? "browser"
-        : activeFileTabId === PROCESSES_TAB_ID
-          ? "processes"
-          : activeFileTabId === HERDR_TERMINAL_TAB_ID
-            ? "terminal"
-            : "files";
+    const nextKind = panelWidthKind;
     if (rightPanelKindRef.current === nextKind) return;
     persistRightPanelPreferredWidth(rightPanelPreferredWidthRef.current, rightPanelKindRef.current === "browser");
     rightPanelKindRef.current = nextKind;
@@ -327,10 +352,10 @@ export function AppShell({
           ? Math.max(520, initialRightPanelPreferredWidth())
           : initialRightPanelPreferredWidth();
     rightPanelPreferredWidthRef.current = preferred;
-    const maxRatio = nextKind === "terminal" ? HERDR_TERMINAL_PANEL_RATIO : undefined;
+    const maxRatio = nextKind === "terminal" ? TERMINAL_PANEL_RATIO : undefined;
     setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, sidebarOpen, maxRatio));
     setRightPanelWidth(clampRightPanelWidth(preferred, window.innerWidth, sidebarOpen, maxRatio));
-  }, [activeFileTabId, isMobile, sidebarOpen]);
+  }, [isMobile, panelWidthKind, sidebarOpen]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -338,20 +363,13 @@ export function AppShell({
       const bounds = getRightPanelWidthBounds(window.innerWidth, sidebarOpen, rightPanelMaxRatio);
       setRightPanelBounds(bounds);
       setRightPanelWidth(
-        activeFileTabId === HERDR_TERMINAL_TAB_ID && herdrTerminalExpanded
-          ? bounds.maxWidth
-          : clampRightPanelWidth(
-              rightPanelPreferredWidthRef.current,
-              window.innerWidth,
-              sidebarOpen,
-              rightPanelMaxRatio,
-            ),
+        clampRightPanelWidth(rightPanelPreferredWidthRef.current, window.innerWidth, sidebarOpen, rightPanelMaxRatio),
       );
     };
     fitToWindow();
     window.addEventListener("resize", fitToWindow);
     return () => window.removeEventListener("resize", fitToWindow);
-  }, [activeFileTabId, herdrTerminalExpanded, isMobile, rightPanelMaxRatio, sidebarOpen]);
+  }, [isMobile, rightPanelMaxRatio, sidebarOpen]);
 
   const openRightPanel = useCallback(() => {
     const closeSidebar = isMobile || shouldCollapseSidebarForRightPanel(window.innerWidth);
@@ -376,16 +394,54 @@ export function AppShell({
     else openRightPanel();
   }, [openRightPanel, rightPanelOpen]);
 
+  const toggleRightPanelFullscreen = useCallback(() => {
+    setRightPanelFullscreen((fullscreen) => !fullscreen);
+  }, []);
+
+  // A closed panel never keeps the fullscreen presentation for the next open.
+  useEffect(() => {
+    if (!rightPanelOpen) setRightPanelFullscreen(false);
+  }, [rightPanelOpen]);
+
+  // Mirror the Session's Main-owned browser tabs as panel tabs: one chip per
+  // browser tab, and a chip disappears with the tab it binds.
+  useEffect(() => {
+    const known = new Set(rightPanel.tabs.flatMap((tab) => (tab.kind === "browser" ? [tab.browserTabId] : [])));
+    for (const tab of browserPanelTabs.tabs) {
+      const id = panelBrowserTabId(tab.id);
+      const title = browserTabLabel(tab);
+      if (!known.has(tab.id)) {
+        dispatchRightPanel({
+          type: "open",
+          tab: { id, kind: "browser", title, browserTabId: tab.id },
+        });
+      } else {
+        dispatchRightPanel({ type: "title", tabId: id, title });
+      }
+    }
+    const open = new Set(browserPanelTabs.tabs.map((tab) => tab.id));
+    for (const tab of rightPanel.tabs) {
+      if (tab.kind === "browser" && tab.browserTabId !== undefined && !open.has(tab.browserTabId)) {
+        dispatchRightPanel({ type: "close", tabId: tab.id });
+      }
+    }
+  }, [browserPanelTabs.tabs, rightPanel.tabs]);
+
   useEffect(() => {
     const openBrowserTab = (event: Event) => {
       const tabId = (event as CustomEvent<{ tabId?: string }>).detail?.tabId;
-      dispatchFileTab({ type: "select", tabId: BROWSER_TAB_ID });
+      if (tabId) {
+        dispatchRightPanel({
+          type: "open",
+          tab: { id: panelBrowserTabId(tabId), kind: "browser", title: t("browser", "Browser"), browserTabId: tabId },
+        });
+      }
       openRightPanel();
       if (tabId) void window.piBridge.browserActivateTab(tabId).catch(() => undefined);
     };
     window.addEventListener("pi-desktop:open-browser-tab", openBrowserTab);
     return () => window.removeEventListener("pi-desktop:open-browser-tab", openBrowserTab);
-  }, [openRightPanel]);
+  }, [openRightPanel, t]);
 
   useEffect(
     () =>
@@ -393,7 +449,15 @@ export function AppShell({
         if (event.type !== "tab-created" || !event.tab.ownerSessionId) return;
         void window.piBridge.browserGetSettings().then((settings) => {
           if (!settings.settings.panel.openOnAgentUse) return;
-          dispatchFileTab({ type: "select", tabId: BROWSER_TAB_ID });
+          dispatchRightPanel({
+            type: "open",
+            tab: {
+              id: panelBrowserTabId(event.tab.id),
+              kind: "browser",
+              title: browserTabLabel(event.tab),
+              browserTabId: event.tab.id,
+            },
+          });
           openRightPanel();
         });
       }),
@@ -445,44 +509,13 @@ export function AppShell({
       );
       setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, sidebarOpen, rightPanelMaxRatio));
       setRightPanelWidth(nextWidth);
-      if (!herdrTerminalExpanded && nextWidth >= RIGHT_PANEL_MIN_WIDTH) {
+      if (nextWidth >= RIGHT_PANEL_MIN_WIDTH) {
         rightPanelPreferredWidthRef.current = nextWidth;
-        persistRightPanelPreferredWidth(nextWidth, activeFileTabId === BROWSER_TAB_ID);
+        persistRightPanelPreferredWidth(nextWidth, panelWidthKind === "browser");
       }
     },
-    [activeFileTabId, herdrTerminalExpanded, isMobile, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
+    [isMobile, panelWidthKind, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
   );
-
-  const restoreHerdrTerminalLayout = useCallback(() => {
-    const restore = herdrTerminalRestoreRef.current;
-    const restoreSidebar = restore?.sidebarOpen ?? sidebarOpen;
-    const restoreWidth = restore?.width ?? Math.max(520, initialRightPanelPreferredWidth());
-    herdrTerminalRestoreRef.current = null;
-    setHerdrTerminalExpanded(false);
-    setSidebarOpen(restoreSidebar);
-    setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, restoreSidebar, HERDR_TERMINAL_PANEL_RATIO));
-    setRightPanelWidth(
-      clampRightPanelWidth(restoreWidth, window.innerWidth, restoreSidebar, HERDR_TERMINAL_PANEL_RATIO),
-    );
-  }, [sidebarOpen]);
-
-  const toggleHerdrTerminalExpanded = useCallback(() => {
-    if (herdrTerminalExpanded) {
-      restoreHerdrTerminalLayout();
-      return;
-    }
-    herdrTerminalRestoreRef.current = { width: rightPanelWidth, sidebarOpen };
-    if (sidebarOpen) setSidebarOpen(false);
-    const bounds = getRightPanelWidthBounds(window.innerWidth, false, HERDR_TERMINAL_EXPANDED_RATIO);
-    setRightPanelBounds(bounds);
-    setRightPanelWidth(bounds.maxWidth);
-    setHerdrTerminalExpanded(true);
-  }, [herdrTerminalExpanded, restoreHerdrTerminalLayout, rightPanelWidth, sidebarOpen]);
-
-  useEffect(() => {
-    if ((activeFileTabId === HERDR_TERMINAL_TAB_ID && rightPanelOpen) || !herdrTerminalExpanded) return;
-    restoreHerdrTerminalLayout();
-  }, [activeFileTabId, herdrTerminalExpanded, restoreHerdrTerminalLayout, rightPanelOpen]);
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
@@ -778,16 +811,49 @@ export function AppShell({
     [selectedSession, router],
   );
 
-  const handleOpenFile = useCallback(
-    (filePath: string, fileName: string, sourceSessionId?: string | null) => {
-      const tabId = `file:${filePath}`;
-      dispatchFileTab({
-        type: "open",
-        tab: { id: tabId, label: fileName, filePath, sourceSessionId },
-      });
+  // Show chat area if a session is selected, or if we have a cwd to start a new session in
+  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
+  const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
+
+  const explorerCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const workspaceCwd = explorerCwd ?? null;
+
+  const showRightPanelTab = useCallback(
+    (tab: RightPanelTab) => {
+      dispatchRightPanel({ type: "open", tab });
+      setGuideNotice(null);
       openRightPanel();
     },
     [openRightPanel],
+  );
+
+  const closeRightPanelTab = useCallback(
+    (tabId: string) => {
+      const tab = rightPanel.tabs.find((candidate) => candidate.id === tabId);
+      // Closing a browser chip closes the browser tab it stands for.
+      if (tab?.kind === "browser" && tab.browserTabId !== undefined) {
+        void window.piBridge.browserCloseTab(tab.browserTabId).catch(() => undefined);
+      }
+      // Closing a terminal chip ends the pty it draws.
+      if (tab?.kind === "terminal" && tab.terminalId !== undefined) {
+        void window.piBridge.closeTerminal(tab.terminalId).catch(() => undefined);
+      }
+      dispatchRightPanel({ type: "close", tabId });
+    },
+    [rightPanel.tabs],
+  );
+
+  const handleOpenFile = useCallback(
+    (filePath: string, fileName: string, sourceSessionId?: string | null) => {
+      showRightPanelTab({
+        id: fileTabId(filePath),
+        kind: "file",
+        title: fileName,
+        filePath,
+        sourceSessionId,
+      });
+    },
+    [showRightPanelTab],
   );
 
   const handleOpenLinkedFile = useCallback(
@@ -797,35 +863,145 @@ export function AppShell({
     [handleOpenFile, selectedSession?.id],
   );
 
-  const handleCloseFileTab = useCallback((tabId: string) => {
-    dispatchFileTab({ type: "close", tabId, fallbackTabId: EXPLORER_TAB_ID });
-  }, []);
+  const openFilesTab = useCallback(() => {
+    showRightPanelTab({ id: FILES_TAB_ID, kind: "files", title: "" });
+  }, [showRightPanelTab]);
 
-  const previousFileTabCountRef = useRef(fileTabs.length);
-  useEffect(() => {
-    if (
-      previousFileTabCountRef.current > 0 &&
-      fileTabs.length === 0 &&
-      activeFileTabId !== BROWSER_TAB_ID &&
-      activeFileTabId !== PROCESSES_TAB_ID &&
-      activeFileTabId !== HERDR_TERMINAL_TAB_ID
-    ) {
-      setRightPanelOpen(false);
+  const openProcessesTab = useCallback(() => {
+    showRightPanelTab({ id: PROCESSES_TAB_ID, kind: "processes", title: "" });
+  }, [showRightPanelTab]);
+
+  const startTerminalTab = useCallback(
+    async (shellId?: string) => {
+      if (workspaceCwd === null) {
+        setGuideNotice(t("rightPanelNoWorkspace", "Select a project or Session first."));
+        return;
+      }
+      const shell = shellId ?? preferredShell?.id;
+      try {
+        const terminal = await window.piBridge.createTerminal({
+          ...(shell === undefined ? {} : { shellId: shell }),
+          cwd: workspaceCwd,
+          cols: 80,
+          rows: 24,
+        });
+        if (shell !== undefined && shell !== terminalChoice) {
+          setTerminalChoice(shell);
+          writeTerminalShellChoice(shell);
+        }
+        showRightPanelTab({
+          id: terminalTabId(terminal.id),
+          kind: "terminal",
+          title: terminal.title || t("rightPanelNewTerminal", "New terminal"),
+          terminalId: terminal.id,
+        });
+      } catch (error) {
+        setGuideNotice(
+          t("rightPanelTerminalFailed", "Could not start a terminal: {message}").replace("{message}", messageOf(error)),
+        );
+      }
+    },
+    [preferredShell?.id, showRightPanelTab, t, terminalChoice, workspaceCwd],
+  );
+
+  const startBrowserTab = useCallback(async () => {
+    if (selectedSession === null && workspaceCwd === null) {
+      setGuideNotice(t("rightPanelNoWorkspace", "Select a project or Session first."));
+      return;
     }
-    previousFileTabCountRef.current = fileTabs.length;
-  }, [activeFileTabId, fileTabs.length]);
+    try {
+      const state = await window.piBridge.browserGetState();
+      if (!state.settings.settings.enabled) {
+        setGuideNotice(t("browserDisabled", "Built-in Browser is disabled."));
+        return;
+      }
+      const tab = await window.piBridge.browserCreateUserTab({
+        profileId: state.settings.settings.panel.defaultProfileId,
+        ownerSessionId: selectedSession?.id ?? null,
+        activate: true,
+      });
+      showRightPanelTab({
+        id: panelBrowserTabId(tab.id),
+        kind: "browser",
+        title: browserTabLabel(tab),
+        browserTabId: tab.id,
+      });
+    } catch (error) {
+      setGuideNotice(messageOf(error));
+    }
+  }, [selectedSession, showRightPanelTab, t, workspaceCwd]);
 
-  // Show chat area if a session is selected, or if we have a cwd to start a new session in
-  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
-  const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
-
-  const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
-  const explorerCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  // The guide's keycaps and the panel's global bindings share one modifier label.
+  const modifierKey = window.piBridge?.platform === "darwin" ? "⌘" : "Ctrl";
+  const guideEntries: RightPanelGuideEntry[] = [
+    {
+      id: "workspace-files",
+      title: t("rightPanelWorkspaceFiles", "Workspace files"),
+      description: t("rightPanelWorkspaceFilesHint", "Browse the Session workspace files"),
+      artwork: <GuideArtworkFiles size={26} />,
+      shortcut: [modifierKey, "P"],
+      onPick: openFilesTab,
+    },
+    {
+      id: "new-terminal",
+      title: t("rightPanelNewTerminal", "New terminal"),
+      description: t("rightPanelNewTerminalHint", "Run commands in the Session workspace"),
+      artwork: <GuideArtworkTerminal size={26} />,
+      shortcut: [modifierKey, "Shift", "T"],
+      ...(terminalShells.length > 1
+        ? {
+            menu: {
+              label: t("rightPanelTerminalShell", "Choose shell"),
+              items: terminalShells.map((shell) => ({ id: shell.id, label: shell.label })),
+              ...(preferredShell === undefined ? {} : { selectedId: preferredShell.id }),
+              onSelect: (shellId: string) => {
+                void startTerminalTab(shellId);
+              },
+            },
+          }
+        : {}),
+      onPick: () => {
+        void startTerminalTab();
+      },
+    },
+    {
+      id: "browser",
+      title: t("browser", "Browser"),
+      description: t("rightPanelBrowserHint", "Browse the web"),
+      artwork: <GuideArtworkBrowser size={26} />,
+      shortcut: [modifierKey, "T"],
+      onPick: () => {
+        void startBrowserTab();
+      },
+    },
+    {
+      id: "more-tools",
+      title: t("rightPanelMoreTools", "More tools"),
+      description: t("rightPanelMoreToolsHint", "Managed processes and background tasks"),
+      artwork: <GuideArtworkTools size={26} />,
+      onPick: openProcessesTab,
+    },
+  ];
 
   useEffect(() => {
-    if (!activeCwd || isMobile) return;
-    dispatchFileTab({ type: "select", tabId: EXPLORER_TAB_ID });
-  }, [activeCwd, isMobile]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (settingsOpen || browserAuthorization !== null) return;
+      const key = event.key.toLowerCase();
+      if (key === "p" && !event.shiftKey) {
+        event.preventDefault();
+        openFilesTab();
+      } else if (key === "t" && event.shiftKey) {
+        event.preventDefault();
+        void startTerminalTab();
+      } else if (key === "t") {
+        event.preventDefault();
+        void startBrowserTab();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [browserAuthorization, openFilesTab, settingsOpen, startBrowserTab, startTerminalTab]);
 
   const openSidebarSettings = (tab: SettingsTab) => {
     setSettingsInitialTab(tab);
@@ -917,17 +1093,7 @@ export function AppShell({
               onSnapshotChange={setChannelSnapshot}
             />
           )}
-          {showChat && (
-            <QuickHerdrFleet
-              isMobile={isMobile}
-              alignRight={!selectedSession}
-              onOpenTerminal={(pane) => {
-                setHerdrTerminalPane(pane);
-                dispatchFileTab({ type: "select", tabId: HERDR_TERMINAL_TAB_ID });
-                openRightPanel();
-              }}
-            />
-          )}
+          {showChat && <QuickHerdrFleet isMobile={isMobile} alignRight={!selectedSession} />}
           <SessionInfoPanel
             store={presentationStore}
             showChat={showChat}
@@ -935,6 +1101,7 @@ export function AppShell({
             toggleTopPanel={toggleTopPanel}
             isMobile={isMobile}
           />
+          <OpenInAppButton directory={selectedSession?.cwd ?? effectiveNewSessionCwd ?? null} />
           <button
             type="button"
             className="app-topbar-button"
@@ -1126,9 +1293,9 @@ export function AppShell({
             </div>
           </div>
 
-          {/* Right panel: Browser, Explorer, managed processes and file previews */}
+          {/* Right panel: the guide plus files, terminals, browser tabs, files, and managed processes */}
           <div
-            className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}`}
+            className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
             style={
               {
                 display: "flex",
@@ -1156,288 +1323,80 @@ export function AppShell({
               onPointerDown={handleRightPanelResizeStart}
               onKeyDown={handleRightPanelResizeKeyDown}
             />
-            {/* Right panel tab bar */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                flexShrink: 0,
-                background: "var(--bg-panel)",
-                borderBottom: "1px solid var(--border)",
-                height: 36,
-                paddingRight: 36,
-                boxSizing: "border-box",
+            <RightPanelStrip
+              tabs={rightPanel.tabs}
+              activeTabId={rightPanel.activeTabId}
+              fullscreen={rightPanelFullscreen}
+              onSelect={(tabId) => {
+                dispatchRightPanel({ type: "select", tabId });
+                setGuideNotice(null);
               }}
-            >
-              <button
-                type="button"
-                onClick={() => dispatchFileTab({ type: "select", tabId: EXPLORER_TAB_ID })}
-                aria-pressed={activeFileTabId === EXPLORER_TAB_ID}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: 36,
-                  padding: "0 12px",
-                  flexShrink: 0,
-                  background: activeFileTabId === EXPLORER_TAB_ID ? "var(--bg)" : "var(--bg-panel)",
-                  border: "none",
-                  borderRight: "1px solid var(--border)",
-                  color: activeFileTabId === EXPLORER_TAB_ID ? "var(--text)" : "var(--text-muted)",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: activeFileTabId === EXPLORER_TAB_ID ? 500 : 400,
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M3 5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                </svg>
-                {t("explorer", "Explorer")}
-              </button>
-              <button
-                type="button"
-                onClick={() => dispatchFileTab({ type: "select", tabId: BROWSER_TAB_ID })}
-                aria-pressed={activeFileTabId === BROWSER_TAB_ID}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: 36,
-                  padding: "0 12px",
-                  flexShrink: 0,
-                  background: activeFileTabId === BROWSER_TAB_ID ? "var(--bg)" : "var(--bg-panel)",
-                  border: "none",
-                  borderRight: "1px solid var(--border)",
-                  color: activeFileTabId === BROWSER_TAB_ID ? "var(--text)" : "var(--text-muted)",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: activeFileTabId === BROWSER_TAB_ID ? 500 : 400,
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
-                </svg>
-                {t("browser", "Browser")}
-              </button>
-              <button
-                type="button"
-                onClick={() => dispatchFileTab({ type: "select", tabId: PROCESSES_TAB_ID })}
-                aria-pressed={activeFileTabId === PROCESSES_TAB_ID}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: 36,
-                  padding: "0 12px",
-                  flexShrink: 0,
-                  background: activeFileTabId === PROCESSES_TAB_ID ? "var(--bg)" : "var(--bg-panel)",
-                  border: "none",
-                  borderRight: "1px solid var(--border)",
-                  color: activeFileTabId === PROCESSES_TAB_ID ? "var(--text)" : "var(--text-muted)",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: activeFileTabId === PROCESSES_TAB_ID ? 500 : 400,
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <path d="m7 9 3 3-3 3M13 15h4" />
-                </svg>
-                {t("processes", "Processes")}
-                {(managedProcessCount > 0 || managedProcessAttention) && (
-                  <span
-                    style={{
-                      minWidth: 16,
-                      height: 16,
-                      padding: "0 4px",
-                      display: "inline-grid",
-                      placeItems: "center",
-                      borderRadius: 8,
-                      background: managedProcessAttention ? "#dc2626" : "var(--accent)",
-                      color: "white",
-                      fontSize: 9,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {managedProcessCount > 0 ? managedProcessCount : "!"}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => dispatchFileTab({ type: "select", tabId: HERDR_TERMINAL_TAB_ID })}
-                aria-pressed={activeFileTabId === HERDR_TERMINAL_TAB_ID}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: 36,
-                  padding: "0 12px",
-                  flexShrink: 0,
-                  background: activeFileTabId === HERDR_TERMINAL_TAB_ID ? "var(--bg)" : "var(--bg-panel)",
-                  border: "none",
-                  borderRight: "1px solid var(--border)",
-                  color: activeFileTabId === HERDR_TERMINAL_TAB_ID ? "var(--text)" : "var(--text-muted)",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: activeFileTabId === HERDR_TERMINAL_TAB_ID ? 500 : 400,
-                }}
-              >
-                <span aria-hidden="true">›_</span>
-                {t("herdrTerminal", "Herdr Terminal")}
-              </button>
-              <div style={{ flex: 1, overflow: "hidden" }}>
-                <TabBar
-                  tabs={fileTabs}
-                  activeTabId={activeFileTabId}
-                  onSelectTab={(tabId) => dispatchFileTab({ type: "select", tabId })}
-                  onCloseTab={handleCloseFileTab}
+              onClose={closeRightPanelTab}
+              onToggleFullscreen={toggleRightPanelFullscreen}
+              onCollapse={() => {
+                setRightPanelOpen(false);
+              }}
+              badgeFor={(tab) =>
+                tab.kind === "processes"
+                  ? managedProcessAttention
+                    ? "!"
+                    : managedProcessCount > 0
+                      ? String(managedProcessCount)
+                      : null
+                  : null
+              }
+            />
+            <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+              {activePanelTab.kind === "guide" ? (
+                <RightPanelGuide entries={guideEntries} notice={guideNotice} />
+              ) : activePanelTab.kind === "files" ? (
+                <FilesPanelBody
+                  cwd={explorerCwd ?? null}
+                  refreshKey={explorerRefreshKey}
+                  onRefresh={() => setExplorerRefreshKey((key) => key + 1)}
+                  onOpenFile={handleOpenFile}
+                  onAtMention={handleAtMention}
                 />
-              </div>
-              {activeFileTabId === EXPLORER_TAB_ID && explorerCwd && (
-                <button
-                  type="button"
-                  onClick={() => setExplorerRefreshKey((key) => key + 1)}
-                  title={t("refreshExplorer", "Refresh explorer")}
-                  aria-label={t("refreshExplorer", "Refresh explorer")}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 34,
-                    height: 34,
-                    padding: 0,
-                    marginRight: 2,
-                    flexShrink: 0,
-                    background: "none",
-                    border: "none",
-                    color: "var(--text-dim)",
-                    cursor: "pointer",
-                    borderRadius: 5,
+              ) : activePanelTab.kind === "terminal" && activePanelTab.terminalId !== undefined ? (
+                <TerminalPanel
+                  key={activePanelTab.terminalId}
+                  terminalId={activePanelTab.terminalId}
+                  visible={rightPanelOpen && !settingsOpen && !browserAuthorization}
+                  onTitleChange={(title) => {
+                    dispatchRightPanel({ type: "title", tabId: activePanelTab.id, title });
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = "var(--text)";
-                    e.currentTarget.style.background = "var(--bg-hover)";
+                  onNewTerminal={() => {
+                    closeRightPanelTab(activePanelTab.id);
+                    void startTerminalTab();
                   }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = "var(--text-dim)";
-                    e.currentTarget.style.background = "none";
+                  onClose={() => {
+                    closeRightPanelTab(activePanelTab.id);
                   }}
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                </button>
-              )}
-            </div>
-
-            {/* Browser, Explorer, Processes or file content */}
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              {activeFileTabId === BROWSER_TAB_ID ? (
+                />
+              ) : activePanelTab.kind === "browser" ? (
                 <BrowserDock
                   visible={rightPanelOpen && !settingsOpen && !browserAuthorization}
                   ownerSessionId={selectedSession?.id ?? null}
+                  tabId={activePanelTab.browserTabId ?? null}
+                  onNewTab={() => {
+                    void startBrowserTab();
+                  }}
                 />
-              ) : activeFileTabId === PROCESSES_TAB_ID ? (
+              ) : activePanelTab.kind === "processes" ? (
                 <ProcessPanel
                   onActiveCountChange={setManagedProcessCount}
-                  onOpenBrowser={() => dispatchFileTab({ type: "select", tabId: BROWSER_TAB_ID })}
-                />
-              ) : activeFileTabId === HERDR_TERMINAL_TAB_ID ? (
-                <TerminalDock
-                  pane={herdrTerminalPane}
-                  visible={rightPanelOpen && !settingsOpen && !browserAuthorization}
-                  expanded={herdrTerminalExpanded}
-                  onToggleExpanded={toggleHerdrTerminalExpanded}
-                  onPaneUnavailable={() => setHerdrTerminalPane(null)}
-                />
-              ) : activeFileTabId === EXPLORER_TAB_ID ? (
-                explorerCwd ? (
-                  <div style={{ height: "100%", overflowY: "auto", overflowX: "hidden", paddingTop: 4 }}>
-                    <FileExplorer
-                      cwd={explorerCwd}
-                      onOpenFile={handleOpenFile}
-                      refreshKey={explorerRefreshKey}
-                      onAtMention={handleAtMention}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--text-dim)",
-                      fontSize: 12,
-                    }}
-                  >
-                    {t("selectProjectToBrowseFiles", "Select a project to browse files")}
-                  </div>
-                )
-              ) : activeFileTab?.filePath ? (
-                <FileViewer
-                  key={activeFileTab.id ?? activeFileTab.filePath}
-                  filePath={activeFileTab.filePath}
-                  cwd={activeCwd ?? undefined}
-                  sourceSessionId={activeFileTab.sourceSessionId}
-                />
-              ) : (
-                <div
-                  style={{
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "var(--text-dim)",
-                    fontSize: 12,
+                  onOpenBrowser={() => {
+                    void startBrowserTab();
                   }}
-                >
-                  {t("selectRightPanelContent", "Select Browser, Explorer, Processes or open a file")}
-                </div>
-              )}
+                />
+              ) : activePanelTab.filePath !== undefined ? (
+                <FileViewer
+                  key={activePanelTab.id}
+                  filePath={activePanelTab.filePath}
+                  cwd={activeCwd ?? undefined}
+                  sourceSessionId={activePanelTab.sourceSessionId}
+                />
+              ) : null}
             </div>
           </div>
         </div>

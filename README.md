@@ -89,6 +89,10 @@
 - 快速切换模型、推理等级、工具预设和提示音
 - 支持图片附件、斜杠命令与 `@` 文件引用
 - 对话与输入框使用一致的阅读宽度，右侧文件面板可通过鼠标或键盘调整并记住宽度
+- 右侧面板以「开始」引导页组织工作区文件、终端、浏览器与受管进程；同类面板可多开为标签页，支持全屏与一键收起
+- 终端是工作区里的真实 Shell（PowerShell、cmd、Git Bash、zsh 等按平台列出）：引导页可选择 Shell，终端可多开并在标签间切换，关闭标签即结束进程
+- 用户消息使用与 DeepSeek Harness 一致的蓝色气泡；右侧时间轴每个回合一根刻度（提问与回答成对），在会话区垂直居中排列，可悬停预览、点击跳转，长对话会把当前回合（含最后一回合）自动滚入视野；会话区最右侧显示细滚动条并一直延伸到输入框底部，回复超出屏幕后自动跟随输出滚动
+- 每个回合结束后，底部汇总本回合改动的文件与增删行数，展开即可查看 diff 或直接打开文件
 
 ### 会话工具与执行历史
 
@@ -120,11 +124,11 @@
 ### Pi 对话式控制 Herdr
 
 - 可选连接本机 Herdr，可在原主对话中查看 Fleet，创建、聚焦或重命名 workspace/tab/pane，解释 Agent 状态，脱敏查看进程，等待输出，并启动、提示或等待 Agent
-- Pi Session 侧栏和主对话始终是主入口；Agent Fleet 在初始页和激活会话中都位于标题栏右侧，右侧 ANSI terminal 仅用于观察、故障排查和显式接管
+- Pi Session 侧栏和主对话始终是主入口；Agent Fleet 在初始页和激活会话中都位于标题栏右侧；Herdr pane 通过 Agent 工具观察，右侧面板终端是与之无关的本地 Shell
 - workspace/pane/Agent close 均需要 Pi 本机确认，确认框随界面语言显示完整中英文；Herdr v0.8.2 没有 `agent.stop`，因此 Agent close 会明确关闭其所在 pane，不会静默伪造停止语义
-- Herdr 随 macOS/Linux/Windows x64 应用内置；安装、版本、更新、修复和卸载统一在“开发工具”中管理，Managed 模式从已校验内置副本激活且不单独联网下载。Windows 已支持 Fleet/Agent 控制，以及由原生 Job Object 保护的实时 ANSI 终端和显式键盘接管
+- Herdr 随 macOS/Linux/Windows x64 应用内置；安装、版本、更新、修复和卸载统一在“开发工具”中管理，Managed 模式从已校验内置副本激活且不单独联网下载。Windows 已支持 Fleet/Agent 控制与由原生 Job Object 保护的 Agent 进程
 - Attach 只连接用户手动启动的系统 Herdr，serphia 永不停止它；Managed 由 serphia 自动启动、监控、重启并在禁用、切换模式、卸载或应用退出时关闭私有 server
-- Pi Session 与 Herdr Session 完全并存；关闭 serphia terminal 不关闭 Herdr pane/Agent，未知协议会 fail-closed
+- Pi Session 与 Herdr Session 完全并存；关闭右侧面板的终端只结束其本地 Shell，不关闭 Herdr pane/Agent，未知协议会 fail-closed
 - 设置导航中的 Herdr 位于“浏览器”和“消息渠道”之间；安装、更新、修复和卸载仍统一在“开发工具”中管理
 
 ### MCP 服务与工具
@@ -138,6 +142,7 @@
 
 - 原生选择项目目录，管理 Git 分支与 Worktree
 - 浏览项目文件、打开多标签页、下载或引用文件
+- 顶栏可用本机已安装的编辑器、终端或文件管理器直接打开当前项目，并记住上次选择
 - Agent 回复和 Markdown 文件支持代码高亮、Mermaid、KaTeX，并可预览 Word（`.docx`）文档
 - 文件变更监听与 Git 状态感知，让会话始终贴近当前项目
 
