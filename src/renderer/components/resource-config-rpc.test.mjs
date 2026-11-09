@@ -319,6 +319,7 @@ test("plugin session reload uses the same session and notifies its parent only a
 test("plugin installation passes the trimmed source and selected scope without an HTTP envelope", async (t) => {
   const fixture = await mount(t, "plugins");
   await fixture.reply("plugins.list", plugins([]));
+  await fixture.click("From source");
   const input = fixture.renderer.root.find(
     (node) => node.type === "input" && node.props.placeholder === "npm:@scope/package",
   );
@@ -333,4 +334,68 @@ test("plugin installation passes the trimmed source and selected scope without a
   });
   await fixture.reply("plugins.set", plugins([plugin({ source: "npm:@fixture/plugin@1.0.0" })]));
   assert.match(fixture.text(), /Package installed/);
+  assert.deepEqual(fixture.next("agent.command").params, {
+    sessionId: "session-one",
+    command: { type: "reload" },
+  });
+  await fixture.reply("agent.command", {});
+  assert.match(fixture.text(), /Applied to the active session/);
+});
+
+test("plugin search lists registry packages and installs one without leaving search", async (t) => {
+  const fixture = await mount(t, "plugins");
+  await fixture.reply("plugins.list", plugins([]));
+  assert.deepEqual(fixture.next("plugins.search").params, { query: "", page: 1 });
+  await fixture.reply("plugins.search", {
+    results: [
+      {
+        name: "pi-fixture-tool",
+        description: "Fixture Pi package",
+        publisher: "fixture-publisher",
+        types: ["extension"],
+        monthlyDownloads: 1234,
+        updatedAt: "2026-11-01T00:00:00.000Z",
+        npmUrl: "https://www.npmjs.com/package/pi-fixture-tool",
+      },
+    ],
+    total: 1,
+    page: 1,
+    hasMore: false,
+    source: "npm",
+    registry: "https://registry.npmjs.org",
+  });
+  assert.match(fixture.text(), /pi-fixture-tool/);
+  await fixture.click("Install pi-fixture-tool");
+  assert.deepEqual(fixture.next("plugins.set").params, {
+    action: "install",
+    source: "npm:pi-fixture-tool",
+    scope: "global",
+    cwd: "/one",
+  });
+  await fixture.reply(
+    "plugins.set",
+    plugins([plugin({ source: "npm:pi-fixture-tool", packageName: "pi-fixture-tool", scope: "global" })]),
+  );
+  assert.match(fixture.text(), /Package installed/);
+  await fixture.reply("agent.command", {});
+  assert.match(fixture.text(), /Applied to the active session/);
+});
+
+test("plugin search tolerates a Host response without type metadata", async (t) => {
+  const fixture = await mount(t, "plugins");
+  await fixture.reply("plugins.list", plugins([]));
+  assert.deepEqual(fixture.next("plugins.search").params, { query: "", page: 1 });
+  await fixture.reply("plugins.search", {
+    results: [{ name: "pi-legacy", description: "Legacy shape", npmUrl: "https://www.npmjs.com/package/pi-legacy" }],
+    total: 1,
+    page: 1,
+    hasMore: false,
+    source: "npm",
+    registry: "https://registry.npmjs.org",
+  });
+  assert.match(fixture.text(), /pi-legacy/);
+  assert.match(fixture.text(), /Install pi-legacy/);
+  assert.deepEqual(fixture.next("plugins.types").params, { names: ["pi-legacy"] });
+  await fixture.reply("plugins.types", { types: { "pi-legacy": ["skill"] } });
+  assert.match(fixture.text(), /Skill/);
 });

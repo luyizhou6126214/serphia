@@ -12,6 +12,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { ComposerToolbar, type ComposerToolbarOptions } from "./composer/ComposerToolbar";
+import { ComposerFocusSurface } from "./composer/ComposerFocusSurface";
 import { useComposerDraft } from "@/hooks/useComposerDraft";
 import { useComposerSubmission, type ComposerActions } from "@/hooks/useComposerSubmission";
 import React, {
@@ -968,7 +969,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             {compactResultText}
           </div>
         )}
-        <div ref={slashAnchorRef} className="chat-composer-card" data-streaming={isStreaming}>
+        <ComposerFocusSurface cardRef={slashAnchorRef} streaming={isStreaming}>
           {slashMenuOpen && slashQuery !== null && (
             <div
               ref={slashMenuRef}
@@ -1581,7 +1582,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
               <ArrowUp size={17} strokeWidth={2.25} aria-hidden="true" />
             </button>
           )}
-        </div>
+        </ComposerFocusSurface>
         {workspaceContext}
       </div>
     </div>

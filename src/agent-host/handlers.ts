@@ -353,6 +353,10 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
 
     "plugins.list": guard(resourceHandlers.listPlugins),
 
+    "plugins.search": guard(resourceHandlers.searchPlugins),
+
+    "plugins.types": guard(resourceHandlers.resolvePluginTypes),
+
     "plugins.set": guard(resourceHandlers.setPlugin),
 
     "files.watchStart": guard(fileHandlers.startWatch),

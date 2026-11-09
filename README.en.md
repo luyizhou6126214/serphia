@@ -155,7 +155,7 @@ Managed background processes support macOS, Linux, and Windows 11 x64. Windows A
 - Adjust automatic compaction, token reserves, retries, timeouts, and SSE/WebSocket transport in Settings → Models → Advanced model settings; these global Pi settings are shared with the CLI and require reloading existing sessions to take effect
 - Detect external configuration changes when saving model and advanced settings to avoid overwriting edits made through the CLI or an editor
 - Search for, install, and configure Skills; normal installs keep npm's default concurrency, with one isolated-cache retry for network, timeout, or cache-lock failures
-- Manage Plugins while continuing to use the Pi Agent extension ecosystem
+- Search Pi packages on the npm registry inside the app — the same source `pi install` uses — with manifest-derived type badges, download counts, and paging; install globally or per project, and reload the active session automatically so new tools, skills, commands, and prompts take effect immediately. Search honors the npm registry you configured, and manual npm, git, and local sources remain available
 
 On the development branch, run `npm run check:models-config` for a read-only configuration preflight. Invalid fields disable the whole custom configuration; Models settings preserve its content for repair. OpenRouter's personalized catalog shares the Pi CLI cache without credential or endpoint partitioning. With different credentials, especially offline, the list may reflect another runtime; it is not proof of authorization for the current key.
 

@@ -662,9 +662,17 @@ body {
   pointer-events: auto !important;
 }
 
+/* The composer answers focus with one comet of light: the card lifts and
+   breathes, a warm halo swells past its resting size and a single band of light
+   crosses the hairline before the surface rests in its focused state. The
+   choreography lives in hooks/useComposerFocusMotion.ts; this is the resting
+   style. */
 .chat-composer-card:focus-within {
-  border-color: color-mix(in srgb, var(--text-muted) 32%, var(--border));
-  box-shadow: 0 4px 20px color-mix(in srgb, #000 8%, transparent);
+  border-color: color-mix(in srgb, var(--composer-glow-a) 30%, var(--border));
+  box-shadow:
+    0 2px 3px #00000006,
+    0 28px 64px -28px color-mix(in srgb, var(--composer-glow-a) 34%, transparent),
+    0 18px 40px -20px #0000001f;
 }
 
 .chat-composer-shell textarea:focus-visible {
@@ -3810,6 +3818,97 @@ html.dark .chat-welcome {
     border-color 160ms,
     box-shadow 160ms;
 }
+/* Aurora palette for the focus light: violet, cyan and a breath of pink.
+   It lives on the frame so the aura, ripples and card share one palette. */
+.chat-composer-frame {
+  position: relative;
+  --composer-glow-a: #7c3aed;
+  --composer-glow-b: #06b6d4;
+  --composer-glow-c: #ec4899;
+}
+html.dark .chat-composer-frame {
+  --composer-glow-a: #a78bfa;
+  --composer-glow-b: #22d3ee;
+  --composer-glow-c: #f472b6;
+}
+/* The aurora sits behind the card and breathes while the composer owns focus. */
+.chat-composer-aura {
+  position: absolute;
+  inset: 2px;
+  border-radius: 22px;
+  pointer-events: none;
+  background:
+    radial-gradient(85% 140% at 10% 30%, color-mix(in srgb, var(--composer-glow-c) 30%, transparent), transparent 70%),
+    radial-gradient(85% 140% at 90% 25%, color-mix(in srgb, var(--composer-glow-a) 34%, transparent), transparent 70%),
+    radial-gradient(95% 150% at 50% 95%, color-mix(in srgb, var(--composer-glow-b) 32%, transparent), transparent 74%);
+  filter: blur(30px);
+  opacity: 0;
+  visibility: hidden;
+}
+/* The breathing layer is compositor-only: no JavaScript runs per frame. */
+.chat-composer-aura::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  background: inherit;
+  animation: composer-breathe 3.2s ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+@keyframes composer-breathe {
+  from {
+    opacity: 0.25;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 0.95;
+    transform: scale(1.06);
+  }
+}
+.chat-composer-frame[data-focused] .chat-composer-aura::before {
+  animation-play-state: running;
+}
+/* Two soft rings scatter outward from the card and dissolve: light, not a border. */
+.chat-composer-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(7px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--composer-glow-a) 60%, transparent),
+    0 0 26px 5px color-mix(in srgb, var(--composer-glow-a) 34%, transparent);
+}
+.chat-composer-ripple-b {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--composer-glow-b) 60%, transparent),
+    0 0 26px 5px color-mix(in srgb, var(--composer-glow-b) 30%, transparent);
+}
+/* The hairline picks up the same aurora; nothing travels around the border. */
+.chat-composer-ring {
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--composer-glow-c) 55%, transparent),
+    color-mix(in srgb, var(--composer-glow-a) 62%, transparent) 45%,
+    color-mix(in srgb, var(--composer-glow-b) 58%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
 .chat-composer-shell {
   display: flex;
   flex-wrap: wrap;
@@ -4080,6 +4179,10 @@ html.dark .composer-toolbar-control[aria-expanded="true"] {
   .chat-composer-card {
     padding: 12px 10px 8px;
     border-radius: 17px;
+  }
+  .chat-composer-aura,
+  .chat-composer-ripple {
+    border-radius: 19px;
   }
   .composer-toolbar {
     gap: 0 !important;
@@ -5837,7 +5940,9 @@ html.dark .turn-changes {
   .chat-message *,
   .chat-timeline *,
   .chat-composer-card,
-  .chat-composer-card * {
+  .chat-composer-card *,
+  .chat-composer-aura,
+  .chat-composer-aura::before {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
@@ -6327,7 +6432,8 @@ html.dark .turn-changes {
   min-width: 0;
   padding: 0 8px;
   color: var(--text-dim);
-  background: var(--bg-panel);
+  /* The title and the view tabs share one surface with the transcript. */
+  background: var(--assistant-bg);
 }
 .app-session-header .app-topbar-title {
   margin-left: 8px;

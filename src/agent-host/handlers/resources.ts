@@ -5,6 +5,7 @@ import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-ag
 import type { ApiHandler } from "../../contract/rpc";
 import { RpcError } from "../../contract/types";
 import { applyPluginAction, readPlugins } from "../plugins-service";
+import { resolvePluginTypes, searchPluginRegistry } from "../plugin-registry";
 import { installSkill, searchSkills } from "../skills-service";
 import { updateSkillModelInvocation } from "../skill-frontmatter";
 import { ToolchainError } from "../../shared/toolchains/errors";
@@ -60,6 +61,8 @@ type ResourceHandlers = {
   setSkill: NonNullable<ApiHandler["skills.set"]>;
   getSkillContent: NonNullable<ApiHandler["skills.getContent"]>;
   listPlugins: NonNullable<ApiHandler["plugins.list"]>;
+  searchPlugins: NonNullable<ApiHandler["plugins.search"]>;
+  resolvePluginTypes: NonNullable<ApiHandler["plugins.types"]>;
   setPlugin: NonNullable<ApiHandler["plugins.set"]>;
 };
 export const resourceHandlers = {
@@ -164,6 +167,31 @@ export const resourceHandlers = {
     const cwd = (params as { cwd?: string } | void)?.cwd;
     if (!cwd) throw new RpcError({ code: "BAD_REQUEST", message: "cwd required" });
     return readPlugins(cwd);
+  },
+
+  searchPlugins: async (params) => {
+    try {
+      return await searchPluginRegistry(params ?? {});
+    } catch (error) {
+      if (error instanceof RpcError) throw error;
+      throw new RpcError({
+        code: "INTERNAL",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  resolvePluginTypes: async (params) => {
+    const body = (params ?? {}) as { names?: unknown };
+    try {
+      return { types: await resolvePluginTypes(body.names) };
+    } catch (error) {
+      if (error instanceof RpcError) throw error;
+      throw new RpcError({
+        code: "INTERNAL",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   },
 
   setPlugin: async (params) => {

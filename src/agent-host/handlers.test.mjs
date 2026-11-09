@@ -191,6 +191,8 @@ test("registerHandlers exposes every contract method exactly once", async () => 
     "auth.providers",
     "skills.list",
     "plugins.list",
+    "plugins.search",
+    "plugins.types",
     "processes.list",
     "processes.read",
     "processes.wait",

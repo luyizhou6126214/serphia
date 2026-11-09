@@ -32,6 +32,21 @@ export function pluginVersionSummary(pkg: PluginPackageInfo, t: Translate): stri
   return parts.length ? parts.join(" · ") : t("unknown", "unknown");
 }
 
+export function shortenHomePath(path: string): string {
+  return path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
+}
+
+export function pluginScopeLabel(scope: PluginPackageInfo["scope"], t: Translate): string {
+  return scope === "project" ? t("pluginScopeProject", "project") : t("pluginScopeGlobal", "global");
+}
+
+/** Renderer-side request errors keep the server message, but hide transport noise. */
+export function pluginRequestError(error: unknown, fallback: string): string {
+  if (error instanceof TypeError) return fallback;
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 export function pluginStatusLabel(status: PluginPackageInfo["status"], t: Translate): string {
   if (status === "loaded") return t("pluginStatusLoaded", "loaded");
   if (status === "installed") return t("pluginStatusInstalled", "installed");

@@ -29,6 +29,8 @@ import type {
 import type {
   GitStatusResult,
   PluginActionParams,
+  PluginPackageType,
+  PluginSearchResponse,
   PluginsResponse,
   SkillRecord,
   SkillSearchResult,
@@ -540,6 +542,14 @@ export interface Api {
   "plugins.list": {
     params: { cwd?: string } | void;
     result: PluginsResponse;
+  };
+  "plugins.search": {
+    params: { query?: string; page?: number };
+    result: PluginSearchResponse;
+  };
+  "plugins.types": {
+    params: { names: string[] };
+    result: { types: Record<string, PluginPackageType[]> };
   };
   "plugins.set": {
     params: PluginActionParams;

@@ -90,3 +90,32 @@ export interface PluginActionParams {
   scope?: PluginScope;
   cwd: string;
 }
+
+export type PluginPackageType = "extension" | "skill" | "theme" | "prompt";
+
+/** One Pi package from the npm registry search index. */
+export interface PluginSearchResult {
+  name: string;
+  version?: string;
+  description?: string;
+  publisher?: string;
+  license?: string;
+  types: PluginPackageType[];
+  keywords?: string[];
+  monthlyDownloads?: number;
+  updatedAt?: string;
+  repository?: string;
+  npmUrl: string;
+  detailUrl?: string;
+}
+
+export interface PluginSearchResponse {
+  results: PluginSearchResult[];
+  total: number;
+  page: number;
+  hasMore: boolean;
+  /** Always the npm registry that installs use; `registry` names the exact host. */
+  source: "npm";
+  registry: string;
+  cached?: boolean;
+}
