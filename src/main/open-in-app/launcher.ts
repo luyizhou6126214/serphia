@@ -8,7 +8,11 @@
  * launched, never killed.
  */
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { app, shell } from "electron";
 import type { OpenInAppLaunch } from "./catalog.ts";
 import { launchArguments } from "./command.ts";
@@ -87,6 +91,37 @@ export async function launchApplication(
   return spawnDetached(launch.command, launchArguments(launch.args, directory), watchMs);
 }
 
+const execFileAsync = promisify(execFile);
+
+/** Read the icon declared by a macOS application bundle. */
+async function readMacBundleIcon(bundle: string): Promise<string | null> {
+  if (!bundle.toLowerCase().endsWith(".app")) return null;
+  let temporaryDirectory: string | undefined;
+  try {
+    const { stdout } = await execFileAsync("/usr/bin/plutil", [
+      "-extract",
+      "CFBundleIconFile",
+      "raw",
+      "-o",
+      "-",
+      path.join(bundle, "Contents/Info.plist"),
+    ]);
+    const name = stdout.trim();
+    if (!name || name !== path.basename(name) || name === "." || name === "..") return null;
+    const iconName = path.extname(name) ? name : `${name}.icns`;
+    const source = path.join(bundle, "Contents/Resources", iconName);
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "serphia-app-icon-"));
+    const output = path.join(temporaryDirectory, "icon.png");
+    await execFileAsync("/usr/bin/sips", ["-s", "format", "png", "-z", "64", "64", source, "--out", output]);
+    const png = await readFile(output);
+    return `data:image/png;base64,${png.toString("base64")}`;
+  } catch {
+    return null;
+  } finally {
+    if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /**
  * Extract an application's own icon as a PNG data URL.
  * @param iconPath - executable or bundle resolved for the application.
@@ -94,6 +129,10 @@ export async function launchApplication(
  */
 export async function readApplicationIcon(iconPath: string | null): Promise<string | null> {
   if (iconPath === null) return null;
+  if (process.platform === "darwin") {
+    const bundleIcon = await readMacBundleIcon(iconPath);
+    if (bundleIcon !== null) return bundleIcon;
+  }
   try {
     const image = await app.getFileIcon(iconPath, { size: "normal" });
     return image.isEmpty() ? null : image.toDataURL();
