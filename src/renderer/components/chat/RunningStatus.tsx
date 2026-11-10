@@ -32,12 +32,12 @@ export const RunningStatus = memo(function RunningStatus({ startTime }: RunningS
     }, LIVE_RUN_CLOCK_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [startTime]);
-  const idle = t("runningDeepDiving", "Deep diving");
+  const idle = t("runningDeepDiving", "Shaping ideas");
   const duration = startTime === undefined ? null : formatTurnDuration(Math.max(1000, now - startTime), language);
   const label =
     duration === null
       ? idle
-      : t("runningDeepDivingFor", "Deep diving for {duration} ···").replace("{duration}", duration);
+      : t("runningDeepDivingFor", "Shaping ideas · {duration} ···").replace("{duration}", duration);
   return (
     <div className="dsh-running" data-chat-running="">
       <span className="dsh-visually-hidden" role="status" aria-live="polite" aria-atomic="true">

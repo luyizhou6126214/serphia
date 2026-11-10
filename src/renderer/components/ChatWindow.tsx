@@ -1,6 +1,4 @@
 import type { SidebarWorkspace } from "@/hooks/useSidebarWorkspace";
-import { isDefaultSessionDirectory } from "@shared/session-workspace";
-import { WorktreePicker } from "./sidebar/WorktreePicker";
 import { lastRoutedModel, ModelRoutingStatus } from "./models/ModelRoutingStatus";
 import { isVirtualSelection } from "@shared/session-model-display";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
@@ -16,6 +14,7 @@ import type {
 } from "@/lib/types";
 import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
 import { hasDisplayableProcessMessage } from "@/lib/chat-process";
+import { contextUsageFromMessages } from "@/lib/context-usage";
 import { scaledChatFont } from "@/lib/chat-appearance";
 import { CHAT_COLUMN_PADDING, CHAT_INPUT_RIGHT_PADDING, CHAT_MINIMAP_WIDTH } from "@/lib/chat-layout";
 import { isAssistantFailure, isAssistantAborted, splitFinalAssistantBlocks } from "@/lib/message-display";
@@ -54,7 +53,6 @@ interface Props {
   session: SessionInfo | null;
   newSessionCwd: string | null;
   workspace?: SidebarWorkspace;
-  onWorkspaceChange?: (cwd: string) => void;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -162,7 +160,6 @@ export function ChatWindow({
   session,
   newSessionCwd,
   workspace,
-  onWorkspaceChange,
   onAgentEnd,
   onSessionCreated,
   onSessionForked,
@@ -340,33 +337,36 @@ export function ChatWindow({
   const routedModel = isVirtualSelection(modelList, displayModelValue) ? lastRoutedModel(messages) : null;
   const modelStatus = useMemo(() => <ModelRoutingStatus route={routedModel} />, [routedModel]);
 
-  const workspaceContext = useMemo(
-    () =>
-      messageCwd && !isDefaultSessionDirectory(messageCwd) && workspace && onWorkspaceChange ? (
-        <WorktreePicker
-          key={messageCwd}
-          selectedCwd={messageCwd ?? null}
-          selectedProject={workspace.selectedProject}
-          homeDir={workspace.homeDir}
-          worktreeState={workspace.worktreeState}
-          worktreeLoadingCwd={workspace.worktreeLoadingCwd}
-          setSelectedCwd={onWorkspaceChange}
-          onCreated={(path, branch) => {
-            workspace.registerCreatedWorktree(path, branch);
-            onWorkspaceChange(path);
-          }}
-          onRefresh={workspace.refreshWorktrees}
-          disabled={agentRunning || isCompacting}
-        />
-      ) : null,
-    [workspace, onWorkspaceChange, messageCwd, agentRunning, isCompacting],
+  // A restored session has no live runtime usage until its RPC session starts;
+  // derive the current context reading from the last settled assistant usage so
+  // the composer dock can still show occupancy.
+  const contextWindow = useMemo(() => {
+    const liveWindow = contextUsage?.contextWindow ?? sessionStats?.contextUsage?.contextWindow ?? 0;
+    if (liveWindow > 0) return liveWindow;
+    const candidates: { provider: string; modelId: string }[] = [];
+    if (displayModelValue) candidates.push(displayModelValue);
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === "assistant") {
+        candidates.push({ provider: message.provider, modelId: message.model });
+        break;
+      }
+    }
+    for (const candidate of candidates) {
+      const model = modelList.find((entry) => entry.provider === candidate.provider && entry.id === candidate.modelId);
+      if (model?.contextWindow !== undefined && model.contextWindow > 0) return model.contextWindow;
+    }
+    return null;
+  }, [contextUsage, sessionStats, displayModelValue, messages, modelList]);
+  const composerContextUsage = useMemo(
+    () => contextUsage ?? contextUsageFromMessages(messages, contextWindow),
+    [contextUsage, messages, contextWindow],
   );
 
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
       welcome={isEmptyNew}
-      workspaceContext={workspaceContext}
       onSend={handleSend}
       onAbort={isCompacting ? handleAbortCompaction : handleAbort}
       onSteer={agentRunning && !isCompacting ? handleSteer : undefined}
@@ -402,6 +402,8 @@ export function ChatWindow({
       draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}
       cwd={session?.cwd ?? newSessionCwd}
+      sessionStats={sessionStats}
+      contextUsage={composerContextUsage}
     />
   );
 
@@ -917,7 +919,7 @@ export function ChatWindow({
         >
           <ContextView
             messages={messages}
-            contextUsage={contextUsage}
+            contextUsage={composerContextUsage}
             sessionStats={sessionStats}
             systemPrompt={systemPrompt}
             toolNames={data?.toolNames}
@@ -931,6 +933,9 @@ export function ChatWindow({
         ref={composerDockRef}
         className="chat-input-transition-dock relative z-[2] w-full flex-shrink-0 self-center"
         data-position={isEmptyNew ? "welcome" : "conversation"}
+        aria-hidden={activeSessionView !== "chat" || undefined}
+        inert={activeSessionView !== "chat" || undefined}
+        style={{ display: activeSessionView === "chat" ? undefined : "none" }}
       >
         {!isEmptyNew && belowEditorWidgets.length > 0 && (
           <div
@@ -947,7 +952,12 @@ export function ChatWindow({
         {chatInputElement}
       </div>
 
-      <div className="chat-input-bottom-spacer" data-expanded={isEmptyNew ? "true" : "false"} aria-hidden="true" />
+      <div
+        className="chat-input-bottom-spacer"
+        data-expanded={isEmptyNew ? "true" : "false"}
+        aria-hidden="true"
+        style={{ display: activeSessionView === "chat" ? undefined : "none" }}
+      />
 
       <ChatScrollbar
         rootRef={chatRootRef}

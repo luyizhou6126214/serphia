@@ -1471,6 +1471,12 @@ export async function startRpcSession(
           promptPolicy,
           () => getRpcSession(managerSessionId)?.isRunning() ?? false,
           hasDirectory,
+          () =>
+            (getRpcSession(managerSessionId)?.inner.resourceLoader.getSkills().skills ?? []).flatMap((skill) =>
+              skill.filePath && skill.baseDir
+                ? [{ name: skill.name, filePath: skill.filePath, baseDir: skill.baseDir }]
+                : [],
+            ),
         ),
       ]),
       { project: hasDirectory, sessionManager },

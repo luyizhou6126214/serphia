@@ -13,8 +13,23 @@ import {
 } from "lucide-react";
 import { ComposerToolbar, type ComposerToolbarOptions } from "./composer/ComposerToolbar";
 import { ComposerFocusSurface } from "./composer/ComposerFocusSurface";
+import { ComposerStats } from "./composer/ComposerStats";
+import { ReferenceText, referenceCursorDestination, referenceDeletionRange } from "./composer/ReferenceText";
 import { useComposerDraft } from "@/hooks/useComposerDraft";
 import { useComposerSubmission, type ComposerActions } from "@/hooks/useComposerSubmission";
+import { usePendingComposerFlow } from "@/hooks/usePendingComposerFlow";
+import { PendingMessages } from "./composer/PendingMessages";
+import { QueuedMessageRow } from "./composer/QueuedMessageRow";
+import {
+  BUILTIN_SLASH_COMMANDS,
+  SLASH_SOURCES,
+  SLASH_SOURCE_GROUP_LABEL,
+  SLASH_SOURCE_ORDER,
+  SLASH_COMMAND_COLLATOR,
+  slashMatchRank,
+  type SlashCommandSource,
+  type SlashCommandPaletteItem,
+} from "./composer/slash-commands";
 import React, {
   useRef,
   useState,
@@ -33,7 +48,8 @@ import { useFileSuggestions } from "@/hooks/useFileSuggestions";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/i18n";
-import { localFilePathKey, splitLocalFileReferenceMarkdown } from "@/lib/file-url";
+import { localFilePathKey } from "@/lib/file-url";
+import type { ContextUsage, SessionStatsInfo } from "@shared/pi-types";
 
 export type { AttachedImage } from "@/hooks/useComposerDraft";
 
@@ -52,7 +68,8 @@ interface Props extends ComposerActions, ComposerToolbarOptions {
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
   welcome?: boolean;
-  workspaceContext?: React.ReactNode;
+  sessionStats?: SessionStatsInfo | null;
+  contextUsage?: ContextUsage | null;
 }
 
 export interface ChatInputHandle {
@@ -63,114 +80,18 @@ export interface ChatInputHandle {
 }
 
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
-const SLASH_COMMAND_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function resizeComposer(ta: HTMLTextAreaElement) {
+  ta.style.height = "auto";
+  const height = ta.scrollHeight;
+  ta.style.height = `${Math.min(height, 200)}px`;
+  ta.style.overflowY = height > 200 ? "auto" : "hidden";
+}
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
   if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
   return tokens.toLocaleString();
-}
-
-type SlashCommandPaletteItem =
-  | SlashCommandInfo
-  | {
-      name: string;
-      description: string;
-      source: "builtin";
-    };
-
-type SlashCommandSource = SlashCommandPaletteItem["source"];
-
-const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
-  { name: "compact", description: "Compress context, optionally with instructions", source: "builtin" },
-  { name: "reload", description: "Reload extensions, skills, prompts, and tools", source: "builtin" },
-  { name: "name", description: "Set the session display name", source: "builtin" },
-  { name: "session", description: "Show session message, token, and cost stats", source: "builtin" },
-  { name: "copy", description: "Copy the last assistant message", source: "builtin" },
-];
-
-const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
-
-const SLASH_SOURCE_GROUP_LABEL: Record<SlashCommandSource, string> = {
-  builtin: "Built-in",
-  extension: "Extensions",
-  prompt: "Prompts",
-  skill: "Skills",
-};
-
-const SLASH_SOURCE_ORDER: Record<SlashCommandSource, number> = {
-  builtin: 0,
-  extension: 1,
-  prompt: 2,
-  skill: 3,
-};
-
-function slashMatchRank(command: SlashCommandPaletteItem, query: string): number {
-  const name = command.name.toLowerCase();
-  const description = command.description?.toLowerCase() ?? "";
-  if (name === query) return 0;
-  if (name.startsWith(query)) return 1;
-  if (name.includes(query)) return 2;
-  if (description.includes(query)) return 3;
-  return 4;
-}
-
-function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: string }) {
-  const { t } = useI18n();
-  const segments = splitLocalFileReferenceMarkdown(text);
-  return (
-    <div
-      title={text}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "3px 10px",
-        fontSize: scaledChatFont(12),
-        color: "var(--text-muted)",
-        minWidth: 0,
-      }}
-    >
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: scaledChatFont(10),
-          fontFamily: "var(--font-mono)",
-          padding: "1px 7px",
-          borderRadius: 999,
-          border: `1px solid ${kind === "steer" ? "color-mix(in srgb, var(--accent) 45%, transparent)" : "var(--border)"}`,
-          color: kind === "steer" ? "var(--accent)" : "var(--text-dim)",
-        }}
-      >
-        {kind === "steer" ? t("steer", "Steer") : t("followUp", "Follow-up")}
-      </span>
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {segments.map((seg, i) =>
-          seg.file === null ? (
-            <span key={i}>{seg.text}</span>
-          ) : (
-            <span
-              key={i}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "0 6px",
-                margin: "0 2px",
-                borderRadius: 4,
-                border: "1px solid var(--border)",
-                background: "var(--bg-subtle)",
-                color: "var(--text)",
-                fontSize: scaledChatFont(11),
-                verticalAlign: "baseline",
-              }}
-            >
-              {seg.text}
-            </span>
-          ),
-        )}
-      </span>
-    </div>
-  );
 }
 
 const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput(
@@ -193,7 +114,8 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     draftPromotionFrom,
     cwd,
     welcome = false,
-    workspaceContext,
+    sessionStats,
+    contextUsage,
     ...toolbarOptions
   }: Props,
   ref,
@@ -201,6 +123,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const isMobile = useIsMobile();
   const { t, language } = useI18n();
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [slashCursor, setSlashCursor] = useState<number | null>(null);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState(320);
   const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
@@ -208,6 +131,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const [atActiveIndex, setAtActiveIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const referenceMirrorRef = useRef<HTMLDivElement>(null);
   const slashAnchorRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
   const atMenuRef = useRef<HTMLDivElement>(null);
@@ -247,7 +171,17 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [clearDraft]);
 
-  const { handleSend, sendQueued } = useComposerSubmission({
+  const { pending, pendingSending, stageMessage, submitPending } = usePendingComposerFlow({
+    draftKey,
+    draft,
+    clearInput,
+    isStreaming,
+    onSend,
+    onSteer,
+    onFollowUp,
+    onPromptWithStreamingBehavior,
+  });
+  const { handleSend } = useComposerSubmission({
     draft,
     clearInput,
     isStreaming,
@@ -268,8 +202,8 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       requestAnimationFrame(() => {
         if (!ta) return;
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        setSlashCursor(text.length);
+        resizeComposer(ta);
       });
     },
     prependText(text: string) {
@@ -285,8 +219,8 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         if (!ta) return;
         ta.focus();
         ta.setSelectionRange(combined.length, combined.length);
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        setSlashCursor(combined.length);
+        resizeComposer(ta);
       });
     },
     insertText(text: string) {
@@ -307,9 +241,9 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         if (!ta) return;
         const pos = start + sep.length + text.length;
         ta.setSelectionRange(pos, pos);
+        setSlashCursor(pos);
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        resizeComposer(ta);
       });
     },
     addFiles(files: File[]) {
@@ -320,17 +254,24 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    if (value) ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    if (value) resizeComposer(ta);
+    else {
+      ta.style.height = "auto";
+      ta.style.overflowY = "hidden";
+    }
   }, [value]);
 
-  const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1)) ? value.slice(1).toLowerCase() : null;
+  const slashPrefix = value.slice(0, slashCursor ?? value.length);
+  const slashMatch = /(?:^|\s)\/([^\s/]*)$/.exec(slashPrefix);
+  const slashStart = slashMatch ? slashPrefix.length - slashMatch[1].length - 1 : null;
+  const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
     const commands = [...(isStreaming ? [] : BUILTIN_SLASH_COMMANDS), ...(slashCommands ?? [])];
     return [...commands]
       .filter((command) => {
+        if (slashStart !== 0 && command.source !== "skill") return false;
         const name = command.name.toLowerCase();
         const description = command.description?.toLowerCase() ?? "";
         return name.includes(slashQuery) || description.includes(slashQuery);
@@ -357,9 +298,6 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     });
     return SLASH_SOURCES.map((source) => groups.get(source)!).filter((group) => group.items.length > 0);
   })();
-
-  const hasInputText = Boolean(value.trim());
-  const canQueueStreamingMessage = hasInputText || attachedFiles.length > 0 || attachedImages.length > 0;
 
   const updateAtQuery = useCallback(
     (text: string, cursor: number | null) => {
@@ -404,6 +342,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       const newValue = before + insert.text + after;
       const newPos = before.length + insert.cursorOffset;
       setValue(newValue);
+      setSlashCursor(newPos);
       // setValue alone does not fire onChange — re-derive the token here. Files
       // end with a space (token closes, menu hides); directories end with "/"
       // before the caret (token stays open for drill-down into the directory).
@@ -413,8 +352,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         if (!el) return;
         el.focus();
         el.setSelectionRange(newPos, newPos);
-        el.style.height = "auto";
-        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+        resizeComposer(el);
       });
     },
     [atQuery, setValue, value],
@@ -444,20 +382,26 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
 
   const applySlashCommand = useCallback(
     (command: SlashCommandPaletteItem) => {
-      const nextValue = `/${command.name} `;
+      const cursor = textareaRef.current?.selectionStart ?? value.length;
+      const start = slashStart ?? cursor;
+      const afterCursor = value.slice(cursor);
+      const suffix = afterCursor.replace(/^[^\s]*/, "");
+      const insert = `/${command.name} `;
+      const nextValue = value.slice(0, start) + insert + suffix;
+      const nextCursor = start + insert.length;
       setValue(nextValue);
+      setSlashCursor(nextCursor);
       setSlashMenuOpen(false);
       setSlashActiveIndex(0);
       requestAnimationFrame(() => {
         const ta = textareaRef.current;
         if (!ta) return;
         ta.focus();
-        ta.setSelectionRange(nextValue.length, nextValue.length);
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        ta.setSelectionRange(nextCursor, nextCursor);
+        resizeComposer(ta);
       });
     },
-    [setValue],
+    [setValue, slashStart, value],
   );
 
   const getNextSlashIndex = useCallback(
@@ -511,6 +455,23 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       if (e.key === "Enter" && !e.shiftKey && (isComposing || recentlyComposed)) {
         if (recentlyComposed) e.preventDefault();
         return;
+      }
+
+      if (!isComposing && (e.key === "Backspace" || e.key === "Delete") && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        const ta = e.currentTarget;
+        const range = referenceDeletionRange(value, ta.selectionStart, ta.selectionEnd, e.key);
+        if (range) {
+          e.preventDefault();
+          const nextValue = value.slice(0, range.start) + value.slice(range.end);
+          setValue(nextValue);
+          setSlashCursor(range.start);
+          updateAtQuery(nextValue, range.start);
+          requestAnimationFrame(() => {
+            ta.focus();
+            ta.setSelectionRange(range.start, range.start);
+          });
+          return;
+        }
       }
 
       if (slashMenuOpen && slashQuery !== null) {
@@ -579,13 +540,62 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         }
       }
 
+      if (!isComposing && (e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        const ta = e.currentTarget;
+        const direction = e.key === "ArrowLeft" ? "left" : "right";
+        const selectionStart = ta.selectionStart;
+        const selectionEnd = ta.selectionEnd;
+        const hasSelection = selectionStart !== selectionEnd;
+        const focus =
+          hasSelection && e.shiftKey
+            ? ta.selectionDirection === "backward"
+              ? selectionStart
+              : selectionEnd
+            : direction === "left"
+              ? selectionStart
+              : selectionEnd;
+        const destination = referenceCursorDestination(value, focus, direction);
+        // Native selection collapse already lands on a boundary; only intervene
+        // when that boundary would put the caret inside a reference.
+        const insideSelectionBoundary =
+          hasSelection &&
+          !e.shiftKey &&
+          destination !== null &&
+          destination !== focus &&
+          destination !== (direction === "left" ? selectionStart : selectionEnd) &&
+          referenceCursorDestination(value, focus, direction === "left" ? "right" : "left") !== null;
+        if (destination !== null && (!hasSelection || e.shiftKey || insideSelectionBoundary)) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            const anchor = hasSelection
+              ? ta.selectionDirection === "backward"
+                ? selectionEnd
+                : selectionStart
+              : focus;
+            ta.setSelectionRange(
+              Math.min(anchor, destination),
+              Math.max(anchor, destination),
+              destination < anchor ? "backward" : "forward",
+            );
+          } else {
+            ta.setSelectionRange(destination, destination);
+          }
+          setSlashCursor(destination);
+          updateAtQuery(value, destination);
+          return;
+        }
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        const textarea = e.currentTarget;
+        const blurOnCommit = () => {
+          if (textarea && document.activeElement === textarea) textarea.blur();
+        };
         if (isStreaming && (onSteer || onFollowUp)) {
-          // Default Enter sends as steer if available, else followup
-          void sendQueued(onSteer ? "steer" : "followup");
+          void stageMessage();
         } else {
-          void handleSend();
+          void handleSend(blurOnCommit);
         }
       }
     },
@@ -593,12 +603,15 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       isStreaming,
       onSteer,
       onFollowUp,
+      value,
+      setValue,
+      updateAtQuery,
       slashMenuOpen,
       slashQuery,
       filteredSlashCommands,
       slashActiveIndex,
       applySlashCommand,
-      sendQueued,
+      stageMessage,
       handleSend,
       getNextSlashIndex,
       atMenuOpen,
@@ -612,8 +625,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const handleInput = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    resizeComposer(ta);
   }, []);
 
   const handlePaste = useCallback(
@@ -746,6 +758,14 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         }}
       />
       <div className="chat-content-column">
+        <PendingMessages
+          pending={pending}
+          sending={pendingSending}
+          isStreaming={isStreaming}
+          canSteer={!!onSteer}
+          canFollowUp={!!onFollowUp}
+          onSubmit={submitPending}
+        />
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
         {(queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0) > 0 && (
           <div
@@ -1423,144 +1443,77 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
           {/* Main input */}
           <div style={{ position: "relative" }}>
             <div className="chat-composer-shell">
-              <textarea
-                ref={textareaRef}
-                value={value}
-                onChange={(e) => {
-                  setValue(e.target.value);
-                  updateAtQuery(e.target.value, e.target.selectionStart);
-                }}
-                onSelect={(e) => {
-                  const el = e.currentTarget;
-                  updateAtQuery(el.value, el.selectionStart);
-                }}
-                onKeyDown={handleKeyDown}
-                onCompositionStart={() => {
-                  isComposingRef.current = true;
-                }}
-                onCompositionEnd={(e) => {
-                  isComposingRef.current = false;
-                  lastCompositionEndAtRef.current = Date.now();
-                  const el = e.currentTarget;
-                  updateAtQuery(el.value, el.selectionStart);
-                }}
-                onInput={handleInput}
-                onPaste={handlePaste}
-                placeholder={
-                  isCompacting
-                    ? t("compacting", "Compacting…")
-                    : isStreaming && (onSteer || onFollowUp)
-                      ? t("steerOrQueue", "Steer now / queue follow-up…")
-                      : isStreaming
-                        ? t("agentRunning", "Agent is running…")
-                        : t("messagePlaceholder", "Message Serphia… Type / for commands, @ for files")
-                }
-                rows={1}
-                style={{
-                  flex: 1,
-                  background: "none",
-                  border: "none",
-                  outline: "none",
-                  resize: "none",
-                  color: "var(--text)",
-                  fontSize: scaledChatFont(14),
-                  lineHeight: 1.6,
-                  fontFamily: "inherit",
-                  minHeight: 24,
-                  maxHeight: 200,
-                  overflow: "auto",
-                }}
-              />
-
-              {isStreaming && (
-                <div className="chat-composer-stream-actions">
-                  {onSteer && (
-                    <button
-                      className="chat-composer-queue-action"
-                      onClick={() => sendQueued("steer")}
-                      disabled={!canQueueStreamingMessage}
-                      title={
-                        attachedImages.length
-                          ? t("imageQueueUnavailable", "Image attachments cannot be queued while the agent is running")
-                          : t("steerDescription", "Interrupt the current run and inject this message now")
-                      }
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "7px 12px",
-                        background: canQueueStreamingMessage ? "rgba(234,179,8,0.12)" : "none",
-                        border: "1px solid rgba(234,179,8,0.35)",
-                        borderRadius: 8,
-                        color: canQueueStreamingMessage ? "rgba(180,130,0,1)" : "var(--text-dim)",
-                        cursor: canQueueStreamingMessage ? "pointer" : "not-allowed",
-                        fontSize: scaledChatFont(13),
-                        fontWeight: 600,
-                        letterSpacing: "-0.01em",
-                        transition: "background 0.12s",
-                      }}
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 10 10"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M5 1 L9 5 L5 9" />
-                        <line x1="1" y1="5" x2="9" y2="5" />
-                      </svg>
-                      {t("steer", "Steer")}
-                    </button>
-                  )}
-                  {onFollowUp && (
-                    <button
-                      className="chat-composer-queue-action"
-                      onClick={() => sendQueued("followup")}
-                      disabled={!canQueueStreamingMessage}
-                      title={
-                        attachedImages.length
-                          ? t("imageQueueUnavailable", "Image attachments cannot be queued while the agent is running")
-                          : t("followUpDescription", "Queue this message after the agent finishes")
-                      }
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "7px 12px",
-                        background: canQueueStreamingMessage ? "rgba(129,140,248,0.12)" : "none",
-                        border: "1px solid rgba(129,140,248,0.35)",
-                        borderRadius: 8,
-                        color: canQueueStreamingMessage ? "rgba(99,102,241,1)" : "var(--text-dim)",
-                        cursor: canQueueStreamingMessage ? "pointer" : "not-allowed",
-                        fontSize: scaledChatFont(13),
-                        fontWeight: 600,
-                        letterSpacing: "-0.01em",
-                        transition: "background 0.12s",
-                      }}
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 10 10"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <line x1="5" y1="1" x2="5" y2="6" />
-                        <polyline points="2.5 3.5 5 1 7.5 3.5" />
-                        <line x1="2" y1="9" x2="8" y2="9" />
-                      </svg>
-                      {t("followUp", "Follow-up")}
-                    </button>
-                  )}
+              <div className="chat-composer-editor">
+                <div
+                  ref={referenceMirrorRef}
+                  className="chat-composer-reference-mirror"
+                  aria-hidden="true"
+                  style={{ fontSize: scaledChatFont(14) }}
+                >
+                  <ReferenceText text={value} requireTerminator />
+                  {"\n"}
                 </div>
-              )}
+                <textarea
+                  ref={textareaRef}
+                  value={value}
+                  onChange={(e) => {
+                    setValue(e.target.value);
+                    setSlashCursor(e.target.selectionStart);
+                    updateAtQuery(e.target.value, e.target.selectionStart);
+                  }}
+                  onSelect={(e) => {
+                    const el = e.currentTarget;
+                    setSlashCursor(el.selectionStart);
+                    updateAtQuery(el.value, el.selectionStart);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={(e) => {
+                    isComposingRef.current = false;
+                    lastCompositionEndAtRef.current = Date.now();
+                    const el = e.currentTarget;
+                    setSlashCursor(el.selectionStart);
+                    updateAtQuery(el.value, el.selectionStart);
+                  }}
+                  onInput={handleInput}
+                  onScroll={(e) => {
+                    if (referenceMirrorRef.current) {
+                      referenceMirrorRef.current.scrollTop = e.currentTarget.scrollTop;
+                      referenceMirrorRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                    }
+                  }}
+                  onPaste={handlePaste}
+                  placeholder={
+                    isCompacting
+                      ? t("compacting", "Compacting…")
+                      : isStreaming && (onSteer || onFollowUp)
+                        ? t("steerOrQueue", "Type a message, then choose how to send it…")
+                        : isStreaming
+                          ? t("agentRunning", "Agent is running…")
+                          : t("messagePlaceholder", "Message Serphia… Type / for commands, @ for files")
+                  }
+                  rows={1}
+                  spellCheck={false}
+                  style={{
+                    flex: 1,
+                    background: "none",
+                    border: "none",
+                    outline: "none",
+                    resize: "none",
+                    color: value ? "transparent" : "var(--text)",
+                    caretColor: "var(--text)",
+                    fontSize: scaledChatFont(14),
+                    lineHeight: 1.6,
+                    fontFamily: "inherit",
+                    minHeight: 24,
+                    maxHeight: 200,
+                    overflowX: "hidden",
+                    overflowY: "hidden",
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -1574,7 +1527,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             <button
               type="button"
               className="chat-composer-send"
-              onClick={handleSend}
+              onClick={() => void handleSend()}
               disabled={!value.trim() && !attachedImages.length && !attachedFiles.length}
               aria-label={t("send", "Send")}
               title={t("send", "Send")}
@@ -1583,7 +1536,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             </button>
           )}
         </ComposerFocusSurface>
-        {workspaceContext}
+        {!welcome && <ComposerStats sessionStats={sessionStats} contextUsage={contextUsage} />}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
  * Host supervision, system IPC. No business logic.
  */
 import { getNativeLanguage } from "./native-language";
+import { handleClosedStdioPipes } from "./stdio-errors";
 import { app, BrowserWindow, crashReporter, dialog, nativeTheme, nativeImage, net, Notification } from "electron";
 import fs from "node:fs";
 import os from "node:os";
@@ -44,6 +45,8 @@ import { HerdrRuntimeManager } from "./herdr/runtime-manager";
 import { resolveBundledHerdrRoot, resolveHerdrCatalogPath } from "./herdr/catalog";
 import { isHerdrSettings } from "../contract/herdr";
 import { discoverHerdrAgentClis, type HerdrAgentCliDiscoverySnapshot } from "./herdr/agent-cli-discovery";
+
+handleClosedStdioPipes();
 
 // Keep existing installations and settings accessible after the product rename.
 app.setPath("userData", path.join(app.getPath("appData"), "Pi Agent Desktop"));

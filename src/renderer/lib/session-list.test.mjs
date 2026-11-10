@@ -65,6 +65,24 @@ test("builds stable compact titles from names, prompts, and ids", () => {
   );
 });
 
+test("shows the user request instead of skill syntax while the automatic title is pending", () => {
+  assert.equal(
+    getSessionDisplayTitle(session("id", { firstMessage: "/skill:hyperframes 帮我生成介绍视频" })),
+    "帮我生成介绍视频",
+  );
+  assert.equal(getSessionDisplayTitle(session("id", { firstMessage: "/skill:one /skill:two 设计页面" })), "设计页面");
+  assert.equal(getSessionDisplayTitle(session("id", { firstMessage: "/skill:one /skill:two" })), "one, two");
+  assert.equal(
+    getSessionDisplayTitle(session("id", { name: "/skill:my custom title", firstMessage: "/skill:one 设计页面" })),
+    "/skill:my custom title",
+  );
+  assert.equal(getSessionDisplayTitle(session("id", { firstMessage: "/model select" })), "/model select");
+  assert.equal(
+    getSessionDisplayTitle(session("id", { firstMessage: '/skill:one 检查 @"my /skill:notes file.md"' })),
+    '检查 @"my /skill:notes file.md"',
+  );
+});
+
 test("initial session restore waits for a successful list result", () => {
   assert.deepEqual(resolveInitialSessionRestore([], "missing", true, false, false), { status: "wait" });
   assert.deepEqual(resolveInitialSessionRestore([], "missing", false, true, false), { status: "wait" });

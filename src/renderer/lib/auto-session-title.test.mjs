@@ -40,6 +40,15 @@ test("a real first message qualifies", () => {
   assert.equal(shouldAutoTitleMessage("Fix the login page"), true);
 });
 
+test("skill references qualify only when followed by meaningful user text", () => {
+  assert.equal(shouldAutoTitleMessage("/skill:hyperframes 帮我生成一段介绍 ROS 2 的视频"), true);
+  assert.equal(shouldAutoTitleMessage("/skill:one /skill:two 设计登录页"), true);
+  assert.equal(shouldAutoTitleMessage("设计 /skill:one 一个界面"), true);
+  assert.equal(shouldAutoTitleMessage("/skill:one /skill:two"), false);
+  assert.equal(shouldAutoTitleMessage("/skill:one 好"), false);
+  assert.equal(shouldAutoTitleMessage("/skill:one /model gpt"), false);
+});
+
 test("slash commands never qualify", () => {
   assert.equal(shouldAutoTitleMessage("/init"), false);
   assert.equal(shouldAutoTitleMessage("/model gpt-4o"), false);

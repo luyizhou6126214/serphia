@@ -149,6 +149,10 @@ export interface ModelInfo {
   id: string;
   name: string;
   provider: string;
+  /** Provider context window in tokens, when the catalog reports one. */
+  contextWindow?: number;
+  /** Provider output cap in tokens, when the catalog reports one. */
+  maxTokens?: number;
 }
 
 export interface ModelCatalogWarning {

@@ -33,6 +33,7 @@ import { OpenInAppButton } from "./OpenInAppButton";
 import { BrowserDock } from "./browser/BrowserDock";
 import { BrowserAuthorizationDialog } from "./browser/BrowserAuthorizationDialog";
 import { ProcessPanel } from "./ProcessPanel";
+import { SessionBackgroundTasks } from "./SessionBackgroundTasks";
 import { RightPanelStrip } from "./right-panel/RightPanelStrip";
 import { RightPanelGuide, type RightPanelGuideEntry } from "./right-panel/RightPanelGuide";
 import { FilesPanelBody } from "./right-panel/FilesPanelBody";
@@ -164,6 +165,7 @@ export function AppShell({
   // Warm the deferred Settings chunk once the UI is idle so the first open does not wait on it.
   useEffect(() => scheduleSettingsConfigPreload(), []);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const chatContentRef = useRef<HTMLDivElement | null>(null);
   const thinkingExpansionRegistryRef = useRef(new ThinkingExpansionRegistry());
   const processDetailsExpansionRegistryRef = useRef(new ThinkingExpansionRegistry());
 
@@ -736,14 +738,6 @@ export function AppShell({
     [router, isMobile],
   );
 
-  const handleWorkspaceChange = useCallback(
-    (cwd: string) => {
-      workspace.setSelectedCwd(cwd);
-      handleNewSession("", cwd);
-    },
-    [workspace, handleNewSession],
-  );
-
   const hydrateSelectedSession = useCallback(
     (sessionId: string) => {
       void sessionList
@@ -1083,6 +1077,9 @@ export function AppShell({
             ? getSessionDisplayTitle(displayedSession ?? selectedSession)
             : ""}
       </div>
+      {!settingsOpen && selectedSession && (
+        <SessionBackgroundTasks key={selectedSession.id} sessionId={selectedSession.id} />
+      )}
       {!settingsOpen && (
         <>
           {selectedSession && (
@@ -1100,6 +1097,7 @@ export function AppShell({
             activeTopPanel={activeTopPanel}
             toggleTopPanel={toggleTopPanel}
             isMobile={isMobile}
+            panelContainerRef={chatContentRef}
           />
           <OpenInAppButton directory={selectedSession?.cwd ?? effectiveNewSessionCwd ?? null} />
           <button
@@ -1257,14 +1255,13 @@ export function AppShell({
           >
             {isWindows && <header className="app-session-header">{sessionHeader}</header>}
             {/* Chat content */}
-            <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+            <div ref={chatContentRef} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
               {showChat ? (
                 <SessionProfiler key={sessionKey} id="ChatWindow">
                   <ChatWindow
                     session={selectedSession}
                     newSessionCwd={effectiveNewSessionCwd}
                     workspace={workspace}
-                    onWorkspaceChange={handleWorkspaceChange}
                     onAgentEnd={handleAgentEnd}
                     onSessionCreated={handleSessionCreated}
                     onSessionForked={handleSessionForked}

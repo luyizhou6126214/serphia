@@ -6,7 +6,7 @@ import { useI18n } from "@/i18n";
 import type { NoticeType } from "@/lib/notice-queue";
 import { readLastModel, type SelectedModel } from "@/lib/last-session-selection";
 
-type ModelEntry = { id: string; name: string; provider: string; virtual?: boolean };
+type ModelEntry = { id: string; name: string; provider: string; virtual?: boolean; contextWindow?: number };
 
 export interface SessionModelsOptions {
   isNew: boolean;

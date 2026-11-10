@@ -658,34 +658,9 @@ function ComposerToolbarView({
           className="chat-composer-stop"
           aria-label={t("stopAgent", "Stop agent")}
           title={t("stopAgent", "Stop agent")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            width: isMobile ? 32 : undefined,
-            padding: isMobile ? 0 : "8px 14px",
-            minHeight: 32,
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 9,
-            color: "var(--danger)",
-            cursor: "pointer",
-            fontSize: scaledChatFont(12),
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-            letterSpacing: "-0.01em",
-            transition: "background 0.12s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(239,68,68,0.16)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(239,68,68,0.08)";
-          }}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
           </svg>
           <span className="sr-only">{t("stop", "Stop")}</span>
         </button>

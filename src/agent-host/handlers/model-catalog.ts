@@ -146,6 +146,8 @@ export async function projectModelsList(
       name: model.name,
       provider: model.provider,
       ...(model.api === "pi-virtual" ? { virtual: true } : {}),
+      ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+      ...(model.maxTokens ? { maxTokens: model.maxTokens } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.provider.localeCompare(b.provider));
 

@@ -54,56 +54,62 @@ export function useComposerSubmission({
     restoreFailedSubmission,
   } = draft;
 
-  const handleSend = useCallback(async () => {
-    const text = value.trim();
-    const msg = [text, ...attachedFiles.map(localFileReferenceToMarkdown)].filter(Boolean).join(" ");
-    if (!msg && !attachedImages.length) return;
-    if (isStreaming) return;
-    const validationRevision = getRevision();
-    if (!(await validateLocalFileReferences(attachedFiles))) return;
-    if (validationRevision !== getRevision()) {
-      setSubmissionNotice(t("draftChangedDuringValidation", "The draft changed while files were checked. Send again."));
-      return;
-    }
-    const snapshot = captureComposerSubmission(value, attachedImages, attachedFiles);
-    setSubmissionNotice(null);
-    commitCurrentDraft();
-    clearInput();
-    const clearedAtRevision = getRevision();
-    try {
-      if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
-        const result = await onBuiltinCommand(msg);
-        if (result.handled) {
-          if (result.error) restoreFailedSubmission(snapshot, clearedAtRevision, "send");
-          return;
-        }
-      }
-      const settled = await onSend(msg, attachedImages.length ? attachedImages : undefined);
-      if (settled && typeof settled === "object" && "ok" in settled && settled.ok === false) {
-        restoreFailedSubmission(snapshot, clearedAtRevision, "send");
+  const handleSend = useCallback(
+    async (onCommit?: () => void) => {
+      const text = value.trim();
+      const msg = [text, ...attachedFiles.map(localFileReferenceToMarkdown)].filter(Boolean).join(" ");
+      if (!msg && !attachedImages.length) return;
+      if (isStreaming) return;
+      const validationRevision = getRevision();
+      if (!(await validateLocalFileReferences(attachedFiles))) return;
+      if (validationRevision !== getRevision()) {
+        setSubmissionNotice(
+          t("draftChangedDuringValidation", "The draft changed while files were checked. Send again."),
+        );
         return;
       }
-    } catch {
-      restoreFailedSubmission(snapshot, clearedAtRevision, "send");
-    }
-  }, [
-    attachedFiles,
-    attachedImages,
-    clearInput,
-    commitCurrentDraft,
-    getRevision,
-    isStreaming,
-    onBuiltinCommand,
-    onSend,
-    restoreFailedSubmission,
-    setSubmissionNotice,
-    t,
-    validateLocalFileReferences,
-    value,
-  ]);
+      const snapshot = captureComposerSubmission(value, attachedImages, attachedFiles);
+      setSubmissionNotice(null);
+      onCommit?.();
+      commitCurrentDraft();
+      clearInput();
+      const clearedAtRevision = getRevision();
+      try {
+        if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
+          const result = await onBuiltinCommand(msg);
+          if (result.handled) {
+            if (result.error) restoreFailedSubmission(snapshot, clearedAtRevision, "send");
+            return;
+          }
+        }
+        const settled = await onSend(msg, attachedImages.length ? attachedImages : undefined);
+        if (settled && typeof settled === "object" && "ok" in settled && settled.ok === false) {
+          restoreFailedSubmission(snapshot, clearedAtRevision, "send");
+          return;
+        }
+      } catch {
+        restoreFailedSubmission(snapshot, clearedAtRevision, "send");
+      }
+    },
+    [
+      attachedFiles,
+      attachedImages,
+      clearInput,
+      commitCurrentDraft,
+      getRevision,
+      isStreaming,
+      onBuiltinCommand,
+      onSend,
+      restoreFailedSubmission,
+      setSubmissionNotice,
+      t,
+      validateLocalFileReferences,
+      value,
+    ],
+  );
 
   const sendQueued = useCallback(
-    async (mode: "steer" | "followup") => {
+    async (mode: "steer" | "followup", onCommit?: () => void) => {
       // Pi 0.84 queues image content but exposes only message strings through
       // queue_update/clearQueue. Keep images in the composer until the Agent is
       // idle so recall can never silently discard them.
@@ -126,6 +132,7 @@ export function useComposerSubmission({
       const snapshot = captureComposerSubmission(value, attachedImages, attachedFiles);
       const streamingBehavior = mode === "steer" ? "steer" : "followUp";
       setSubmissionNotice(null);
+      onCommit?.();
       commitCurrentDraft();
       clearInput();
       const clearedAtRevision = getRevision();

@@ -9,6 +9,7 @@
  * call fails — the sidebar never shows an untitled session.
  */
 import { call } from "./api-client";
+import { sessionTitleMessage } from "@shared/session-title-source";
 
 export const AUTO_TITLE_STORAGE_KEY = "pi-desktop:autoSessionTitle";
 export const AUTO_TITLE_MIN_MESSAGE_LENGTH = 2;
@@ -39,11 +40,12 @@ export function setAutoSessionTitleEnabled(enabled: boolean): void {
 
 /**
  * A new-session first message qualifies when auto-titles are on and the message
- * is real text — not a slash command and long enough to summarize.
+ * contains enough user text after removing skill references. Other slash
+ * commands still do not trigger title generation.
  */
 export function shouldAutoTitleMessage(message: string): boolean {
   if (!isAutoSessionTitleEnabled()) return false;
-  const trimmed = message.trim();
+  const trimmed = sessionTitleMessage(message);
   if (!trimmed || trimmed.startsWith("/")) return false;
   if ([...trimmed].length < AUTO_TITLE_MIN_MESSAGE_LENGTH) return false;
   return true;

@@ -21,6 +21,7 @@ import { mermaidCacheKey, renderMermaidSvg } from "@/lib/mermaid-renderer";
 import { SessionProfiler } from "./SessionProfiler";
 import { useI18n } from "@/i18n";
 import { scaledChatFont } from "@/lib/chat-appearance";
+import { ReferenceText } from "./composer/ReferenceText";
 
 interface MarkdownBodyProps {
   children: string;
@@ -35,11 +36,12 @@ interface MarkdownBodyProps {
    * Think row: smaller type, tighter block rhythm, inheriting colors.
    */
   variant?: "base" | "compact";
+  renderReferences?: boolean;
 }
 
 type MarkdownRenderContextValue = Pick<
   MarkdownBodyProps,
-  "isStreaming" | "cwd" | "imageBasePath" | "sourceSessionId" | "onOpenFile"
+  "isStreaming" | "cwd" | "imageBasePath" | "sourceSessionId" | "onOpenFile" | "renderReferences"
 >;
 
 const MarkdownRenderContext = createContext<MarkdownRenderContextValue>({});
@@ -164,7 +166,22 @@ function MarkdownTable({ children, node }: MarkdownComponentProps<"table">) {
   );
 }
 
+function MarkdownParagraph({ children, node: _node, ...props }: MarkdownComponentProps<"p">) {
+  const { renderReferences } = useContext(MarkdownRenderContext);
+  return <p {...props}>{renderReferences ? ReactChildrenWithReferences(children) : children}</p>;
+}
+
+function ReactChildrenWithReferences(children: ReactNode): ReactNode {
+  if (typeof children === "string") return <ReferenceText text={children} />;
+  if (Array.isArray(children))
+    return children.map((child, index) =>
+      typeof child === "string" ? <ReferenceText key={index} text={child} /> : child,
+    );
+  return children;
+}
+
 const markdownComponents: Components = {
+  p: MarkdownParagraph,
   code: MarkdownCode,
   pre: MarkdownPre,
   a: MarkdownAnchor,
@@ -189,6 +206,7 @@ export const MarkdownBody = memo(function MarkdownBody({
   sourceSessionId,
   onOpenFile,
   variant = "base",
+  renderReferences,
 }: MarkdownBodyProps) {
   // Bound synchronous parsing while content grows; settlement renders the original source in full.
   const lightweightPreview = isStreaming && children.length > 2048;
@@ -198,8 +216,8 @@ export const MarkdownBody = memo(function MarkdownBody({
   );
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(normalizedMarkdown);
   const renderContext = useMemo(
-    () => ({ isStreaming, cwd, imageBasePath, sourceSessionId, onOpenFile }),
-    [cwd, imageBasePath, isStreaming, onOpenFile, sourceSessionId],
+    () => ({ isStreaming, cwd, imageBasePath, sourceSessionId, onOpenFile, renderReferences }),
+    [cwd, imageBasePath, isStreaming, onOpenFile, sourceSessionId, renderReferences],
   );
 
   return (

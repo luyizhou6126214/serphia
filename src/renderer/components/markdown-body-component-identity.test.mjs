@@ -14,7 +14,7 @@ const { MarkdownBody, getMarkdownComponentIdentityForTest, parseStats } = await 
       loader: "ts",
     },
     jsx: "automatic",
-    external: ["react", "react/jsx-runtime", "react-markdown", "mermaid"],
+    external: ["react", "react/jsx-runtime", "lucide-react", "react-markdown", "mermaid"],
     plugins: [
       {
         name: "markdown-body-stubs",

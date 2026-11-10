@@ -7,6 +7,7 @@ import { createLegacyChannelContextExtension } from "./legacy-channel-context";
 import { desktopMcpExtensions } from "./mcp/extensions";
 import { sessionOrchestrationExtensions } from "./session-orchestration";
 import { createAgentSettlementExtension } from "./agent-settlement";
+import { createAdditionalSkillReferencesExtension } from "./additional-skill-references";
 
 export function desktopSessionExtensions(
   policy: SessionToolPolicy,
@@ -14,6 +15,7 @@ export function desktopSessionExtensions(
   prompt: SessionPromptPolicy,
   running: () => boolean,
   hasDirectory = true,
+  getSkills: () => readonly { name: string; filePath: string; baseDir: string }[] = () => [],
 ): InlineExtension[] {
   return [
     createAgentSettlementExtension(),
@@ -22,6 +24,7 @@ export function desktopSessionExtensions(
     ...sessionOrchestrationExtensions(undefined, { isAllowed: () => policy.isAllowed("codemode"), history }),
     ...(hasDirectory ? desktopMcpExtensions(policy, running, history) : []),
     createLegacyChannelContextExtension(),
+    createAdditionalSkillReferencesExtension(getSkills),
     createDesktopPromptExtension(prompt),
   ];
 }

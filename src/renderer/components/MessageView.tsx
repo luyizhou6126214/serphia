@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Copy, GitFork, History, LoaderCircle, Pencil } from "lucide-react";
+import { Check, ChevronDown, Copy, GitFork, History, LoaderCircle, Pencil, Box } from "lucide-react";
 import { formatTime } from "@/lib/message-metadata";
 import { memo, useState, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { MarkdownBody } from "./MarkdownBody";
@@ -273,7 +273,7 @@ function UserMessageView({
             />
           )}
           {visibleContent && (
-            <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>
+            <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile} renderReferences>
               {visibleContent}
             </MarkdownBody>
           )}
@@ -386,6 +386,7 @@ function SkillInvocationView({
           aria-hidden="true"
           data-expanded={expanded || undefined}
         />
+        <Box className="dsh-skill-icon" size={13} aria-hidden="true" />
         <span className="dsh-skill-kind">{t("skillInvocation", "skill")}</span>
         <span className="dsh-skill-name">{invocation.name}</span>
       </button>

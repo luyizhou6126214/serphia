@@ -51,8 +51,9 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
       export async function subscribeAgentEvents(key, on) {const stream={key,on,closed:0}; streams.push(stream); return()=>stream.closed++;}
       export async function subscribeSessionsChanged(on) {const stream={key:'*',on,closed:0}; streams.push(stream); return()=>stream.closed++;}
       export const fileIndex = async () => ({files:[],truncated:false});
+      export const call = (method, params) => method === 'agent.generateTitle' ? pending(method, params, 'generate_title') : unexpected();
       const unexpected = async () => {throw new Error('Unexpected composer session IO');};
-      export {unexpected as call,unexpected as getSessionContext,unexpected as getSessionContextPage,unexpected as getSessionEntryContent,unexpected as refreshModels,unexpected as cancelModelsRefresh};
+      export {unexpected as getSessionContext,unexpected as getSessionContextPage,unexpected as getSessionEntryContent,unexpected as refreshModels,unexpected as cancelModelsRefresh};
     `,
         }));
       },
@@ -62,7 +63,7 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
 
 let fixtureNumber = 0;
 const text = (node) => (typeof node === "string" ? node : (node?.children?.map(text).join("") ?? ""));
-async function mount(t, { existing = false, running = false, directory } = {}) {
+async function mount(t, { existing = false, running = false, directory, autoTitle = false } = {}) {
   const cwd = directory ?? `/composer-fixture-${++fixtureNumber}`;
   const initialId = `existing-${fixtureNumber}`;
   const previous = new Map(
@@ -76,7 +77,7 @@ async function mount(t, { existing = false, running = false, directory } = {}) {
       "IS_REACT_ACT_ENVIRONMENT",
     ].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
   );
-  const values = new Map([["pi-desktop:autoSessionTitle", "off"]]);
+  const values = new Map(autoTitle ? [] : [["pi-desktop:autoSessionTitle", "off"]]);
   const storage = {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, String(value)),
@@ -154,6 +155,9 @@ async function mount(t, { existing = false, running = false, directory } = {}) {
     focus() {
       globalThis.document.activeElement = this;
     },
+    blur() {
+      if (globalThis.document.activeElement === this) globalThis.document.activeElement = null;
+    },
     setSelectionRange(start, end) {
       this.selectionStart = start;
       this.selectionEnd = end;
@@ -197,6 +201,8 @@ async function mount(t, { existing = false, running = false, directory } = {}) {
       return current;
     },
     value: () => renderer.root.findByType("textarea").props.value,
+    focus: () => textarea.focus(),
+    focused: () => globalThis.document.activeElement === textarea,
     text: () => text(renderer.root),
     count: (type) => api.requests.filter((request) => request.commandType === type).length,
     async type(value) {
@@ -210,6 +216,7 @@ async function mount(t, { existing = false, running = false, directory } = {}) {
         for (let i = 0; i < times; i++)
           onKeyDown({
             key: "Enter",
+            currentTarget: textarea,
             shiftKey: false,
             nativeEvent: { isComposing: false, keyCode: 13 },
             preventDefault() {},
@@ -217,9 +224,10 @@ async function mount(t, { existing = false, running = false, directory } = {}) {
       });
     },
     async click(label) {
-      const button = renderer.root.find(
+      const button = renderer.root.findAll(
         (node) => node.type === "button" && (node.props["aria-label"] === label || text(node) === label),
-      );
+      )[0];
+      assert.ok(button, `No button named ${label}`);
       await act(async () => {
         void button.props.onClick();
       });
@@ -239,6 +247,18 @@ async function mount(t, { existing = false, running = false, directory } = {}) {
   };
 }
 
+test("Enter blurs the composer only when an existing session submits a message", async (t) => {
+  const f = await mount(t, { existing: true });
+  f.focus();
+  await f.enter();
+  assert.equal(f.focused(), true);
+  await f.type("hello again");
+  await f.enter();
+  assert.equal(f.focused(), false);
+  assert.equal(f.count("prompt"), 1);
+  await f.reply("prompt", null);
+});
+
 test("the composer send icon submits the draft and creates the session", async (t) => {
   const f = await mount(t);
   await f.type("send with the icon");
@@ -248,6 +268,18 @@ test("the composer send icon submits the draft and creates the session", async (
   await f.reply("prompt", null);
   assert.equal(f.count("prompt"), 1);
   assert.equal(f.value(), "");
+});
+
+test("a skill-first prompt generates a title from user text without changing the sent message", async (t) => {
+  const f = await mount(t, { autoTitle: true });
+  const message = "/skill:hyperframes /skill:design 生成 ROS2 介绍视频";
+  await f.type(message);
+  await f.enter();
+  await f.reply("ensure_session", { sessionId: "skill-title-session" });
+  assert.equal(f.next("prompt").params.command.message, message);
+  await f.reply("prompt", null);
+  assert.equal(f.next("generate_title").params.message, "生成 ROS2 介绍视频");
+  await f.reply("generate_title", { title: "ROS2 介绍视频" });
 });
 
 test("a non-project conversation promotes the actual working directory allocated by the host", async (t) => {
@@ -371,23 +403,44 @@ test("restored running sessions still query the active tool list", async (t) => 
 
 for (const mode of ["steer", "follow_up", "queued-prompt"])
   for (const newerDraft of [false, true]) {
-    test(`${mode} rejection ${newerDraft ? "preserves newer input" : "restores the submitted draft"} through the actual session callback`, async (t) => {
+    test(`${mode} failure keeps the staged message and ${newerDraft ? "newer input" : "empty composer"}`, async (t) => {
       const f = await mount(t, { existing: true, running: true });
-      assert.equal(f.current.agentRunning, true);
       const message = mode === "queued-prompt" ? "/fixture queued instruction" : "queue this draft";
       await f.type(message);
-      await f.click(mode === "steer" ? "Steer" : "Follow-up");
+      assert.doesNotMatch(f.text(), /Steer|Follow-up/);
+      await f.enter();
       const command = mode === "queued-prompt" ? "prompt" : mode;
+      assert.equal(f.count(command), 0, "Enter only stages the message");
       assert.equal(f.value(), "");
+      assert.match(f.text(), /queue this draft|fixture queued instruction/);
+      await f.click(mode === "steer" ? "Steer" : "Follow-up");
       if (mode === "queued-prompt") assert.equal(f.next(command).params.command.streamingBehavior, "followUp");
       if (newerDraft) await f.type("newer queue draft");
       await f.reject(command);
-      assert.equal(f.value(), newerDraft ? "newer queue draft" : message);
-      assert.match(f.text(), newerDraft ? /newer draft was kept/ : /draft was restored/);
+      assert.equal(f.value(), newerDraft ? "newer queue draft" : "");
+      assert.match(f.text(), /still waiting above/);
+      assert.match(f.text(), /queue this draft|fixture queued instruction/);
       assert.equal(f.count(command), 1);
       assert.equal(f.current.agentRunning, true);
     });
   }
+
+test("multiple staged messages remain independent until an action is selected", async (t) => {
+  const f = await mount(t, { existing: true, running: true });
+  await f.type("first pending");
+  await f.enter();
+  await f.type("second pending");
+  await f.enter();
+  assert.equal(f.count("steer"), 0);
+  assert.equal(f.count("follow_up"), 0);
+  assert.match(f.text(), /first pending/);
+  assert.match(f.text(), /second pending/);
+  await f.click("Steer");
+  assert.equal(f.next("steer").params.command.message, "first pending");
+  await f.reply("steer", null);
+  assert.doesNotMatch(f.text(), /first pending/);
+  assert.match(f.text(), /second pending/);
+});
 
 test("a built-in command failure restores the draft and a successful retry never sends a prompt", async (t) => {
   const f = await mount(t, { existing: true });

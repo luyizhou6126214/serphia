@@ -32,7 +32,6 @@ function loadGsap(): Promise<Gsap> {
 export function useComposerFocusMotion(
   cardRef: RefObject<HTMLDivElement | null>,
   auraRef: RefObject<HTMLDivElement | null>,
-  ringRef: RefObject<HTMLDivElement | null>,
   rippleARef: RefObject<HTMLDivElement | null>,
   rippleBRef: RefObject<HTMLDivElement | null>,
   active: boolean,
@@ -44,11 +43,10 @@ export function useComposerFocusMotion(
   useEffect(() => {
     const card = cardRef.current;
     const aura = auraRef.current;
-    const ring = ringRef.current;
     const rippleA = rippleARef.current;
     const rippleB = rippleBRef.current;
     // Refs stay null in DOM-less renderers; the composer then simply keeps its CSS state.
-    if (!card || !aura || !ring || !rippleA || !rippleB) return;
+    if (!card || !aura || !rippleA || !rippleB) return;
     // The first passive render should not play the release animation.
     if (!active && !engagedRef.current) return;
     engagedRef.current = true;
@@ -68,7 +66,7 @@ export function useComposerFocusMotion(
 
         if (reducedMotion) {
           gsap.set(card, { y: active ? FOCUSED_LIFT : 0, scale: 1 });
-          gsap.set([aura, ring], { autoAlpha: active ? 1 : 0 });
+          gsap.set(aura, { autoAlpha: active ? 1 : 0 });
           gsap.set([rippleA, rippleB], { autoAlpha: 0 });
           return;
         }
@@ -81,7 +79,6 @@ export function useComposerFocusMotion(
             .to(card, { y: FOCUSED_LIFT, duration: 0.55, ease: "expo.out" }, 0)
             .to(card, { scale: FOCUSED_SCALE, duration: 0.4, ease: "power2.out" }, 0)
             .to(card, { scale: 1, duration: 0.6, ease: "power2.inOut" }, 0.45)
-            .to(ring, { autoAlpha: 1, duration: 0.5, ease: "power2.out" }, 0.02)
             .fromTo(
               aura,
               { autoAlpha: 0, scale: 0.92 },
@@ -103,7 +100,7 @@ export function useComposerFocusMotion(
             );
         } else {
           timeline
-            .to([aura, ring], { autoAlpha: 0, duration: 0.35, ease: "power2.inOut" }, 0)
+            .to(aura, { autoAlpha: 0, duration: 0.35, ease: "power2.inOut" }, 0)
             .to([rippleA, rippleB], { autoAlpha: 0, duration: 0.25, ease: "power2.in" }, 0)
             .to(card, { y: 0, scale: 1, duration: 0.34, ease: "power3.out" }, 0);
         }
@@ -117,5 +114,5 @@ export function useComposerFocusMotion(
       timelineRef.current?.kill();
       timelineRef.current = null;
     };
-  }, [active, cardRef, auraRef, ringRef, rippleARef, rippleBRef]);
+  }, [active, cardRef, auraRef, rippleARef, rippleBRef]);
 }

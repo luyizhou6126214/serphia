@@ -1,4 +1,5 @@
 import type { SessionInfo } from "./types";
+import { sessionTitleFallback } from "../../shared/session-title-source.ts";
 
 export type SessionDateGroup = "today" | "recent" | "older";
 
@@ -19,7 +20,7 @@ export function resolveInitialSessionRestore(
 }
 
 export function getSessionDisplayTitle(session: SessionInfo, maxLength = 72): string {
-  const source = session.name?.trim() || session.firstMessage?.trim() || session.id;
+  const source = session.name?.trim() || sessionTitleFallback(session.firstMessage ?? "") || session.id;
   const normalized = source.replace(/\s+/g, " ");
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;

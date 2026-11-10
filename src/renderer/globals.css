@@ -482,6 +482,9 @@
   --info: #0369a1;
   --info-soft: rgba(3, 105, 161, 0.08);
   --info-border: rgba(3, 105, 161, 0.3);
+  /* Composer primary + live-session accent: DeepSeek Harness's info-fill pair. */
+  --action-blue: #4176e6;
+  --action-blue-hover: #5686fe;
   --on-accent: var(--accent-contrast);
   --grid-line: #ece9e2;
   --selection: #fed7aa;
@@ -529,6 +532,9 @@ html.dark {
   --info: #38bdf8;
   --info-soft: rgba(56, 189, 248, 0.1);
   --info-border: rgba(56, 189, 248, 0.34);
+  /* Composer primary + live-session accent: DeepSeek Harness's info-fill pair. */
+  --action-blue: #7aaaff;
+  --action-blue-hover: #5686fe;
   --on-accent: var(--accent-contrast);
   --grid-line: #2a2620;
   --selection: rgba(234, 88, 12, 0.38);
@@ -786,7 +792,7 @@ html.dark ::-webkit-scrollbar-thumb {
   --dsw-alias-state-warn-label: var(--warning);
   --dsw-alias-state-success-primary: var(--success);
   --dsw-alias-label-shimmer: color-mix(in srgb, var(--text-dim) 45%, var(--text));
-  --dsw-alias-label-deep-diving: var(--info);
+  --dsw-alias-label-deep-diving: var(--action-blue);
   --dsw-font-markdown-code: 400 calc(var(--dsh-content-font-size-secondary) - 1px) /
     calc(22px + var(--dsh-content-font-delta-secondary)) var(--font-mono);
   --dsw-font-markdown-code-block-small: 400 12px / 18px var(--font-mono);
@@ -2800,7 +2806,7 @@ span.linenumber {
   flex: 0 0 14px;
   align-items: center;
   justify-content: center;
-  color: var(--text-dim);
+  color: var(--action-blue);
   transition:
     opacity 120ms ease,
     transform 120ms ease;
@@ -3885,30 +3891,6 @@ html.dark .chat-composer-frame {
     0 0 0 1px color-mix(in srgb, var(--composer-glow-b) 60%, transparent),
     0 0 26px 5px color-mix(in srgb, var(--composer-glow-b) 30%, transparent);
 }
-/* The hairline picks up the same aurora; nothing travels around the border. */
-.chat-composer-ring {
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  background: linear-gradient(
-    120deg,
-    color-mix(in srgb, var(--composer-glow-c) 55%, transparent),
-    color-mix(in srgb, var(--composer-glow-a) 62%, transparent) 45%,
-    color-mix(in srgb, var(--composer-glow-b) 58%, transparent)
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-}
 .chat-composer-shell {
   display: flex;
   flex-wrap: wrap;
@@ -3931,31 +3913,170 @@ html.dark .chat-composer-frame {
   bottom: 10px;
   display: grid !important;
   place-items: center;
-  width: 32px !important;
-  height: 32px;
-  min-height: 32px;
+  width: 34px !important;
+  height: 34px;
+  min-height: 34px;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 50% !important;
-  color: var(--bg) !important;
-  background: var(--text) !important;
+  color: #fff !important;
+  background: var(--action-blue) !important;
   cursor: pointer;
   transition:
+    background-color 160ms,
     opacity 160ms,
     transform 160ms;
 }
 .chat-composer-send:hover:not(:disabled),
 .chat-composer-stop:hover {
-  opacity: 0.8;
+  background: var(--action-blue-hover) !important;
 }
 .chat-composer-send:active:not(:disabled),
 .chat-composer-stop:active {
   transform: scale(0.94);
 }
 .chat-composer-send:disabled {
-  color: var(--text-dim) !important;
-  background: var(--bg-hover) !important;
+  color: #fff !important;
+  background: var(--action-blue) !important;
+  opacity: 0.4;
   cursor: default;
+}
+
+/* Composer statistics dock: the quiet readings below the card, ported from
+   DeepSeek Harness's input bar (activity, usage, context occupancy). */
+.composer-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 12px;
+  max-width: 100%;
+  padding: 4px 0 0;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.composer-stat,
+.composer-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: inherit;
+  white-space: nowrap;
+}
+.composer-stat-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-stat svg,
+.composer-context svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.composer-stat-sep {
+  margin: 0 6px;
+  color: color-mix(in srgb, var(--text-dim) 60%, transparent);
+}
+button.composer-stat,
+button.composer-context {
+  cursor: pointer;
+}
+button.composer-stat:hover,
+button.composer-context:hover {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.composer-context {
+  font-size: calc(13px * var(--chat-font-scale, 1));
+  border-radius: 6px;
+}
+.composer-context-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-dim) 28%, transparent);
+  stroke-width: 2;
+}
+.composer-context-fill {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Trigger-anchored stat dialogs (activity, usage, context), ported from the
+   DSH dock. The surface borrows the composer menu skin; placement is fixed by
+   the component's viewport clamp. */
+.composer-stat-anchor {
+  display: inline-flex;
+  min-width: 0;
+}
+.composer-stat-dialog {
+  position: fixed;
+  z-index: 2100;
+  width: max-content;
+  min-width: min(300px, calc(100vw - 24px));
+  max-width: min(400px, calc(100vw - 24px));
+  max-height: min(70vh, 420px);
+  padding: 14px 16px !important;
+  font-size: 12px;
+  line-height: 18px;
+}
+.composer-stat-dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+.composer-stat-dialog-title-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.composer-stat-dialog-title-label svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.composer-stat-dialog-title-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.composer-stat-dialog-rule {
+  margin-bottom: 10px;
+  border-top: 1px solid var(--border);
+}
+.composer-stat-dialog-details {
+  display: grid;
+  grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  color: var(--text-dim);
+}
+.composer-stat-dialog-details dt,
+.composer-stat-dialog-details dd {
+  min-width: 0;
+  margin: 0;
+}
+.composer-stat-dialog-details dd {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 .composer-toolbar {
   position: static;
@@ -4100,28 +4221,6 @@ html.dark .chat-composer-frame {
   color: var(--text-dim);
   font-size: calc(11px * var(--chat-font-scale, 1));
   line-height: 1.5;
-}
-.chat-composer-stream-actions {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  justify-content: flex-end;
-}
-.chat-composer-queue-action {
-  min-height: 28px;
-  padding: 3px 9px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--bg-panel) !important;
-  color: var(--text-muted) !important;
-  font-size: calc(11px * var(--chat-font-scale, 1)) !important;
-  font-weight: 500 !important;
-}
-.chat-composer-queue-action:disabled {
-  opacity: 0.45;
-}
-.chat-composer-queue-action:hover:not(:disabled) {
-  background: var(--bg-hover) !important;
-  color: var(--text) !important;
 }
 .composer-toolbar-attach,
 .composer-toolbar-model,
@@ -5928,9 +6027,6 @@ html.dark .turn-changes {
   .composer-toolbar-model {
     max-width: min(50vw, 240px);
   }
-  .chat-composer-stream-actions {
-    flex-wrap: wrap;
-  }
   .chat-timeline {
     display: none;
   }
@@ -6750,5 +6846,357 @@ html.dark .turn-changes {
   .github-clone-progress-track.is-indeterminate .github-clone-progress-fill {
     animation: none;
     transform: none;
+  }
+}
+
+/* The mirror keeps native textarea selection and IME behavior while decorating references. */
+.chat-composer-editor {
+  position: relative;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.chat-composer-editor textarea,
+.chat-composer-reference-mirror {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 2px;
+  font-family: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.chat-composer-editor textarea {
+  position: relative;
+  display: block;
+}
+/* The editable text is transparent and the visible ink sits in the mirror
+   underneath. A translucent selection keeps that ink legible. */
+.chat-composer-editor textarea::selection {
+  color: transparent;
+  background: rgba(74, 120, 211, 0.26);
+}
+html.dark .chat-composer-editor textarea::selection {
+  background: rgba(135, 175, 255, 0.35);
+}
+.chat-composer-reference-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text);
+}
+/* References are quiet inline links, matching the transcript and composer. */
+.chat-reference-tag {
+  --reference-color: #365da9;
+  --text-dim: var(--reference-color);
+  color: var(--reference-color);
+  background: transparent;
+  box-shadow: none;
+}
+html.dark .chat-reference-tag {
+  --reference-color: #91b5ff;
+}
+.chat-reference-prefix {
+  position: relative;
+  color: transparent;
+}
+.chat-reference-icon {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  transform: translateY(-50%);
+  color: var(--reference-color);
+  pointer-events: none;
+}
+.chat-reference-icon svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+.chat-reference-tag[data-reference-kind="skill"] .chat-reference-icon {
+  right: 6px;
+}
+.dsh-skill-invocation {
+  border: 0;
+  background: transparent;
+}
+.dsh-skill-toggle {
+  width: auto;
+  padding: 0;
+  gap: 5px;
+  background: transparent;
+  color: #365da9;
+}
+.dsh-skill-icon,
+.dsh-skill-kind,
+.dsh-skill-name {
+  color: inherit;
+}
+.dsh-skill-kind {
+  display: none;
+}
+html.dark .dsh-skill-toggle {
+  color: #91b5ff;
+}
+.dsh-skill-name {
+  font-size: inherit;
+  font-weight: inherit;
+}
+.chat-composer-editor textarea,
+.chat-composer-reference-mirror {
+  word-spacing: 3px;
+}
+
+.composer-pending-list {
+  display: grid;
+  gap: 1px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--border);
+}
+.composer-pending-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px 10px 14px;
+  background: var(--bg-panel);
+}
+.composer-pending-content {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: calc(13px * var(--chat-font-scale, 1));
+  line-height: 1.5;
+  color: var(--text);
+}
+.composer-pending-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.composer-pending-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+.composer-pending-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+.composer-pending-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  white-space: nowrap;
+  cursor: pointer;
+}
+.composer-pending-actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.composer-pending-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.composer-pending-actions .composer-pending-remove {
+  padding: 6px;
+}
+@media (max-width: 640px) {
+  .composer-pending-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .composer-pending-actions {
+    align-self: flex-end;
+  }
+}
+
+/* Session-owned background tasks */
+.app-topbar-title:has(+ .session-background) {
+  flex: 0 1 auto;
+}
+.session-background {
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: 12px;
+  margin-right: auto;
+  -webkit-app-region: no-drag;
+}
+.session-background-trigger,
+.session-background-group button,
+.session-background-command,
+.session-background-stop,
+.session-background-expand {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.session-background-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.session-background-trigger:hover,
+.session-background-stop:hover,
+.session-background-expand:hover {
+  background: var(--bg-hover);
+}
+.session-background-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 1100;
+  width: min(620px, calc(100vw - 40px));
+  max-height: min(420px, 65vh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  box-shadow: 0 10px 32px #0002;
+  font-size: 11px;
+}
+.session-background-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 9px;
+  color: var(--text-dim);
+}
+.session-background-group button {
+  color: var(--text-dim);
+  padding: 0 2px;
+  font-size: inherit;
+}
+.session-background-group button:hover {
+  color: var(--text);
+}
+.session-background-row {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  padding: 5px 8px;
+}
+.session-background-row:hover {
+  background: var(--bg-hover);
+  border-radius: 6px;
+}
+.session-background-dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #60a5fa;
+}
+.session-background-dot[data-state="ready"],
+.session-background-dot[data-state="exited"] {
+  background: #4ade80;
+}
+.session-background-dot[data-state="failed"],
+.session-background-dot[data-state="lost"] {
+  background: #f87171;
+}
+.session-background-dot[data-state="killed"],
+.session-background-dot[data-state="reaped"] {
+  background: #fbbf24;
+}
+.session-background-kind,
+.session-background-duration {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+.session-background-command {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+}
+.session-background-status {
+  min-width: 0;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.session-background-stop,
+.session-background-expand {
+  display: grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.session-background-stop:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.session-background-details {
+  display: grid;
+  gap: 6px;
+  margin: 0 8px 7px 24px;
+  padding: 9px;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+.session-background-details code,
+.session-background-details pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+}
+.session-background-error {
+  padding: 8px;
+  color: #f87171;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .session-background {
+    margin-left: 4px;
+  }
+  .session-background-popover {
+    left: auto;
+    right: 0;
+  }
+  .session-background-kind,
+  .session-background-status {
+    display: none;
   }
 }

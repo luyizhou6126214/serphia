@@ -15,6 +15,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { useSessionToolSelection } from "./useSessionToolSelection";
 import { useSessionEvents } from "./useSessionEvents";
 import { requestAutoSessionTitle, shouldAutoTitleMessage } from "../lib/auto-session-title";
+import { sessionTitleMessage } from "@shared/session-title-source";
 
 import {
   appendLocalHistoryMessage,
@@ -789,7 +790,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             if (shouldAutoTitleMessage(trimmedMessage)) {
               void requestAutoSessionTitle({
                 sessionId: sid,
-                message: trimmedMessage,
+                message: sessionTitleMessage(trimmedMessage),
                 ...(titleModel ? { provider: titleModel.provider, modelId: titleModel.modelId } : {}),
               });
             }

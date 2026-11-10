@@ -109,3 +109,60 @@ test("read-only totals match the SDK across branches, compaction and non-message
     assert.equal(result[key], sdk[key], key);
   }
 });
+
+test("tokensPerSecond folds timed assistant steps and ignores untimed usage", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "pi-stats-speed-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const manager = SessionManager.create(directory, directory);
+  const timedUsage = (output) => ({
+    ...usage(0),
+    output,
+    totalTokens: output,
+  });
+  const assistant = (timestamp, output, durationMs) => ({
+    role: "assistant",
+    content: [{ type: "text", text: "fixture" }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "claude-sonnet-4-5",
+    stopReason: "stop",
+    timestamp,
+    usage: timedUsage(output),
+    ...(durationMs === undefined ? {} : { durationMs }),
+  });
+  manager.appendMessage(assistant(1, 100, 2_000));
+  manager.appendMessage(assistant(2, 50, 1_000));
+  manager.appendMessage(assistant(3, 500));
+  manager.appendMessage({
+    role: "toolResult",
+    toolName: "read",
+    toolCallId: "fixture",
+    content: [{ type: "text", text: "fixture result" }],
+    isError: false,
+    timestamp: 4,
+    durationMs: 750,
+  });
+
+  const result = buildSessionStats(manager.getEntries(), { sessionId: manager.getSessionId() });
+  assert.equal(result.tokensPerSecond, 50);
+  assert.equal(result.llmDurationMs, 3_000);
+  assert.equal(result.toolDurationMs, 750);
+});
+
+test("tokensPerSecond stays absent for legacy sessions without timings", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "pi-stats-legacy-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const manager = SessionManager.create(directory, directory);
+  manager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "fixture" }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "claude-sonnet-4-5",
+    stopReason: "stop",
+    timestamp: 1,
+    usage: usage(10),
+  });
+  const result = buildSessionStats(manager.getEntries(), { sessionId: manager.getSessionId() });
+  assert.equal(result.tokensPerSecond, undefined);
+});

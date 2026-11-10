@@ -437,11 +437,16 @@ test("streaming image queue attempts keep the complete draft in the composer", a
     );
   });
 
-  const followUpButton = renderer.root
-    .findAllByType("button")
-    .find((button) => button.children.some((child) => child === "Follow-up"));
-  assert.ok(followUpButton);
-  await act(async () => followUpButton.props.onClick());
+  assert.equal(
+    renderer.root.findAllByType("button").some((button) => button.children.includes("Follow-up")),
+    false,
+  );
+  await act(async () =>
+    renderer.root.findByType("textarea").props.onKeyDown({
+      ...keyboardEvent("Enter"),
+      currentTarget: textareaNode,
+    }),
+  );
 
   assert.deepEqual(queued, []);
   assert.equal(renderer.root.findByType("textarea").props.value, "send after the current response");
@@ -525,4 +530,90 @@ test("a fifth image is rejected with the image limit message instead of a storag
     if (revokeObjectUrlDescriptor) Object.defineProperty(URL, "revokeObjectURL", revokeObjectUrlDescriptor);
     else delete URL.revokeObjectURL;
   }
+});
+
+test("a second slash skill completes at the caret without replacing existing references", async () => {
+  const textareaNode = {
+    focus() {},
+    scrollHeight: 24,
+    selectionEnd: 0,
+    selectionStart: 0,
+    setSelectionRange(start, end) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+    },
+    style: {},
+    value: "",
+  };
+  let renderer;
+  await act(async () => {
+    renderer = create(
+      createElement(ChatInput, {
+        cwd: "/workspace/project",
+        isStreaming: false,
+        onAbort() {},
+        onSend() {},
+        slashCommands: [{ name: "skill:second", description: "Second skill", source: "skill" }],
+      }),
+      { createNodeMock: (element) => (element.type === "textarea" ? textareaNode : null) },
+    );
+  });
+  textareaNode.value = "/skill:first @file.ts /ski existing text";
+  textareaNode.selectionStart = textareaNode.selectionEnd = textareaNode.value.indexOf(" existing");
+  await act(async () => renderer.root.findByType("textarea").props.onChange({ target: textareaNode }));
+  assert.ok(renderer.root.findAllByType("button").some((button) => renderedText(button).includes("second")));
+  await act(async () => renderer.root.findByType("textarea").props.onKeyDown(keyboardEvent("Enter")));
+  assert.equal(renderer.root.findByType("textarea").props.value, "/skill:first @file.ts /skill:second  existing text");
+  await act(async () => renderer.unmount());
+});
+
+test("staged messages remain available to send if the current run finishes", async () => {
+  const sent = [];
+  const node = {
+    value: "",
+    selectionStart: 0,
+    selectionEnd: 0,
+    scrollHeight: 24,
+    style: {},
+    focus() {},
+    setSelectionRange() {},
+  };
+  const props = {
+    draftKey: `pending-idle-${Date.now()}`,
+    isStreaming: true,
+    onAbort() {},
+    onSteer() {},
+    onFollowUp() {},
+    onSend(message) {
+      sent.push(message);
+    },
+  };
+  let renderer;
+  await act(async () => {
+    renderer = create(createElement(ChatInput, props), {
+      createNodeMock: (element) => (element.type === "textarea" ? node : null),
+    });
+  });
+  node.value = "keep this pending";
+  node.selectionStart = node.selectionEnd = node.value.length;
+  await act(async () => renderer.root.findByType("textarea").props.onChange({ target: node }));
+  await act(async () =>
+    renderer.root.findByType("textarea").props.onKeyDown({ ...keyboardEvent("Enter"), currentTarget: node }),
+  );
+  assert.deepEqual(sent, []);
+  await act(async () =>
+    renderer.update(
+      createElement(ChatInput, { ...props, isStreaming: false, onSteer: undefined, onFollowUp: undefined }),
+    ),
+  );
+  assert.ok(renderer.root.findAll((item) => item.props.className === "composer-pending-row").length);
+  const panel = renderer.root.find((item) => item.props.className === "composer-pending-actions");
+  const sendButton = panel.findAllByType("button").find((button) => renderedText(button) === "Send");
+  assert.ok(sendButton);
+  await act(async () => {
+    await sendButton.props.onClick();
+  });
+  assert.deepEqual(sent, ["keep this pending"]);
+  assert.equal(renderer.root.findAll((item) => item.props.className === "composer-pending-row").length, 0);
+  await act(async () => renderer.unmount());
 });

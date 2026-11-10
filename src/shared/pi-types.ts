@@ -57,6 +57,15 @@ export interface SessionStatsInfo {
   cost: number;
   modelUsage?: Array<{ provider: string; model: string; tokens: number; cost: number }>;
   contextUsage?: ContextUsage;
+  /**
+   * Average output throughput over assistant steps that persist both a
+   * duration and output usage. Undefined for legacy sessions without timing.
+   */
+  tokensPerSecond?: number;
+  /** Summed wall time of assistant responses that persisted a duration. */
+  llmDurationMs?: number;
+  /** Summed wall time of tool executions that persisted a duration. */
+  toolDurationMs?: number;
 }
 
 interface PromptTemplateLike {
@@ -67,6 +76,8 @@ interface PromptTemplateLike {
 
 interface SkillLike {
   name: string;
+  filePath?: string;
+  baseDir?: string;
   description?: string;
   sourceInfo: SlashCommandInfo["sourceInfo"];
 }

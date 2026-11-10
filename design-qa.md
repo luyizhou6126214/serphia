@@ -115,3 +115,15 @@ final result: passed
 - 未覆盖：未在真实 Electron 窗口内复验（无会话数据、无原生截图通道），上述结论仅针对浏览器预览与测试。
 
 final result: passed
+
+---
+
+# Inline references — 2026-11-10
+
+- Reference: user-provided Codex inline-reference image, with a skill, a TSX file and a Rust file on a white background.
+- Implementation: running Serphia Electron development window, light theme, with the same three references in the composer. The reference and the live window capture were emitted together for comparison; the source is a cropped strip while the implementation is a full desktop window.
+- First comparison: the overall blue, unboxed treatment matched, but the Rust file still used a generic labeled document icon. Replaced the TSX and Rust examples with their respective Simple Icons and repeated the comparison.
+- Final comparison: blue text, unboxed references, cube, React and Rust icons and baseline alignment match the reference. The composer retains its existing font scale and padding, and the native textarea retains the width of hidden source prefixes to keep the caret aligned. Remaining P3: spacing follows the editable source text and is not pixel-identical to the cropped reference.
+- Interaction: automated tests cover icon selection, autocomplete, deletion and arrow navigation; the live draft was restored after inspection.
+
+final result: passed

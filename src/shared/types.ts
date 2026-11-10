@@ -85,6 +85,8 @@ export interface AssistantMessage {
   stopReason?: string;
   errorMessage?: string;
   timestamp?: number;
+  /** Wall time from request start to response end, as persisted by Pi. */
+  durationMs?: number;
   usage?: {
     input: number;
     output: number;
@@ -108,6 +110,8 @@ export interface ToolResultMessage {
   isError?: boolean;
   details?: unknown;
   usage?: Usage;
+  /** Wall time the tool's execution took, as persisted by Pi. */
+  durationMs?: number;
   timestamp?: number;
 }
 
