@@ -1,9 +1,13 @@
 import { call } from "@/lib/api-client";
+import { useGSAP } from "@gsap/react";
+import { gsap } from "gsap";
 import { useEffect, useState, useCallback, useRef, type CSSProperties } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { useI18n } from "@/i18n";
 import { getSessionDisplayTitle } from "@/lib/session-list";
 import { formatNumber, formatRelativeDateTime } from "@/lib/locale-format";
+
+gsap.registerPlugin(useGSAP);
 
 export interface SessionTreeNode {
   session: SessionInfo;
@@ -125,6 +129,27 @@ export function SessionTreeItem({
         </div>
       )}
     </div>
+  );
+}
+
+function RunningSessionHalo() {
+  const sweepRef = useRef<HTMLSpanElement>(null);
+
+  useGSAP(() => {
+    const sweep = sweepRef.current;
+    if (!sweep) return;
+
+    const motion = gsap.matchMedia();
+    motion.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.to(sweep, { xPercent: 300, duration: 2.45, ease: "none", repeat: -1 });
+    });
+    return () => motion.revert();
+  });
+
+  return (
+    <span className="sidebar-session-halo" aria-hidden="true">
+      <span className="sidebar-session-halo-sweep" ref={sweepRef} />
+    </span>
   );
 }
 
@@ -301,7 +326,7 @@ function SessionItem({
   return (
     <div
       role="listitem"
-      className={`sidebar-session-row${isSelected ? " is-selected" : ""}`}
+      className={`sidebar-session-row${isSelected ? " is-selected" : ""}${isRunning && !renaming ? " is-running" : ""}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -355,6 +380,7 @@ function SessionItem({
       ) : (
         /* ── Normal view ── */
         <>
+          {isRunning && <RunningSessionHalo />}
           <button
             type="button"
             onClick={() => {

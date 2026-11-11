@@ -3,6 +3,7 @@ import {
   getProcessStartFingerprint,
   processGroupExists,
   terminatePosixProcessGroup,
+  waitForProcessGroupExit,
 } from "../../shared/node/process-tree.ts";
 import { readReaperJournal, validateReaperRecord, writeReaperJournal } from "./reaper-journal.ts";
 import { spawn } from "node:child_process";
@@ -354,8 +355,10 @@ export class ManagedProcessReaper {
     if (!this.groupExists(record.pgid)) return "removed";
     const fingerprint = await this.fingerprint(record.pid);
     if (!fingerprint || fingerprint !== record.startFingerprint) {
-      // The group may have exited while the asynchronous identity query was running.
+      // The worker can exit on Host disconnect while its process group is still
+      // draining. Wait for disappearance without signalling an unverified group.
       if (!this.groupExists(record.pgid)) return "removed";
+      if (!fingerprint && (await waitForProcessGroupExit(record.pgid, 1500, this.groupExists))) return "removed";
       this.log(`managed process reap refused identity mismatch process=${this.safeId(record.processId)}`);
       return "identity-uncertain";
     }

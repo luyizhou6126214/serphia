@@ -14,6 +14,7 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markd
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlight";
 import { useTheme } from "@/hooks/useTheme";
 import { useCopyFeedback } from "@/hooks/useCopyFeedback";
+import { useStreamingMarkdown } from "@/hooks/useStreamingMarkdown";
 import { resolveLocalFileHref } from "@/lib/file-links";
 import { useMarkdownPlugins } from "@/lib/markdown";
 import { shouldHighlightCode } from "@/lib/code-highlight-policy";
@@ -180,6 +181,8 @@ function ReactChildrenWithReferences(children: ReactNode): ReactNode {
   return children;
 }
 
+const MemoizedReactMarkdown = memo(ReactMarkdown);
+
 const markdownComponents: Components = {
   p: MarkdownParagraph,
   code: MarkdownCode,
@@ -208,12 +211,8 @@ export const MarkdownBody = memo(function MarkdownBody({
   variant = "base",
   renderReferences,
 }: MarkdownBodyProps) {
-  // Bound synchronous parsing while content grows; settlement renders the original source in full.
-  const lightweightPreview = isStreaming && children.length > 2048;
-  const normalizedMarkdown = useMemo(
-    () => (lightweightPreview ? "" : normalizeDisplayMath(children)),
-    [children, lightweightPreview],
-  );
+  const visibleMarkdown = useStreamingMarkdown(children, isStreaming);
+  const normalizedMarkdown = useMemo(() => normalizeDisplayMath(visibleMarkdown), [visibleMarkdown]);
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(normalizedMarkdown);
   const renderContext = useMemo(
     () => ({ isStreaming, cwd, imageBasePath, sourceSessionId, onOpenFile, renderReferences }),
@@ -228,20 +227,14 @@ export const MarkdownBody = memo(function MarkdownBody({
             .filter(Boolean)
             .join(" ")}
         >
-          {lightweightPreview ? (
-            <div data-streaming-preview style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {children}
-            </div>
-          ) : (
-            <ReactMarkdown
-              remarkPlugins={remarkPlugins}
-              rehypePlugins={rehypePlugins}
-              urlTransform={fileAwareUrlTransform}
-              components={markdownComponents}
-            >
-              {normalizedMarkdown}
-            </ReactMarkdown>
-          )}
+          <MemoizedReactMarkdown
+            remarkPlugins={remarkPlugins}
+            rehypePlugins={rehypePlugins}
+            urlTransform={fileAwareUrlTransform}
+            components={markdownComponents}
+          >
+            {normalizedMarkdown}
+          </MemoizedReactMarkdown>
         </div>
       </MarkdownRenderContext.Provider>
     </SessionProfiler>
@@ -451,13 +444,11 @@ const CodeBlock = memo(function CodeBlock({
         <SyntaxHighlighter
           language={lang || "text"}
           style={isDark ? vscDarkPlus : vs}
-          showLineNumbers
-          lineNumberStyle={{ color: "var(--dsw-alias-label-caption, var(--text-dim))", fontStyle: "normal" }}
           customStyle={{
             margin: 0,
-            padding: "12px 16px",
-            fontSize: scaledChatFont(12),
-            lineHeight: "18px",
+            padding: "16px",
+            fontSize: scaledChatFont(13),
+            lineHeight: "1.6",
             borderRadius: 0,
             background: "transparent",
           }}
@@ -469,9 +460,9 @@ const CodeBlock = memo(function CodeBlock({
         <pre
           style={{
             margin: 0,
-            padding: "12px 16px",
-            fontSize: scaledChatFont(12),
-            lineHeight: "18px",
+            padding: "16px",
+            fontSize: scaledChatFont(13),
+            lineHeight: "1.6",
             overflow: "auto",
             whiteSpace: "pre",
             fontFamily: "var(--font-mono)",

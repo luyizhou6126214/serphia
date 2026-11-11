@@ -113,3 +113,7 @@ run(
     CSC_IDENTITY_AUTO_DISCOVERY: "true",
   },
 );
+
+for (const arch of architectures) {
+  run("npm", ["run", "check:packaged-toolchains", "--", `darwin-${arch}`, "--static"]);
+}

@@ -56,6 +56,8 @@ extraResources:
     to: toolchains/core-catalog.json
   - from: build/toolchains/core/${platform}-${arch}
     to: toolchains/core/${platform}-${arch}
+  - from: build/ocr/bin/${platform}-${arch}
+    to: ocr/bin/${platform}-${arch}
   - from: build/herdr/runtime-catalog.json
     to: herdr/runtime-catalog.json
 

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Bot, ChevronDown, Layers3, RefreshCw, Terminal, X } from "lucide-react";
 import { call } from "@/lib/api-client";
 import { useHerdrFleet } from "@/hooks/useHerdrFleet";
 import { useHerdrRuntime } from "@/hooks/useHerdrRuntime";
+import { useQuickToolbarPopoverMotion } from "@/hooks/useQuickToolbarPopoverMotion";
 import { useI18n } from "@/i18n";
 import {
   getQuickChannelBindingPopoverLayout,
@@ -12,6 +14,8 @@ import type { HerdrAgentState } from "@contract/herdr";
 import { countHerdrAgents, herdrPaneMatchesFilter } from "./fleet-selectors";
 import { getFleetPresentation, getFleetTriggerSpacing } from "./fleet-presentation";
 import { herdrErrorLabel, herdrRuntimeStatusLabel, publicHerdrErrorLabel } from "./herdr-ui-copy";
+import "../QuickToolbar.css";
+import "./QuickHerdrFleet.css";
 
 const FILTER_STATES: Array<HerdrAgentState | "all"> = ["all", "working", "blocked", "idle", "done", "unknown"];
 
@@ -19,10 +23,12 @@ export function QuickHerdrFleet({
   isMobile,
   alignRight = false,
   rightInset = 0,
+  chatAgentPaneIds,
 }: {
   isMobile: boolean;
   alignRight?: boolean;
   rightInset?: number;
+  chatAgentPaneIds?: readonly string[];
 }) {
   const { t } = useI18n();
   const { runtime, loading: runtimeLoading, error: runtimeError, refresh: refreshRuntime } = useHerdrRuntime();
@@ -38,6 +44,12 @@ export function QuickHerdrFleet({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const dialogId = useId();
+  const titleId = `${dialogId}-title`;
+  const descriptionId = `${dialogId}-description`;
+  const available = runtimeLoading || (runtime ? runtime.status !== "disabled" : Boolean(runtimeError));
+  const showPopover = available && open && popoverLayout !== null;
+
+  useQuickToolbarPopoverMotion(dialogRef, showPopover);
 
   const stateLabel = useCallback(
     (state: HerdrAgentState | "all") => {
@@ -55,6 +67,7 @@ export function QuickHerdrFleet({
     return countHerdrAgents(fleet?.panes ?? []);
   }, [fleet?.panes]);
   const agentCount = Object.values(counts).reduce((total, count) => total + count, 0);
+  const chatPaneIds = useMemo(() => new Set(chatAgentPaneIds), [chatAgentPaneIds]);
 
   const visiblePaneIds = useMemo(
     () => new Set((fleet?.panes ?? []).filter((pane) => herdrPaneMatchesFilter(pane, filter)).map((pane) => pane.id)),
@@ -95,7 +108,9 @@ export function QuickHerdrFleet({
       closePopover();
     };
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") closePopover(true);
+      if (event.key === "Escape" && !dialogRef.current?.querySelector(".quick-herdr-fleet-filter:is(:open)")) {
+        closePopover(true);
+      }
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -122,8 +137,7 @@ export function QuickHerdrFleet({
     };
   }, [open, updatePopoverLayout]);
 
-  if (!runtimeLoading && runtime?.status === "disabled") return null;
-  if (!runtimeLoading && !runtime && !runtimeError) return null;
+  if (!available) return null;
 
   const triggerState: HerdrAgentState = fleet?.stale
     ? "unknown"
@@ -136,16 +150,12 @@ export function QuickHerdrFleet({
           : counts.done
             ? "done"
             : "unknown";
-  const emphasizedCount = counts.blocked || counts.working;
-  const triggerLabel = isMobile
-    ? t("agentFleetShort", "Fleet")
-    : fleet?.stale
-      ? `${t("agentFleet", "Agent Fleet")} · ${t("herdrSnapshotStale", "Snapshot stale")}`
-      : ready && loading && !fleet
-        ? t("agentFleet", "Agent Fleet")
-        : emphasizedCount
-          ? `${t("agentFleet", "Agent Fleet")} · ${emphasizedCount} ${stateLabel(triggerState)}`
-          : `${t("agentFleet", "Agent Fleet")} · ${agentCount}`;
+  const title = t("agentFleet", "Agent Collaboration");
+  const countLabel = (
+    agentCount === 1 ? t("herdrAgentCountOne", "{count} Agent") : t("herdrAgentCountOther", "{count} Agents")
+  ).replace("{count}", String(agentCount));
+  const fullTriggerLabel = fleet ? `${title} · ${countLabel}` : title;
+  const triggerLabel = isMobile ? (fleet ? countLabel : t("agentFleetShort", "Agents")) : fullTriggerLabel;
   const runtimeDetailBase = runtimeLoading
     ? t("loadingHerdr", "Loading Herdr…")
     : ready
@@ -154,6 +164,7 @@ export function QuickHerdrFleet({
   const runtimeDetail = fleet?.stale
     ? `${runtimeDetailBase} · ${t("herdrSnapshotStale", "Snapshot stale")}`
     : runtimeDetailBase;
+  const panelDetail = fleet ? `${countLabel} · ${runtimeDetail}` : runtimeDetail;
   const visibleError = runtime?.error
     ? publicHerdrErrorLabel(runtime.error, t)
     : (retryError ?? (error ? herdrErrorLabel(error, t) : runtimeError ? herdrErrorLabel(runtimeError, t) : null));
@@ -173,61 +184,31 @@ export function QuickHerdrFleet({
 
   return (
     <>
-      <div
-        ref={rootRef}
-        style={{
-          position: "relative",
-          ...getFleetTriggerSpacing(alignRight, rightInset),
-          minWidth: 0,
-          flexShrink: 1,
-        }}
-      >
+      <div ref={rootRef} className="quick-herdr-fleet-trigger" style={getFleetTriggerSpacing(alignRight, rightInset)}>
         <button
           ref={triggerRef}
           type="button"
           data-testid="herdr-fleet-indicator"
+          data-fleet-state={ready ? triggerState : runtime?.status === "error" ? "blocked" : undefined}
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? dialogId : undefined}
-          title={`${t("agentFleet", "Agent Fleet")} · ${runtimeDetail}`}
+          aria-label={isMobile ? fullTriggerLabel : undefined}
+          title={`${title} · ${panelDetail}`}
           onClick={() => setOpen((value) => !value)}
-          style={{
-            minWidth: 0,
-            maxWidth: isMobile ? 104 : 240,
-            padding: "5px 9px",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            border: "1px solid var(--border)",
-            borderRadius: 999,
-            background: ready ? "color-mix(in srgb, var(--accent) 7%, var(--bg-panel))" : "var(--bg)",
-            color: "var(--text-muted)",
-            fontSize: 11,
-            whiteSpace: "nowrap",
-            cursor: "pointer",
-            overflow: "hidden",
-          }}
+          className="quick-toolbar-trigger"
+          style={{ maxWidth: isMobile ? 144 : 240 }}
         >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 7,
-              height: 7,
-              flexShrink: 0,
-              borderRadius: "50%",
-              background: ready ? statusColor(triggerState) : runtime?.status === "error" ? "#dc2626" : "#6b7280",
-              boxShadow: ready && triggerState === "working" ? "0 0 0 2px rgba(37,99,235,.16)" : "none",
-            }}
-          />
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{triggerLabel}</span>
-          <span aria-hidden="true" style={{ fontSize: 9, opacity: 0.7 }}>
-            ▾
+          <span className="quick-toolbar-trigger-icon" aria-hidden="true">
+            <Bot size={14} />
+            {(ready || runtime?.status === "error") && <span className="quick-toolbar-trigger-status" />}
           </span>
+          <span className="quick-toolbar-trigger-label">{triggerLabel}</span>
+          <ChevronDown className="quick-toolbar-trigger-chevron" size={11} aria-hidden="true" />
         </button>
       </div>
 
-      {open &&
-        popoverLayout &&
+      {showPopover &&
         typeof document !== "undefined" &&
         createPortal(
           <div
@@ -235,62 +216,57 @@ export function QuickHerdrFleet({
             id={dialogId}
             role="dialog"
             tabIndex={-1}
-            aria-label={t("agentFleet", "Agent Fleet")}
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
             data-testid="herdr-fleet-popover"
             data-placement={popoverLayout.placement}
+            className="quick-toolbar-popover chat-appearance-scope"
             style={{
-              position: "fixed",
               top: popoverLayout.top,
               left: popoverLayout.left,
-              zIndex: 250,
               width: popoverLayout.width,
               maxHeight: popoverLayout.maxHeight,
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-              border: "1px solid var(--border)",
-              borderRadius: 9,
-              background: "var(--bg)",
-              boxShadow: "0 12px 34px rgba(0,0,0,.22)",
-              outline: "none",
             }}
           >
-            <div style={{ flexShrink: 0, padding: "12px 12px 10px", borderBottom: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>
-                    {t("agentFleet", "Agent Fleet")}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 3,
-                      color: "var(--text-dim)",
-                      fontSize: 10,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {runtimeDetail}
-                  </div>
+            <span className="quick-toolbar-halo" aria-hidden="true" />
+            <div className="quick-herdr-fleet-controls">
+              <header className="quick-toolbar-header">
+                <span className="quick-toolbar-mark" aria-hidden="true">
+                  <Bot size={19} />
+                </span>
+                <div className="quick-herdr-fleet-copy">
+                  <h2 id={titleId}>{title}</h2>
+                  <p id={descriptionId} title={panelDetail}>
+                    {panelDetail}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  disabled={loading || runtimeLoading}
-                  aria-label={t("refresh", "Refresh")}
-                  title={t("refresh", "Refresh")}
-                  onClick={() => void (ready ? refresh() : refreshRuntime())}
-                  style={iconButtonStyle}
-                >
-                  ↻
-                </button>
-              </div>
+                <div className="quick-herdr-fleet-header-actions">
+                  <button
+                    type="button"
+                    className="quick-toolbar-icon-button"
+                    disabled={loading || runtimeLoading}
+                    aria-label={t("refresh", "Refresh")}
+                    title={t("refresh", "Refresh")}
+                    onClick={() => void (ready ? refresh() : refreshRuntime())}
+                  >
+                    <RefreshCw size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-toolbar-icon-button"
+                    aria-label={t("close", "Close")}
+                    onClick={() => closePopover(true)}
+                  >
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              </header>
               {hasFleet && (
                 <select
                   value={filter}
                   onChange={(event) => setFilter(event.currentTarget.value as typeof filter)}
                   aria-label={t("filterAgentState", "Filter agent state")}
-                  style={{ width: "100%", height: 30, marginTop: 10, fontSize: 11 }}
+                  className="quick-herdr-fleet-filter"
                 >
                   {FILTER_STATES.map((state) => (
                     <option key={state} value={state}>
@@ -301,14 +277,14 @@ export function QuickHerdrFleet({
               )}
             </div>
 
-            <div style={{ minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", padding: 9 }}>
+            <div className="quick-herdr-fleet-content">
               {visibleError && (
-                <div role="alert" style={errorStyle}>
+                <div role="alert" className="quick-toolbar-error">
                   {visibleError}
                 </div>
               )}
               {!runtimeLoading && runtime && runtime.status !== "disabled" && !ready && (
-                <div style={hintStyle}>
+                <div className="quick-toolbar-empty quick-herdr-fleet-hint" data-quick-toolbar-row>
                   <div>
                     {runtime?.mode === "managed"
                       ? t(
@@ -320,16 +296,22 @@ export function QuickHerdrFleet({
                   <button
                     type="button"
                     disabled={retrying}
-                    style={{ ...buttonStyle, marginTop: 10 }}
+                    className="quick-toolbar-action"
                     onClick={() => void retryConnection()}
                   >
                     {retrying ? t("connecting", "Connecting…") : t("retryConnection", "Retry connection")}
                   </button>
                 </div>
               )}
-              {showEmpty && <div style={hintStyle}>{t("noHerdrPanes", "This Herdr Session has no panes yet.")}</div>}
+              {showEmpty && (
+                <div className="quick-toolbar-empty" data-quick-toolbar-row>
+                  {t("noHerdrPanes", "This Herdr Session has no panes yet.")}
+                </div>
+              )}
               {hasFleet && visiblePaneIds.size === 0 && (
-                <div style={hintStyle}>{t("noHerdrPanesForState", "No panes match this agent state.")}</div>
+                <div className="quick-toolbar-empty">
+                  {t("noHerdrPanesForState", "No panes match this agent state.")}
+                </div>
               )}
               {hasFleet &&
                 fleet?.workspaces.map((workspace) => {
@@ -346,72 +328,59 @@ export function QuickHerdrFleet({
                     .filter(({ panes }) => panes.length > 0);
                   if (visibleTabs.length === 0) return null;
                   return (
-                    <section key={workspace.id} style={{ marginBottom: 12 }}>
-                      <div style={workspaceHeaderStyle}>
-                        <span aria-hidden="true">▾</span>
-                        <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {workspace.name || workspace.id}
-                        </strong>
-                      </div>
-                      {visibleTabs.map(({ tab, panes }) => (
-                        <div key={tab.id} style={{ margin: "4px 0 8px 9px" }}>
-                          <div style={{ color: "var(--text-dim)", fontSize: 10, padding: "3px 7px" }}>
-                            {tab.name || tab.id}
+                    <section key={workspace.id} className="quick-herdr-fleet-workspace" data-stale={fleet.stale}>
+                      <h3>
+                        <Layers3 size={13} aria-hidden="true" />
+                        <span title={workspace.name || workspace.id}>{workspace.name || workspace.id}</span>
+                      </h3>
+                      {visibleTabs.map(({ tab, panes }) => {
+                        const tabLabel = t("herdrTabName", "Tab {name}").replace("{name}", () => tab.name || tab.id);
+                        return (
+                          <div key={tab.id} className="quick-herdr-fleet-tab">
+                            <div className="quick-herdr-fleet-tab-name" title={tabLabel}>
+                              {tabLabel}
+                            </div>
+                            {panes.map((pane) => {
+                              const state = pane.agent?.state ?? "unknown";
+                              const invokedByChat = Boolean(pane.agent && chatPaneIds.has(pane.id));
+                              const PaneIcon = pane.agent ? Bot : Terminal;
+                              const shell = t("shellPane", "Shell pane");
+                              const name = pane.agent?.name || pane.title || pane.id || shell;
+                              return (
+                                <div
+                                  key={pane.id}
+                                  className="quick-herdr-fleet-pane"
+                                  data-herdr-pane={pane.id}
+                                  data-quick-toolbar-row
+                                  data-fleet-state={state}
+                                  data-focused={pane.focused}
+                                  data-invoked-by-chat={invokedByChat || undefined}
+                                >
+                                  <span className="quick-toolbar-mark" aria-hidden="true">
+                                    <PaneIcon size={15} />
+                                  </span>
+                                  <div className="quick-herdr-fleet-copy">
+                                    <div className="quick-herdr-fleet-pane-name" title={name}>
+                                      {name}
+                                    </div>
+                                    <div className="quick-herdr-fleet-pane-meta">
+                                      <span className="quick-herdr-fleet-pane-kind">{pane.agent?.kind ?? shell}</span>
+                                      {invokedByChat && (
+                                        <span className="quick-herdr-fleet-chat-badge">
+                                          {t("herdrInvokedByChat", "Called by this chat")}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="quick-herdr-fleet-state">
+                                    {pane.agent ? stateLabel(state) : shell}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
-                          {panes.map((pane) => {
-                            const state = pane.agent?.state ?? "unknown";
-                            return (
-                              <div
-                                key={pane.id}
-                                data-herdr-pane={pane.id}
-                                style={{
-                                  width: "100%",
-                                  minHeight: 42,
-                                  marginTop: 3,
-                                  padding: "6px 8px",
-                                  display: "grid",
-                                  gridTemplateColumns: "8px minmax(0, 1fr) auto",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  textAlign: "left",
-                                  border: `1px solid ${pane.focused ? "color-mix(in srgb, var(--accent) 45%, var(--border))" : "transparent"}`,
-                                  borderRadius: 8,
-                                  background: pane.focused ? "var(--accent-soft)" : "transparent",
-                                  color: "var(--text)",
-                                  opacity: fleet.stale ? 0.65 : 1,
-                                }}
-                              >
-                                <span
-                                  aria-hidden="true"
-                                  style={{ ...statusDotStyle, background: statusColor(state) }}
-                                />
-                                <span style={{ minWidth: 0 }}>
-                                  <span
-                                    style={{
-                                      display: "block",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                      fontSize: 12,
-                                      fontWeight: pane.focused ? 650 : 450,
-                                    }}
-                                  >
-                                    {pane.agent?.name || pane.title || pane.id || t("shellPane", "Shell pane")}
-                                  </span>
-                                  <span
-                                    style={{ display: "block", marginTop: 2, color: "var(--text-dim)", fontSize: 9 }}
-                                  >
-                                    {pane.agent?.kind ?? t("shellPane", "Shell pane")}
-                                  </span>
-                                </span>
-                                <span style={{ color: "var(--text-muted)", fontSize: 9 }}>
-                                  {pane.agent ? stateLabel(state) : t("shellPane", "Shell pane")}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </section>
                   );
                 })}
@@ -422,49 +391,3 @@ export function QuickHerdrFleet({
     </>
   );
 }
-
-function statusColor(state?: HerdrAgentState): string {
-  if (state === "working") return "#2563eb";
-  if (state === "blocked") return "#dc2626";
-  if (state === "done") return "#16a34a";
-  if (state === "idle") return "#ca8a04";
-  return "#6b7280";
-}
-
-const buttonStyle: React.CSSProperties = {
-  minHeight: 32,
-  padding: "0 12px",
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  background: "var(--bg-panel)",
-  color: "var(--text)",
-  cursor: "pointer",
-  fontSize: 11,
-};
-const iconButtonStyle: React.CSSProperties = { ...buttonStyle, width: 28, minHeight: 28, padding: 0, fontSize: 15 };
-const workspaceHeaderStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 7,
-  alignItems: "center",
-  padding: "5px 7px",
-  color: "var(--text)",
-  fontSize: 11,
-};
-const statusDotStyle: React.CSSProperties = { width: 7, height: 7, borderRadius: "50%" };
-const hintStyle: React.CSSProperties = {
-  border: "1px dashed var(--border)",
-  borderRadius: 8,
-  padding: 12,
-  color: "var(--text-muted)",
-  fontSize: 11,
-  lineHeight: 1.6,
-};
-const errorStyle: React.CSSProperties = {
-  marginBottom: 9,
-  border: "1px solid rgba(239,68,68,.28)",
-  borderRadius: 8,
-  padding: 9,
-  color: "#ef4444",
-  fontSize: 10,
-  overflowWrap: "anywhere",
-};

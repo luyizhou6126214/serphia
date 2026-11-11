@@ -1,5 +1,5 @@
-import { useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
-import { Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
+import { getRecentProjects, useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
+import { CalendarClock, Moon, PanelLeft, PanelRight, ShieldCheck, Sun } from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
@@ -22,6 +22,8 @@ import {
 } from "react";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
+import { ScheduledTasksPage } from "./schedule/ScheduledTasksPage";
+import { CodeReviewPage } from "./code-review/CodeReviewPage";
 import { SessionInfoPanel } from "./SessionInfoPanel";
 import { SessionPresentationStore } from "@/lib/session-presentation-store";
 import { FileViewer } from "./FileViewer";
@@ -89,9 +91,10 @@ import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice 
 import type { TerminalShellInfo } from "@contract/terminal";
 
 const TERMINAL_PANEL_RATIO = 0.55;
-type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean };
+type PrimaryView = "sessions" | "schedule" | "review";
+type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean; primary: PrimaryView };
 const sameNavigationView = (a: NavigationView, b: NavigationView) =>
-  a.settings === b.settings && a.session?.id === b.session?.id && a.draftCwd === b.draftCwd;
+  a.settings === b.settings && a.primary === b.primary && a.session?.id === b.session?.id && a.draftCwd === b.draftCwd;
 
 const EMPTY_CHANNELS: ChannelsSnapshot = { accounts: [], statuses: [], pairings: [], bindings: [], activities: [] };
 
@@ -135,6 +138,15 @@ export function AppShell({
   const [sessionKey, setSessionKey] = useState(0);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [primaryView, setPrimaryView] = useState<PrimaryView>("sessions");
+  const scheduledOpen = primaryView === "schedule";
+  const reviewOpen = primaryView === "review";
+  const reviewVisible = reviewOpen && !settingsOpen;
+  const [reviewVisited, setReviewVisited] = useState(false);
+  useEffect(() => {
+    if (reviewVisible) setReviewVisited(true);
+  }, [reviewVisible]);
+  const sessionsOpen = primaryView === "sessions";
   const settingsTransitionRef = useRef<((action: () => void) => void) | null>(null);
   const registerSettingsTransition = useCallback((handler: ((action: () => void) => void) | null) => {
     settingsTransitionRef.current = handler;
@@ -534,7 +546,7 @@ export function AppShell({
   // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
   const suppressCwdBumpRef = useRef(false);
   const [navigationHistory, setNavigationHistory] = useState(() => ({
-    entries: [{ session: null, draftCwd: null, settings: false }] as NavigationView[],
+    entries: [{ session: null, draftCwd: null, settings: false, primary: "sessions" }] as NavigationView[],
     index: 0,
   }));
   const navigatingToRef = useRef<NavigationView | null>(null);
@@ -566,7 +578,12 @@ export function AppShell({
   }, [initialSessionRestored, selectedSession, newSessionCwd, defaultSessionRetry, t]);
 
   useEffect(() => {
-    const view: NavigationView = { session: selectedSession, draftCwd: newSessionCwd, settings: settingsOpen };
+    const view: NavigationView = {
+      session: selectedSession,
+      draftCwd: newSessionCwd,
+      settings: settingsOpen,
+      primary: primaryView,
+    };
     if (navigatingToRef.current) {
       if (sameNavigationView(view, navigatingToRef.current)) navigatingToRef.current = null;
       return;
@@ -574,7 +591,7 @@ export function AppShell({
     const replace = replaceHistoryEntryRef.current;
     replaceHistoryEntryRef.current = false;
     setNavigationHistory((history) => recordNavigation(history, view, sameNavigationView, replace));
-  }, [selectedSession, newSessionCwd, settingsOpen]);
+  }, [selectedSession, newSessionCwd, settingsOpen, primaryView]);
 
   const navigateHistory = useCallback(
     (direction: -1 | 1) => {
@@ -595,6 +612,11 @@ export function AppShell({
           router.replace(target.session ? `?session=${encodeURIComponent(target.session.id)}` : "/", { scroll: false });
         }
         setSettingsOpen(target.settings);
+        setPrimaryView(target.primary);
+        if (target.primary !== "sessions") {
+          setRightPanelOpen(false);
+          setActiveTopPanel(null);
+        }
       };
       if (settingsOpen && settingsTransitionRef.current) settingsTransitionRef.current(apply);
       else apply();
@@ -610,6 +632,7 @@ export function AppShell({
           const sessions = await sessionList.refresh();
           const found = sessions.find((s) => s.id === sessionId);
           if (found) {
+            setPrimaryView("sessions");
             setNewSessionCwd(null);
             setSelectedSession(found as SessionInfo);
             setSessionKey((k) => k + 1);
@@ -622,6 +645,7 @@ export function AppShell({
     });
     const offNew = window.piBridge?.onMenu?.("new-session", () => {
       if (activeCwd) {
+        setPrimaryView("sessions");
         setSelectedSession(null);
         setNewSessionCwd(activeCwd);
         setSessionKey((k) => k + 1);
@@ -645,6 +669,7 @@ export function AppShell({
     });
     // ISSUE-016: Switch Session palette — focus sidebar / open project list
     const offSwitch = window.piBridge?.onMenu?.("switch-session", () => {
+      setPrimaryView("sessions");
       setSidebarOpen(true);
       void sessionList.refresh().catch(() => {});
       setWorktreesRefreshKey((k) => k + 1);
@@ -708,6 +733,7 @@ export function AppShell({
       setSelectedSession(session);
       setSessionKey((k) => k + 1);
       setInitialSessionRestored(true);
+      if (!isRestore) setPrimaryView("sessions");
       // On mobile, collapse the overlay drawer so the chat is revealed after pick.
       if (isMobile && !isRestore) setSidebarOpen(false);
       if (isRestore) {
@@ -727,6 +753,7 @@ export function AppShell({
 
   const handleNewSession = useCallback(
     (_sessionId: string, cwd: string) => {
+      setPrimaryView("sessions");
       setActiveCwd(cwd);
       setSelectedSession(null);
       setNewSessionCwd(cwd);
@@ -845,6 +872,7 @@ export function AppShell({
         title: fileName,
         filePath,
         sourceSessionId,
+        reviewLocation: undefined,
       });
     },
     [showRightPanelTab],
@@ -980,7 +1008,7 @@ export function AppShell({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-      if (settingsOpen || browserAuthorization !== null) return;
+      if (settingsOpen || !sessionsOpen || browserAuthorization !== null) return;
       const key = event.key.toLowerCase();
       if (key === "p" && !event.shiftKey) {
         event.preventDefault();
@@ -995,7 +1023,7 @@ export function AppShell({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [browserAuthorization, openFilesTab, settingsOpen, startBrowserTab, startTerminalTab]);
+  }, [browserAuthorization, openFilesTab, sessionsOpen, settingsOpen, startBrowserTab, startTerminalTab]);
 
   const openSidebarSettings = (tab: SettingsTab) => {
     setSettingsInitialTab(tab);
@@ -1015,17 +1043,51 @@ export function AppShell({
       <div className="sidebar-rail-top">
         <button
           type="button"
-          className={`sidebar-rail-button${!settingsOpen ? " is-active" : ""}`}
+          className={`sidebar-rail-button${!settingsOpen && sessionsOpen ? " is-active" : ""}`}
           title={t("sessions", "Sessions")}
           aria-label={t("sessions", "Sessions")}
+          aria-current={!settingsOpen && sessionsOpen ? "page" : undefined}
           onClick={() =>
             leaveSettingsFor(() => {
+              setPrimaryView("sessions");
               setRightPanelOpen(false);
               setActiveTopPanel(null);
             })
           }
         >
           <HomeFilled />
+        </button>
+        <button
+          type="button"
+          className={`sidebar-rail-button${!settingsOpen && scheduledOpen ? " is-active" : ""}`}
+          title={t("scheduledTasks", "Scheduled tasks")}
+          aria-label={t("scheduledTasks", "Scheduled tasks")}
+          aria-current={!settingsOpen && scheduledOpen ? "page" : undefined}
+          onClick={() =>
+            leaveSettingsFor(() => {
+              setPrimaryView("schedule");
+              setRightPanelOpen(false);
+              setActiveTopPanel(null);
+            })
+          }
+        >
+          <CalendarClock size={18} strokeWidth={1.7} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className={`sidebar-rail-button${!settingsOpen && reviewOpen ? " is-active" : ""}`}
+          title={t("codeReview", "Code review")}
+          aria-label={t("codeReview", "Code review")}
+          aria-current={!settingsOpen && reviewOpen ? "page" : undefined}
+          onClick={() =>
+            leaveSettingsFor(() => {
+              setPrimaryView("review");
+              setRightPanelOpen(false);
+              setActiveTopPanel(null);
+            })
+          }
+        >
+          <ShieldCheck size={18} strokeWidth={1.7} aria-hidden="true" />
         </button>
       </div>
       <button
@@ -1057,6 +1119,9 @@ export function AppShell({
 
   const isWindows = window.piBridge?.platform === "win32";
   const isMac = window.piBridge?.platform === "darwin";
+  const sidebarVisible = sidebarOpen && sessionsOpen;
+  const rightPanelVisible = rightPanelOpen && !scheduledOpen;
+  const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && !scheduledOpen;
   const sessionHeader = (
     <>
       <div
@@ -1090,7 +1155,15 @@ export function AppShell({
               onSnapshotChange={setChannelSnapshot}
             />
           )}
-          {showChat && <QuickHerdrFleet isMobile={isMobile} alignRight={!selectedSession} />}
+          {showChat && (
+            <QuickHerdrFleet
+              isMobile={isMobile}
+              alignRight={!selectedSession}
+              chatAgentPaneIds={
+                presentation?.sessionId === selectedSession?.id ? presentation?.herdrAgentPaneIds : undefined
+              }
+            />
+          )}
           <SessionInfoPanel
             store={presentationStore}
             showChat={showChat}
@@ -1150,7 +1223,7 @@ export function AppShell({
     `}</style>
       <div className={`app-frame${isWindows ? " is-windows" : ""}${isMac ? " is-macos" : ""}`}>
         <header className="app-topbar">
-          <div className={`app-topbar-navigation${sidebarOpen && !isMobile ? " with-sidebar" : ""}`}>
+          <div className={`app-topbar-navigation${sidebarVisible && !isMobile ? " with-sidebar" : ""}`}>
             <button
               type="button"
               className="app-topbar-button"
@@ -1175,9 +1248,10 @@ export function AppShell({
               type="button"
               className="app-topbar-button"
               onClick={handleSidebarToggle}
+              disabled={!sessionsOpen && !settingsOpen}
               title={sidebarOpen ? t("hideSidebar", "Hide sidebar") : t("showSidebar", "Show sidebar")}
               aria-label={sidebarOpen ? t("hideSidebar", "Hide sidebar") : t("showSidebar", "Show sidebar")}
-              aria-expanded={sidebarOpen}
+              aria-expanded={settingsOpen ? sidebarOpen : sidebarVisible}
             >
               <PanelLeft size={16} strokeWidth={1.7} aria-hidden="true" />
             </button>
@@ -1204,7 +1278,7 @@ export function AppShell({
               ))}
             </nav>
           ) : (
-            sessionHeader
+            (sessionsOpen || settingsOpen) && sessionHeader
           )}
         </header>
         <div className="app-workspace" aria-hidden={settingsOpen || undefined} inert={settingsOpen || undefined}>
@@ -1217,8 +1291,8 @@ export function AppShell({
               inset: 0,
               zIndex: 199,
               background: "rgba(0,0,0,0.4)",
-              opacity: sidebarOpen ? 1 : 0,
-              pointerEvents: sidebarOpen ? "auto" : "none",
+              opacity: sidebarVisible ? 1 : 0,
+              pointerEvents: sidebarVisible ? "auto" : "none",
               transition: "opacity 0.25s ease",
             }}
           />
@@ -1227,9 +1301,9 @@ export function AppShell({
           {sidebarRail}
           {/* Left sidebar */}
           <div
-            className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
-            aria-hidden={!sidebarOpen || undefined}
-            inert={!sidebarOpen || undefined}
+            className={`sidebar-container${sidebarVisible ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
+            aria-hidden={!sidebarVisible || undefined}
+            inert={!sidebarVisible || undefined}
             style={{
               background: "transparent",
               display: "flex",
@@ -1243,7 +1317,7 @@ export function AppShell({
 
           {/* Center: chat */}
           <div
-            className={`app-chat${sidebarOpen && !isMobile ? " with-sidebar" : ""}${rightPanelOpen ? " with-right-panel" : ""}`}
+            className={`app-chat${sidebarVisible && !isMobile ? " with-sidebar" : ""}${rightPanelVisible ? " with-right-panel" : ""}`}
             style={{
               flex: 1,
               display: "flex",
@@ -1253,9 +1327,42 @@ export function AppShell({
               position: "relative",
             }}
           >
-            {isWindows && <header className="app-session-header">{sessionHeader}</header>}
+            {isWindows && sessionsOpen && <header className="app-session-header">{sessionHeader}</header>}
+            {scheduledOpen && !settingsOpen && (
+              <ScheduledTasksPage
+                sessions={workspaceSessions}
+                selectedSessionId={selectedSession?.id}
+                onOpenSession={handleSelectSession}
+              />
+            )}
+            {(reviewVisible || reviewVisited) && (
+              <CodeReviewPage
+                visible={reviewVisible}
+                cwd={workspaceCwd}
+                project={workspace.selectedProject}
+                projects={getRecentProjects(workspaceSessions)}
+                home={workspace.homeDir}
+                onOpenModels={() => openSidebarSettings("models")}
+                workStepDisplay={chatAppearance.workStepDisplay}
+                modelsRevision={modelsRefreshKey}
+                onOpenFile={({ path, root, line }) =>
+                  showRightPanelTab({
+                    id: fileTabId(path),
+                    kind: "file",
+                    title: getFileName(path),
+                    filePath: path,
+                    sourceSessionId: null,
+                    reviewLocation: { cwd: root, line },
+                  })
+                }
+              />
+            )}
             {/* Chat content */}
-            <div ref={chatContentRef} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+            <div
+              ref={chatContentRef}
+              hidden={!sessionsOpen}
+              style={{ flex: 1, overflow: "hidden", position: "relative" }}
+            >
               {showChat ? (
                 <SessionProfiler key={sessionKey} id="ChatWindow">
                   <ChatWindow
@@ -1292,7 +1399,7 @@ export function AppShell({
 
           {/* Right panel: the guide plus files, terminals, browser tabs, files, and managed processes */}
           <div
-            className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
+            className={`right-panel-container${rightPanelVisible ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
             style={
               {
                 display: "flex",
@@ -1358,7 +1465,7 @@ export function AppShell({
                 <TerminalPanel
                   key={activePanelTab.terminalId}
                   terminalId={activePanelTab.terminalId}
-                  visible={rightPanelOpen && !settingsOpen && !browserAuthorization}
+                  visible={showRightPanelContent}
                   onTitleChange={(title) => {
                     dispatchRightPanel({ type: "title", tabId: activePanelTab.id, title });
                   }}
@@ -1372,7 +1479,7 @@ export function AppShell({
                 />
               ) : activePanelTab.kind === "browser" ? (
                 <BrowserDock
-                  visible={rightPanelOpen && !settingsOpen && !browserAuthorization}
+                  visible={showRightPanelContent}
                   ownerSessionId={selectedSession?.id ?? null}
                   tabId={activePanelTab.browserTabId ?? null}
                   onNewTab={() => {
@@ -1390,8 +1497,9 @@ export function AppShell({
                 <FileViewer
                   key={activePanelTab.id}
                   filePath={activePanelTab.filePath}
-                  cwd={activeCwd ?? undefined}
+                  cwd={activePanelTab.reviewLocation?.cwd ?? activeCwd ?? undefined}
                   sourceSessionId={activePanelTab.sourceSessionId}
+                  targetLine={activePanelTab.reviewLocation?.line}
                 />
               ) : null}
             </div>

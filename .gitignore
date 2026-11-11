@@ -13,4 +13,5 @@ temp/
 build/toolchains/.core-cache/
 build/toolchains/core/
 build/herdr/bin/
+build/ocr/bin/
 native/**/target/

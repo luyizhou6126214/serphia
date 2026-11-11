@@ -13,6 +13,10 @@ export function createDesktopPackageSteps(mode, options = {}) {
   const projectRoot = options.root ?? root;
   const nodeBinary = options.nodeBinary ?? process.execPath;
   const release = mode === "--release";
+  const platform = options.platform ?? process.platform;
+  const target = `${platform}-${options.arch ?? process.arch}`;
+  const packageTargets =
+    release && platform === "darwin" ? ["darwin-arm64", "darwin-x64"] : [platform === "win32" ? "win32-x64" : target];
   const steps = [
     {
       label: "prepare bundled tools",
@@ -21,7 +25,11 @@ export function createDesktopPackageSteps(mode, options = {}) {
         "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
         "--experimental-strip-types",
         path.join(projectRoot, "scripts", "prepare-bundled-tools.mjs"),
-        ...(release ? ["--release"] : []),
+        ...(release && platform === "darwin"
+          ? packageTargets.flatMap((value) => ["--target", value])
+          : release
+            ? ["--release"]
+            : []),
       ],
     },
     {
@@ -47,7 +55,12 @@ export function createDesktopPackageSteps(mode, options = {}) {
       ],
       env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" },
     },
-    ...(release && (options.platform ?? process.platform) === "win32"
+    ...packageTargets.map((value) => ({
+      label: `verify packaged toolchains (${value})`,
+      command: nodeBinary,
+      args: [path.join(projectRoot, "scripts", "verify-packaged-toolchains.mjs"), value, "--static"],
+    })),
+    ...(release && platform === "win32"
       ? [
           {
             label: "generate Windows release SBOM",

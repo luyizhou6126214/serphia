@@ -6,6 +6,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveOcrRuntime } from "../src/main/ocr-runtime.ts";
+import ocrCatalog from "../build/ocr/runtime-catalog.json" with { type: "json" };
 import { darwinCodeDigest } from "../src/main/toolchains/darwin-binary-integrity.ts";
 import { extractFile, listPackage } from "@electron/asar";
 import { verifyWindowsHelperPe } from "./windows-helper-pe.mjs";
@@ -51,6 +53,7 @@ verifyWindowsManagedProcessHelper(layout.resources, target, !staticOnly, require
 verifyPiRuntimeAssets(layout.resources, expectedPlatform, expectedArch);
 verifyBundledTools(layout.resources, expectedPlatform, expectedArch, !staticOnly);
 verifyBundledHerdr(layout.resources, expectedPlatform, expectedArch, !staticOnly);
+await verifyBundledOcr(layout.resources, expectedPlatform, expectedArch, !staticOnly);
 verifyLinuxSandbox(layout.executable, expectedPlatform);
 if (!staticOnly) {
   runPackagedStartup(layout.executable, target);
@@ -351,6 +354,31 @@ function verifyBundledTools(resources, platform, arch, executeTools) {
   }
 }
 
+async function verifyBundledOcr(resources, platform, arch, executeTool) {
+  const target = `${platform}-${arch}`;
+  const dir = path.join(resources, "ocr", "bin");
+  assertExact(fs.readdirSync(path.dirname(dir)).sort(), ["bin"], "packaged OCR resources");
+  assertExact(fs.readdirSync(dir).sort(), [target], "packaged OCR target directories");
+  const { executable, version } = await resolveOcrRuntime(resources, platform, arch);
+  assertExact(
+    fs.readdirSync(path.join(dir, target)).sort(),
+    ["LICENSE", "manifest.json", path.basename(executable)].sort(),
+    "packaged OCR files",
+  );
+  verifyManifestFile(path.join(dir, target, "LICENSE"), ocrCatalog.license.sha256, ocrCatalog.license.bytes);
+  if (executeTool) {
+    const probe = spawnSync(executable, ["version"], { encoding: "utf8", timeout: 10_000, windowsHide: true });
+    const release = platform === "win32" ? "windows/amd64" : `${platform}/${arch === "x64" ? "amd64" : arch}`;
+    if (
+      probe.status !== 0 ||
+      !probe.stdout.includes(`open-code-review ${version} `) ||
+      !probe.stdout.includes(release)
+    ) {
+      throw new Error("Packaged OCR version or architecture probe failed");
+    }
+  }
+}
+
 function verifyBundledHerdr(resources, platform, arch, executeTool) {
   const herdrRoot = path.join(resources, "herdr");
   const catalog = JSON.parse(fs.readFileSync(path.join(herdrRoot, "runtime-catalog.json"), "utf8"));
@@ -480,6 +508,7 @@ function runPackagedStartup(executable, toolTarget, environmentPatch = {}, extra
       report.rendererReady !== true ||
       report.hostReady !== true ||
       report.piVersion !== expectedPiVersion ||
+      report.ocrVersion !== ocrCatalog.version ||
       report.runtimeModules?.piVersion !== expectedPiVersion ||
       report.runtimeModules?.openaiOAuthLoaded !== true ||
       report.runtimeModules?.mcpLoaded !== true ||

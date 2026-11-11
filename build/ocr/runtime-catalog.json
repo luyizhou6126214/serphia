@@ -1,0 +1,30 @@
+{
+  "version": "v1.13.7",
+  "license": {
+    "url": "https://raw.githubusercontent.com/alibaba/open-code-review/v1.13.7/LICENSE",
+    "bytes": 11356,
+    "sha256": "1945665fdb6968a66ea29438ddee0aee23035365c862e5c4a75b62b303340acf"
+  },
+  "artifacts": {
+    "darwin-arm64": {
+      "asset": "opencodereview-darwin-arm64",
+      "bytes": 55366066,
+      "sha256": "ce2eab495483f9b119992b48253a4e2f6969c27c3b02514350d9e7aa0083b4e8"
+    },
+    "darwin-x64": {
+      "asset": "opencodereview-darwin-amd64",
+      "bytes": 58361600,
+      "sha256": "fa7b63f25e7002aec38e6980b071d1b53e6681aeb9e144b7bfe84833de5e3de6"
+    },
+    "win32-x64": {
+      "asset": "opencodereview-windows-amd64.exe",
+      "bytes": 58079232,
+      "sha256": "b637d002471056c57f50c947583188dbeafa043aeb5875ee16ab4355b1eb2d36"
+    },
+    "linux-x64": {
+      "asset": "opencodereview-linux-amd64",
+      "bytes": 56606882,
+      "sha256": "8c1ff786161b6dc0e8dcb06107f18bda8b6181b39ce573400add4a39f90cf19d"
+    }
+  }
+}

@@ -317,9 +317,71 @@ async function prepareHerdrTarget(catalog, target) {
   }
 }
 
+async function prepareOcrTarget(catalog, target) {
+  const artifact = catalog.artifacts[target];
+  if (!artifact) fail(`Missing OCR asset for ${target}`);
+  const base = path.join(root, "build", "ocr");
+  const output = path.join(base, "bin");
+  const cache = path.join(base, ".cache");
+  const executable = target.startsWith("win32-") ? "ocr.exe" : "ocr";
+  const binary = path.join(cache, `${catalog.version}-${artifact.asset}`);
+  const license = path.join(cache, `${catalog.version}-LICENSE`);
+  await Promise.all([
+    downloadFixedFile(
+      {
+        ...artifact,
+        name: artifact.asset,
+        url: `https://github.com/alibaba/open-code-review/releases/download/${catalog.version}/${artifact.asset}`,
+      },
+      binary,
+    ),
+    downloadFixedFile({ ...catalog.license, name: "Open Code Review LICENSE" }, license),
+  ]);
+  fs.mkdirSync(output, { recursive: true });
+  const staging = fs.mkdtempSync(path.join(output, `.${target}-staging-`));
+  const destination = path.join(output, target);
+  const previous = `${destination}.previous-${randomUUID()}`;
+  try {
+    const file = path.join(staging, executable);
+    fs.copyFileSync(binary, file);
+    if (!target.startsWith("win32-")) fs.chmodSync(file, 0o755);
+    fs.copyFileSync(license, path.join(staging, "LICENSE"));
+    const darwinCode = target.startsWith("darwin-") ? darwinCodeDigest(fs.readFileSync(file)) : undefined;
+    if (target.startsWith("darwin-") && !darwinCode) fail(`Invalid OCR Mach-O for ${target}`);
+    fs.writeFileSync(
+      path.join(staging, "manifest.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          version: catalog.version,
+          target,
+          executable,
+          ...artifact,
+          ...(darwinCode ? { darwinCode } : {}),
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    if (fs.existsSync(destination)) fs.renameSync(destination, previous);
+    try {
+      fs.renameSync(staging, destination);
+    } catch (error) {
+      if (fs.existsSync(previous)) fs.renameSync(previous, destination);
+      throw error;
+    }
+    fs.rmSync(previous, { recursive: true, force: true });
+    console.log(`[bundled-tools] prepared ${target}: OCR ${catalog.version}`);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 const catalog = parseRuntimeCatalog(JSON.parse(fs.readFileSync(catalogPath, "utf8")));
 const herdrCatalog = parseHerdrRuntimeCatalog(JSON.parse(fs.readFileSync(herdrCatalogPath, "utf8")));
+const ocrCatalog = JSON.parse(fs.readFileSync(path.join(root, "build", "ocr", "runtime-catalog.json"), "utf8"));
 for (const target of parseBundledToolTargets(process.argv.slice(2))) {
+  await prepareOcrTarget(ocrCatalog, target);
   await prepareTarget(catalog, target);
   await prepareHerdrTarget(herdrCatalog, target);
 }

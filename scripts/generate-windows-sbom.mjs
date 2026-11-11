@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import ocrCatalog from "../build/ocr/runtime-catalog.json" with { type: "json" };
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -282,7 +283,19 @@ export function createWindowsSbom(facts) {
     fail("bundled Windows core tool manifest drifted");
   }
 
+  const ocr = ocrCatalog.artifacts["win32-x64"];
+  const ocrVersion = ocrCatalog.version.replace(/^v/u, "");
   const manualComponents = [
+    component({
+      type: "application",
+      ref: "bundled:open-code-review",
+      name: "Open Code Review",
+      version: ocrVersion,
+      purl: `pkg:github/alibaba/open-code-review@${ocrVersion}`,
+      license: "Apache-2.0",
+      hash: ocr.sha256,
+      properties: [{ name: "pi:bundled:bytes", value: String(ocr.bytes) }],
+    }),
     component({
       type: "framework",
       ref: "runtime:electron",
@@ -436,6 +449,7 @@ export function createWindowsSbom(facts) {
         "native:managed-process-helper",
         "bundled:ripgrep",
         "bundled:fd",
+        "bundled:open-code-review",
       ].sort(),
     },
     { ref: "runtime:electron", dependsOn: ["runtime:chromium", "runtime:node", "runtime:v8"] },

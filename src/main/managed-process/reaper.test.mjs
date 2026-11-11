@@ -74,6 +74,22 @@ test("reaper removes a group that disappeared during identity lookup without sig
   assert.equal(signals, 0);
 });
 
+test("reaper lets a disconnected worker's group drain without signalling it", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "pi-reaper-draining-"));
+  let probes = 0;
+  const reaper = new ManagedProcessReaper(path.join(directory, "journal.json"), {
+    platform: "darwin",
+    groupExists: () => ++probes <= 3,
+    fingerprint: async () => null,
+    terminateGroup: async () => assert.fail("an unverified group must not receive signals"),
+  });
+  await reaper.initialize();
+  reaper.register(record());
+  const status = await reaper.reapAll();
+  assert.equal(status.ready, true);
+  assert.equal(status.records, 0);
+});
+
 test("reaper fails closed when a verified process group cannot be terminated", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "pi-reaper-failure-"));
   const reaper = new ManagedProcessReaper(path.join(directory, "journal.json"), {

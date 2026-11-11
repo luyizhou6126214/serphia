@@ -44,12 +44,20 @@ import { runPackagedCleanupFaultValidation } from "./packaged-cleanup-fault-vali
 import { HerdrRuntimeManager } from "./herdr/runtime-manager";
 import { resolveBundledHerdrRoot, resolveHerdrCatalogPath } from "./herdr/catalog";
 import { isHerdrSettings } from "../contract/herdr";
+import { resolveOcrRuntime } from "./ocr-runtime";
 import { discoverHerdrAgentClis, type HerdrAgentCliDiscoverySnapshot } from "./herdr/agent-cli-discovery";
 
 handleClosedStdioPipes();
 
-// Keep existing installations and settings accessible after the product rename.
-app.setPath("userData", path.join(app.getPath("appData"), "Pi Agent Desktop"));
+const packagedStartupValidation = app.isPackaged && process.argv.includes("--validate-packaged-startup");
+const packagedCleanupFaultValidation = app.isPackaged && process.argv.includes("--validate-packaged-cleanup-fault");
+const validationUserData =
+  packagedStartupValidation || packagedCleanupFaultValidation ? app.commandLine.getSwitchValue("user-data-dir") : "";
+// Keep the smoke test isolated while retaining the previous product's normal data path.
+app.setPath(
+  "userData",
+  path.isAbsolute(validationUserData) ? validationUserData : path.join(app.getPath("appData"), "Pi Agent Desktop"),
+);
 
 // Must run before app ready
 registerAppProtocol();
@@ -60,8 +68,6 @@ crashReporter.start({
 });
 
 const isDev = !app.isPackaged;
-const packagedStartupValidation = app.isPackaged && process.argv.includes("--validate-packaged-startup");
-const packagedCleanupFaultValidation = app.isPackaged && process.argv.includes("--validate-packaged-cleanup-fault");
 const expectedPiVersion = process.env.PI_DESKTOP_EXPECTED_PI_VERSION;
 const TOOLCHAIN_FOCUS_RESCAN_TTL_MS = 60_000;
 const MANAGED_PROCESS_SHUTDOWN_DEADLINE_MS = 15_000;
@@ -152,6 +158,7 @@ async function cleanupManagedProcesses(deadline: number, requireConfirmedEmpty: 
 
 let startupPiRuntimeProbe: PiRuntimeProbeResult | undefined;
 let startupPiRuntimeProbeStarted = false;
+let startupOcrVersion: string | undefined;
 
 function finishPackagedStartupValidation(error?: string): void {
   if (!packagedStartupValidation || startupCheckFinished) return;
@@ -172,7 +179,7 @@ function finishPackagedStartupValidation(error?: string): void {
         startupPiRuntimeProbeStarted = true;
         void hostManager
           .call<PiRuntimeProbeResult>("host.runtimeProbe")
-          .then((probe) => {
+          .then(async (probe) => {
             if (
               probe.piVersion !== expectedPiVersion ||
               !probe.openaiOAuthLoaded ||
@@ -183,6 +190,7 @@ function finishPackagedStartupValidation(error?: string): void {
             ) {
               throw new Error("Packaged Pi lazy runtime modules did not load");
             }
+            startupOcrVersion = (await resolveOcrRuntime(process.resourcesPath)).version;
             startupPiRuntimeProbe = probe;
             finishPackagedStartupValidation();
           })
@@ -204,6 +212,7 @@ function finishPackagedStartupValidation(error?: string): void {
           appVersion: app.getVersion(),
           piVersion: hostManager?.getPiVersion(),
           runtimeModules: startupPiRuntimeProbe,
+          ocrVersion: startupOcrVersion,
           platformArch: `${process.platform}-${process.arch}`,
           revision: startupToolchainSnapshot?.revision,
           rendererReady: startupRendererReady,
@@ -752,6 +761,9 @@ function startMainProcess(): void {
     hostManager.setHerdrRuntimeDescriptor(herdrRuntimeManager.getDescriptor());
     const credentialRequestHandler = createCredentialRequestHandler(credentialVault);
     hostManager.setRequestHandler(async (method, params) => {
+      if (method === "ocr.runtime") {
+        return resolveOcrRuntime(app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), "build"));
+      }
       if (method.startsWith("channelSecrets.")) return credentialRequestHandler(method, params);
       if (method === "toolchain.getSnapshot") return toolchainManager!.getSnapshot();
       if (method === "toolchain.resolve") {

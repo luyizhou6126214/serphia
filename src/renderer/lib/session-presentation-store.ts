@@ -7,6 +7,7 @@ export interface SessionPresentation {
   info: SessionInfo | null;
   stats: SessionStatsInfo | null;
   contextUsage: NonNullable<SessionRuntimeState["contextUsage"]> | null;
+  herdrAgentPaneIds?: readonly string[];
 }
 
 /** One per window. The active chat publishes; title and info views subscribe. */

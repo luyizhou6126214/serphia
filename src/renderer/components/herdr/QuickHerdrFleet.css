@@ -1,0 +1,273 @@
+.quick-herdr-fleet-trigger {
+  position: relative;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.quick-herdr-fleet-trigger + .app-topbar-session-info {
+  margin-inline-start: 10px;
+}
+
+@media (max-width: 640px) {
+  .quick-herdr-fleet-trigger + .app-topbar-session-info {
+    margin-inline-start: 6px;
+  }
+}
+
+.quick-herdr-fleet-controls {
+  flex: none;
+  padding: 14px 14px 10px;
+}
+
+.quick-herdr-fleet-header-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.quick-herdr-fleet-copy,
+.quick-herdr-fleet-workspace h3 > span {
+  min-width: 0;
+}
+
+.quick-herdr-fleet-copy p,
+.quick-herdr-fleet-pane-name,
+.quick-herdr-fleet-pane-kind,
+.quick-herdr-fleet-workspace h3 > span,
+.quick-herdr-fleet-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-herdr-fleet-filter {
+  appearance: base-select;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  margin-top: 10px;
+  padding-inline: 9px;
+  border: 1px solid color-mix(in srgb, var(--quick-blue) 18%, var(--border));
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  color-scheme: light;
+}
+
+.quick-herdr-fleet-filter:is(:hover, :focus-visible, :open) {
+  border-color: color-mix(in srgb, var(--quick-blue) 58%, var(--border));
+}
+
+.quick-herdr-fleet-filter:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--quick-blue) 68%, var(--text)) !important;
+  outline-offset: 1px;
+}
+
+.quick-herdr-fleet-filter:open {
+  outline: none !important;
+  background: color-mix(in srgb, var(--quick-blue) 7%, var(--bg-panel));
+}
+
+.quick-herdr-fleet-filter::picker-icon {
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  color: var(--quick-ink);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3 3 3-3'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  content: "";
+}
+
+.quick-herdr-fleet-filter:open::picker-icon {
+  transform: rotate(180deg);
+}
+
+.quick-herdr-fleet-filter::picker(select) {
+  appearance: base-select;
+  margin-block: 4px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--quick-blue) 18%, var(--border));
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(19, 25, 49, 0.2);
+}
+
+.quick-herdr-fleet-filter option {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.quick-herdr-fleet-filter option:checked {
+  background: color-mix(in srgb, var(--quick-blue) 12%, var(--bg-panel));
+  color: var(--quick-ink);
+  font-weight: 650;
+}
+
+.quick-herdr-fleet-filter option:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--quick-violet) 17%, var(--bg-panel));
+  outline: none;
+}
+
+.quick-herdr-fleet-filter option::checkmark {
+  order: 1;
+  color: var(--quick-ink);
+}
+
+html.dark .quick-herdr-fleet-filter {
+  color-scheme: dark;
+}
+
+.quick-herdr-fleet-content {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  border-radius: 0 0 15px 15px;
+  padding: 2px 14px 14px;
+}
+
+.quick-herdr-fleet-hint .quick-toolbar-action {
+  margin-top: 8px;
+}
+
+.quick-herdr-fleet-workspace {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-herdr-fleet-workspace[data-stale="true"] {
+  opacity: 0.65;
+}
+
+.quick-herdr-fleet-workspace h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--quick-ink);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.quick-herdr-fleet-workspace h3 > svg {
+  flex: none;
+}
+
+.quick-herdr-fleet-tab {
+  display: grid;
+  gap: 5px;
+}
+
+.quick-herdr-fleet-tab-name {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.quick-herdr-fleet-pane {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+}
+
+.quick-herdr-fleet-pane[data-focused="true"] {
+  border-color: color-mix(in srgb, var(--quick-blue) 26%, var(--border));
+  background: color-mix(in srgb, var(--quick-blue) 6%, var(--bg-panel));
+}
+
+.quick-herdr-fleet-pane[data-invoked-by-chat="true"] {
+  border-color: color-mix(in srgb, var(--quick-blue) 52%, var(--border));
+  background: color-mix(in srgb, var(--quick-blue) 9%, var(--bg-panel));
+  box-shadow: inset 2px 0 0 var(--quick-blue);
+}
+
+.quick-herdr-fleet-pane .quick-toolbar-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.quick-herdr-fleet-pane-name {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+}
+
+.quick-herdr-fleet-pane-kind {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.quick-herdr-fleet-pane-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+
+.quick-herdr-fleet-chat-badge {
+  padding: 0 5px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--quick-blue) 16%, var(--bg-panel));
+  color: var(--quick-ink);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.quick-herdr-fleet-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--quick-status, var(--text-dim)) 11%, var(--bg-panel));
+  color: color-mix(in srgb, var(--quick-status, var(--text-muted)) 75%, var(--text));
+  font-size: 10px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.quick-herdr-fleet-state::before {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.quick-toolbar-trigger[data-fleet-state="working"],
+.quick-herdr-fleet-pane[data-fleet-state="working"] {
+  --quick-status: var(--action-blue);
+}
+
+.quick-toolbar-trigger[data-fleet-state="blocked"],
+.quick-herdr-fleet-pane[data-fleet-state="blocked"] {
+  --quick-status: var(--danger);
+}
+
+.quick-toolbar-trigger[data-fleet-state="done"],
+.quick-herdr-fleet-pane[data-fleet-state="done"] {
+  --quick-status: var(--success);
+}
+
+.quick-toolbar-trigger[data-fleet-state="idle"],
+.quick-herdr-fleet-pane[data-fleet-state="idle"] {
+  --quick-status: var(--warning);
+}

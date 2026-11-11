@@ -1120,7 +1120,7 @@ code {
   font-family: var(--font-mono);
 }
 
-/* react-markdown output: the DeepSeek Harness markdown type ladder. */
+/* Conversation Markdown typography. */
 .markdown-body {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1577,22 +1577,21 @@ code {
   margin-top: 3px;
 }
 
-/* Fenced code: one surface and radius from the DSH code-block family, with a
-   line banner that carries the language and the copy control. */
+/* Fenced code: a quiet surface with a compact language and action bar. */
 .markdown-code-block {
   position: relative;
   margin: 16px 0;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-lg);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
   overflow: hidden;
   background: var(--dsw-alias-markdown-code-block);
   box-shadow: none;
 }
 .markdown-code-header {
-  padding: 3px 8px 3px 12px;
-  min-height: calc(28px + var(--dsh-content-font-delta, 0px));
-  background: none;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  padding: 6px 10px 6px 16px;
+  min-height: calc(36px + var(--dsh-content-font-delta, 0px));
+  background: color-mix(in srgb, var(--dsw-alias-markdown-code-block) 85%, var(--dsw-alias-border-l1));
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-tertiary);
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
@@ -1603,9 +1602,9 @@ code {
 }
 .markdown-code-lang {
   color: var(--dsw-alias-label-caption);
-  font-family: var(--font-mono);
+  font-family: inherit;
   font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
-  font-weight: 400;
+  font-weight: 500;
 }
 .markdown-code-actions {
   display: flex;
@@ -2799,6 +2798,32 @@ span.linenumber {
 .sidebar-session-time {
   display: none;
 }
+.sidebar-session-row.is-running {
+  --session-running-color: #bd466a;
+  isolation: isolate;
+}
+html.dark .sidebar-session-row.is-running {
+  --session-running-color: #f998b4;
+}
+.sidebar-session-halo {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.sidebar-session-halo-sweep {
+  position: absolute;
+  inset: 0 auto 0 -50%;
+  width: 50%;
+  background:
+    radial-gradient(ellipse 27% 56% at 71% 46%, rgb(255 220 174 / 92%), rgb(255 188 139 / 62%) 42%, transparent),
+    radial-gradient(ellipse 46% 77% at 46% 55%, rgb(255 132 165 / 36%), rgb(255 132 165 / 14%) 54%, transparent);
+}
+html.dark .sidebar-session-halo {
+  opacity: 0.42;
+}
 .sidebar-session-running {
   display: inline-flex;
   width: 14px;
@@ -2806,7 +2831,7 @@ span.linenumber {
   flex: 0 0 14px;
   align-items: center;
   justify-content: center;
-  color: var(--action-blue);
+  color: var(--session-running-color);
   transition:
     opacity 120ms ease,
     transform 120ms ease;
@@ -2824,6 +2849,10 @@ span.linenumber {
   transform: scale(0.8);
 }
 @media (prefers-reduced-motion: reduce) {
+  .sidebar-session-halo-sweep {
+    left: 25%;
+    opacity: 0.58;
+  }
   .sidebar-session-running {
     transition: none;
   }

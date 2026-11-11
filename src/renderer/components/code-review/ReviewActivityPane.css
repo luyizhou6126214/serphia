@@ -1,0 +1,129 @@
+.ocr-page[hidden] {
+  display: none;
+}
+
+.cr-activity {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--assistant-bg, var(--cr-surface));
+}
+
+.cr-activity-header {
+  flex: none;
+  min-width: 0;
+  color: var(--cr-muted);
+  font-size: 11px;
+}
+.cr-activity-feed {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 12px 36px;
+  overscroll-behavior: contain;
+}
+.cr-activity-feed .chat-content-column {
+  min-width: 0;
+}
+.cr-activity-model,
+.cr-activity-tool {
+  min-width: 0;
+}
+.cr-activity-model {
+  padding-block: 9px 0;
+}
+.cr-activity-details {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.cr-activity-model-meta {
+  margin-block-end: 6px;
+}
+.cr-activity-model-meta svg {
+  flex: none;
+}
+.cr-activity-model-meta strong {
+  font-weight: 600;
+}
+.cr-activity-tool .cr-activity-details {
+  display: none;
+}
+.cr-activity-tool:has([data-open]) .cr-activity-details {
+  display: flex;
+}
+.cr-activity-message {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--cr-line);
+  border-radius: 8px;
+  color: var(--cr-muted);
+  background: var(--cr-control-bg);
+}
+.cr-activity-message[data-level="warning"] {
+  border-color: color-mix(in srgb, var(--cr-amber) 27%, var(--cr-line));
+  color: var(--cr-amber);
+  background: color-mix(in srgb, var(--cr-amber) 7%, var(--cr-panel));
+}
+.cr-activity-message svg {
+  flex: none;
+  margin-top: 1px;
+}
+.cr-activity-message time {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: 10px;
+}
+.cr-activity-message p,
+.cr-activity-note {
+  margin: 0;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cr-activity-note {
+  color: var(--cr-muted);
+}
+
+.cr-activity-empty {
+  display: grid;
+  place-items: center;
+  padding: 40px 10px;
+  color: var(--cr-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.cr-activity-empty span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--cr-focus-border);
+  border-radius: 10px;
+  color: var(--cr-blue);
+  background: var(--cr-tint);
+}
+
+.cr-activity-jump {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+}
+
+.cr-activity-jump > button {
+  border-color: var(--cr-line);
+  background: var(--cr-input);
+  box-shadow: 0 3px 12px #192d4922;
+}

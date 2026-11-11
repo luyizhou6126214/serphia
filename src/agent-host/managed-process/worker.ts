@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import path from "node:path";
 import type {
   ManagedProcessWorkerBootstrap,
   ManagedProcessWorkerEvent,
@@ -79,11 +80,16 @@ function validBootstrap(value: ManagedProcessWorkerBootstrap): boolean {
     typeof value.processId === "string" &&
     typeof value.runId === "string" &&
     typeof value.cwd === "string" &&
-    typeof value.command === "string" &&
-    value.shell &&
-    typeof value.shell.executable === "string" &&
-    Array.isArray(value.shell.argvPrefix) &&
-    value.shell.argvPrefix.every((argument) => typeof argument === "string"),
+    ("executable" in value
+      ? typeof value.executable === "string" &&
+        path.isAbsolute(value.executable) &&
+        Array.isArray(value.args) &&
+        value.args.every((arg) => typeof arg === "string" && !arg.includes("\0"))
+      : typeof value.command === "string" &&
+        value.shell &&
+        typeof value.shell.executable === "string" &&
+        Array.isArray(value.shell.argvPrefix) &&
+        value.shell.argvPrefix.every((arg) => typeof arg === "string")),
   );
 }
 
@@ -97,13 +103,16 @@ function start(input: ManagedProcessWorkerBootstrap): void {
   const childEnvironment = { ...process.env };
   delete childEnvironment.ELECTRON_RUN_AS_NODE;
   try {
-    child = spawn(input.shell.executable, [...input.shell.argvPrefix, "-c", input.command], {
+    const direct = "executable" in input;
+    const executable = direct ? input.executable : input.shell.executable;
+    const args = direct ? input.args : [...input.shell.argvPrefix, "-c", input.command];
+    child = spawn(executable, args, {
       cwd: input.cwd,
       env: childEnvironment,
       shell: false,
       detached: false,
       windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: [direct ? "ignore" : "pipe", "pipe", "pipe"],
     });
   } catch (error) {
     send({ type: "error", code: "SPAWN_FAILED", message: safeError(error) });

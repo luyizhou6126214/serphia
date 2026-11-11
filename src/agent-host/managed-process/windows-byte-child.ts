@@ -77,6 +77,7 @@ export class WindowsByteProcessChild extends EventEmitter {
   readonly stdin: Writable;
   pid: number | undefined;
   exitCode: number | null = null;
+  targetExitCode: number | null = null;
   signalCode: NodeJS.Signals | null = null;
   private helper: ChildProcessWithoutNullStreams | null = null;
   private readonly decoder = new WindowsHelperFrameDecoder();
@@ -277,6 +278,8 @@ export class WindowsByteProcessChild extends EventEmitter {
         } else if (frame.kind === WINDOWS_HELPER_KIND.activeZero) {
           this.activeZero = true;
         } else if (frame.kind === WINDOWS_HELPER_KIND.exit) {
+          const exit = parseWindowsHelperJson(frame);
+          this.targetExitCode = typeof exit.code === "number" ? exit.code : null;
           this.cleanExit = true;
         } else if (frame.kind === WINDOWS_HELPER_KIND.error) {
           throw new Error(`Windows process helper failed: ${describeWindowsHelperError(frame)}`);

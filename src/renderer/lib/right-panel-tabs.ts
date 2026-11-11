@@ -15,6 +15,7 @@ export interface RightPanelTab {
   /** File tabs: absolute path the viewer reads. */
   filePath?: string;
   sourceSessionId?: string | null;
+  reviewLocation?: { cwd: string; line: number | null };
   /** Terminal tabs: the Host pty session this screen draws. */
   terminalId?: string;
   /** Browser tabs: Main-owned browser tab shown by the bound dock. */

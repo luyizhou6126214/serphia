@@ -23,10 +23,11 @@ test("pack and release plans use Node JS entries and set signing discovery in th
   assert.deepEqual(release[2].args.slice(-1), [
     path.join(projectRoot, "scripts", "verify-windows-helper-reproducibility.mjs"),
   ]);
-  assert.equal(release[4].label, "generate Windows release SBOM");
-  assert.deepEqual(release[4].args.slice(-1), [path.join(projectRoot, "scripts", "generate-windows-sbom.mjs")]);
-  assert.equal(release[5].label, "verify Windows release SBOM");
-  assert.deepEqual(release[5].args.slice(-1), [path.join(projectRoot, "scripts", "verify-windows-sbom.mjs")]);
+  assert.equal(release[4].label, "verify packaged toolchains (win32-x64)");
+  assert.equal(release[5].label, "generate Windows release SBOM");
+  assert.deepEqual(release[5].args.slice(-1), [path.join(projectRoot, "scripts", "generate-windows-sbom.mjs")]);
+  assert.equal(release[6].label, "verify Windows release SBOM");
+  assert.deepEqual(release[6].args.slice(-1), [path.join(projectRoot, "scripts", "verify-windows-sbom.mjs")]);
 });
 
 test("packaging rejects unknown modes and diagnoses spawn failures, signals, and missing statuses", () => {

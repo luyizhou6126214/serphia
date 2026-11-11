@@ -56,6 +56,7 @@ const MAX_TABS = 512;
 const MAX_PANES = 1_024;
 const MAX_PROCESS_INFO_ENTRIES = 128;
 const MAX_PUBLIC_PROCESS_ENTRIES = 32;
+const AGENT_STATUS_REFRESH_MS = 2_000;
 
 function isId(value: unknown): value is string {
   return (
@@ -263,6 +264,7 @@ export class HerdrBridge {
   private connectPromise: Promise<HerdrRuntimeSnapshot> | null = null;
   private generation = 0;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private agentStatusRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private refreshPromise: Promise<HerdrFleetSnapshot> | null = null;
   private refreshPending = false;
   private snapshotInFlight = false;
@@ -471,6 +473,7 @@ export class HerdrBridge {
         status: subscriptionError ? "degraded" : "ready",
         ...(subscriptionError ? { error: subscriptionError.toPublic() } : {}),
       });
+      this.updateAgentStatusRefresh();
       if (subscriptionError && this.shouldAutoReconnect()) this.scheduleReconnect();
       if (this.eventsDirtyDuringSnapshot) {
         this.eventsDirtyDuringSnapshot = false;
@@ -522,6 +525,7 @@ export class HerdrBridge {
     this.connectPromise = null;
     this.clearReconnect();
     this.clearRefreshTimer();
+    this.clearAgentStatusRefresh();
     this.refreshPromise = null;
     this.refreshPending = false;
     this.snapshotInFlight = false;
@@ -570,6 +574,7 @@ export class HerdrBridge {
       throw mapped;
     }
     this.server.emit("herdr.fleet", "*", this.getFleet());
+    this.updateAgentStatusRefresh();
     return this.getFleet();
   }
 
@@ -1483,6 +1488,22 @@ export class HerdrBridge {
       );
       this.stopEvents = stop;
     });
+  }
+
+  private updateAgentStatusRefresh(): void {
+    if (this.runtime.status !== "ready" || !this.fleet.panes.some((pane) => pane.agent)) {
+      this.clearAgentStatusRefresh();
+      return;
+    }
+    if (this.agentStatusRefreshTimer) return;
+    // Herdr v0.8.2 scopes status-change subscriptions to individual panes.
+    this.agentStatusRefreshTimer = setInterval(() => this.scheduleSnapshotRefresh(), AGENT_STATUS_REFRESH_MS);
+    this.agentStatusRefreshTimer.unref();
+  }
+
+  private clearAgentStatusRefresh(): void {
+    if (this.agentStatusRefreshTimer) clearInterval(this.agentStatusRefreshTimer);
+    this.agentStatusRefreshTimer = null;
   }
 
   private scheduleSnapshotRefresh(): void {

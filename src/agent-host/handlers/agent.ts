@@ -13,6 +13,17 @@ export function createAgentNewLockKey(): string {
   return `__new__${randomUUID()}`;
 }
 
+export async function openExistingAgentSession(sessionId: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const existing = getRpcSession(sessionId);
+  if (existing?.isAlive()) return existing;
+  const filePath = await resolveSessionPath(sessionId);
+  signal?.throwIfAborted();
+  if (!filePath) throw new RpcError({ code: "NOT_FOUND", message: "Session not found" });
+  const cwd = readSessionSnapshot(filePath).getHeader()?.cwd ?? "";
+  return (await startRpcSession(sessionId, filePath, cwd)).session;
+}
+
 type AgentHandlers = {
   new: NonNullable<ApiHandler["agent.new"]>;
   command: NonNullable<ApiHandler["agent.command"]>;
@@ -83,16 +94,7 @@ export function createAgentHandlers({
       if (!isAgentCommand(command)) {
         throw new RpcError({ code: "BAD_REQUEST", message: "Agent command must have a non-empty string type" });
       }
-      const existing = getRpcSession(sessionId);
-      if (existing?.isAlive()) {
-        // Ensure event subscription
-        bindEvents(existing, sessionId);
-        return existing.send(command);
-      }
-      const filePath = await resolveSessionPath(sessionId);
-      if (!filePath) throw new RpcError({ code: "NOT_FOUND", message: "Session not found" });
-      const cwd = readSessionSnapshot(filePath).getHeader()?.cwd ?? "";
-      const { session } = await startRpcSession(sessionId, filePath, cwd);
+      const session = await openExistingAgentSession(sessionId);
       bindEvents(session, sessionId);
       return session.send(command);
     },

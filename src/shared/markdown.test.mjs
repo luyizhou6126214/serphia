@@ -100,3 +100,11 @@ test("AST transform skips existing links, images, code, inline code, HTML, and m
 test("does not treat web URLs, relative @ references, or bare drive roots as local paths", () => {
   assert.deepEqual(linkTargets("https://example.com/x @src/main.ts C:\\"), []);
 });
+
+test("does not link slash-separated words embedded in Chinese or other prose", () => {
+  assert.deepEqual(linkTargets("楼层/门/电梯的 waypoint 命名和适配器对不上"), []);
+  assert.deepEqual(linkTargets("查看 /tmp/project/file.ts 和 /tmp/project/folder"), [
+    ["/tmp/project/file.ts", "file:///tmp/project/file.ts"],
+    ["/tmp/project/folder", "file:///tmp/project/folder"],
+  ]);
+});

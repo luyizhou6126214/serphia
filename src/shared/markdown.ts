@@ -49,7 +49,7 @@ const PATH_SEGMENT = String.raw`(?:(?!${PATH_LIST_SEPARATOR})${PATH_SEGMENT_CHAR
 const FILE_NAME_SEGMENT = String.raw`(?:(?!${PATH_LIST_SEPARATOR})${PATH_SEGMENT_CHAR})+?\.[A-Za-z0-9]+`;
 const NO_SPACE_PATH_SEGMENT = String.raw`[^\s\t\n\\/:*?"<>|,;]+`;
 const BARE_LOCAL_PATH_RE = new RegExp(
-  "(?<![\\w:/])(" +
+  "(?<![\\p{L}\\p{N}_:/])(" +
     "file:\\/\\/[^\\s<>\"']+" +
     `|[A-Za-z]:[\\\\/](?:${PATH_SEGMENT}[\\\\/])*${FILE_NAME_SEGMENT}(?::\\d+(?::\\d+)?)?(?![A-Za-z0-9./\\\\])` +
     `|\\\\\\\\(?:${PATH_SEGMENT}[\\\\/])+${FILE_NAME_SEGMENT}(?::\\d+(?::\\d+)?)?(?![A-Za-z0-9./\\\\])` +

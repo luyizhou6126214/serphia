@@ -15,6 +15,7 @@ interface Props {
   filePath: string;
   cwd?: string;
   sourceSessionId?: string | null;
+  targetLine?: number | null;
 }
 
 function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
@@ -753,7 +754,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-export function FileViewer({ filePath, cwd, sourceSessionId }: Props) {
+export function FileViewer({ filePath, cwd, sourceSessionId, targetLine }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
   }
@@ -763,10 +764,10 @@ export function FileViewer({ filePath, cwd, sourceSessionId }: Props) {
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} targetLine={targetLine} />;
 }
 
-function TextFileViewer({ filePath, cwd, sourceSessionId }: Props) {
+function TextFileViewer({ filePath, cwd, sourceSessionId, targetLine }: Props) {
   const { isDark } = useTheme();
   const { language, t } = useI18n();
   const [loadState, dispatchLoad] = useReducer(textFileLoadReducer, INITIAL_TEXT_FILE_LOAD_STATE);
@@ -774,6 +775,17 @@ function TextFileViewer({ filePath, cwd, sourceSessionId }: Props) {
   const [viewMode, setViewMode] = useState<"source" | "diff">("source");
   const [wrapLines, setWrapLines] = useState(false);
   const [watching, setWatching] = useState(false);
+
+  const sourceRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!targetLine) return;
+    setPreviewMode(false);
+    setViewMode("source");
+  }, [filePath, targetLine]);
+  useEffect(() => {
+    if (!targetLine || previewMode || viewMode !== "source") return;
+    sourceRef.current?.querySelector(".ocr-line-target")?.scrollIntoView({ block: "center" });
+  }, [filePath, targetLine, loadState.data, previewMode, viewMode]);
 
   const loadGen = useRef(0);
 
@@ -1089,30 +1101,34 @@ function TextFileViewer({ filePath, cwd, sourceSessionId }: Props) {
             </MarkdownBody>
           </div>
         ) : (
-          <SyntaxHighlighter
-            language={data.language === "text" ? "plaintext" : data.language}
-            style={isDark ? vscDarkPlus : vs}
-            showLineNumbers
-            lineNumberStyle={{
-              color: "var(--text-dim)",
-              fontStyle: "normal",
-              minWidth: "3em",
-              paddingRight: "1em",
-            }}
-            customStyle={{
-              margin: 0,
-              padding: "12px 0",
-              background: "var(--bg)",
-              fontSize: 13,
-              lineHeight: 1.6,
-              fontFamily: "var(--font-mono)",
-              minHeight: "100%",
-            }}
-            codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
-            wrapLongLines={wrapLines}
-          >
-            {data.content}
-          </SyntaxHighlighter>
+          <div ref={sourceRef}>
+            <SyntaxHighlighter
+              wrapLines={Boolean(targetLine)}
+              lineProps={(line) => (line === targetLine ? { className: "ocr-line-target" } : {})}
+              language={data.language === "text" ? "plaintext" : data.language}
+              style={isDark ? vscDarkPlus : vs}
+              showLineNumbers
+              lineNumberStyle={{
+                color: "var(--text-dim)",
+                fontStyle: "normal",
+                minWidth: "3em",
+                paddingRight: "1em",
+              }}
+              customStyle={{
+                margin: 0,
+                padding: "12px 0",
+                background: "var(--bg)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                fontFamily: "var(--font-mono)",
+                minHeight: "100%",
+              }}
+              codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
+              wrapLongLines={wrapLines}
+            >
+              {data.content}
+            </SyntaxHighlighter>
+          </div>
         )}
       </div>
     </div>

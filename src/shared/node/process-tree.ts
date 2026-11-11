@@ -19,9 +19,13 @@ export function processGroupExists(processGroupId: number): boolean {
   }
 }
 
-export async function waitForProcessGroupExit(processGroupId: number, timeoutMs: number): Promise<boolean> {
+export async function waitForProcessGroupExit(
+  processGroupId: number,
+  timeoutMs: number,
+  groupExists = processGroupExists,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (processGroupExists(processGroupId)) {
+  while (groupExists(processGroupId)) {
     if (Date.now() >= deadline) return false;
     await wait(Math.min(POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())));
   }

@@ -1,0 +1,137 @@
+.quick-channel-binding-content {
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border-radius: inherit;
+}
+
+.quick-channel-binding-content .quick-toolbar-error {
+  margin-top: 10px;
+}
+
+.quick-channel-binding-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quick-channel-binding-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg-panel);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.quick-channel-binding-row[data-bound-here="true"] {
+  border-color: color-mix(in srgb, var(--quick-blue) 26%, var(--border));
+  background: color-mix(in srgb, var(--quick-blue) 6%, var(--bg-panel));
+}
+
+.quick-channel-binding-row:is(:hover, :focus-within) {
+  border-color: color-mix(in srgb, var(--quick-blue) 38%, var(--border));
+  background: color-mix(in srgb, var(--quick-blue) 8%, var(--bg-panel));
+}
+
+.quick-channel-binding-identity {
+  display: flex;
+  flex: 1 1 132px;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.quick-channel-binding-row .quick-toolbar-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.quick-channel-binding-row[data-channel="telegram"] .quick-toolbar-mark {
+  --mark-color: #229ed9;
+}
+
+.quick-channel-binding-row[data-channel="weixin"] .quick-toolbar-mark {
+  --mark-color: #07a952;
+}
+
+.quick-channel-binding-copy {
+  min-width: 0;
+}
+
+.quick-channel-binding-name,
+.quick-channel-binding-peer {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-channel-binding-name {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 17px;
+}
+
+.quick-channel-binding-peer {
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.quick-channel-binding-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
+.quick-channel-binding-status::before {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.quick-channel-binding-row[data-bound-here="true"] .quick-channel-binding-status {
+  background: color-mix(in srgb, var(--quick-blue) 12%, var(--bg-panel));
+  color: var(--quick-ink);
+}
+
+.quick-channel-binding-row[data-bound-here="true"] .quick-toolbar-action {
+  --button-color: var(--danger);
+  --button-ink: color-mix(in srgb, var(--danger) 78%, var(--text));
+}
+
+@media (max-width: 360px) {
+  .quick-channel-binding-identity {
+    flex-basis: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-channel-binding-row {
+    transition: none;
+  }
+}

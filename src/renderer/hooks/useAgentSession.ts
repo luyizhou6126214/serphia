@@ -1,7 +1,8 @@
 import { readLastThinkingLevel, saveLastModel, saveLastThinkingLevel } from "@/lib/last-session-selection";
 import { sessionModelForDisplay, sessionStatsForDisplay } from "@shared/session-model-display";
 import type { ThinkingLevelOption } from "@shared/thinking-levels";
-import { useState, useCallback, useRef, useEffect, useReducer } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
+import { getInvokedHerdrPaneIds } from "@shared/herdr/session-invocations";
 import type { AgentMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { AgentEvent, SessionDetail, SessionRuntimeState } from "@contract/types";
 import type { SlashCommandInfo } from "@contract/agent-commands";
@@ -346,6 +347,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     resetHistory,
     invalidateHistory,
     beginNavigation,
+    herdrAgentPaneIds: persistedHerdrPaneIds,
   } = useSessionHistory({
     isNew,
     sessionIdRef,
@@ -383,11 +385,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const displayModel = isNew ? (newSessionModel ?? newSessionDefaultModel) : currentModel;
 
   const sessionStats = sessionStatsForDisplay(sessionStatsOverride, data, session?.name, contextUsage);
+  const herdrAgentPaneIds = useMemo(
+    () => [...new Set([...(persistedHerdrPaneIds ?? []), ...getInvokedHerdrPaneIds(messages)])],
+    [messages, persistedHerdrPaneIds],
+  );
   useSessionPresentation(opts.presentationStore, {
     sessionId: sessionIdRef.current,
     info: data?.info ?? session,
     stats: sessionStats,
     contextUsage,
+    herdrAgentPaneIds,
   });
 
   const promoteNewSession = useCallback(

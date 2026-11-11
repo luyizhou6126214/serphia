@@ -128,6 +128,7 @@ export class AgentSessionWrapper {
   private queuedTurnCount = 0;
   private turnTail: Promise<void> = Promise.resolve();
   private externalTurnActive = false;
+  private scheduledTurnActive = false;
   private externalTurnChannel: ChannelId | null = null;
   private externalTurnAttachments: ChannelMessageAttachment[] | null = null;
   private externalTurnProgress: ((event: AgentEvent) => void) | null = null;
@@ -393,11 +394,11 @@ export class AgentSessionWrapper {
     const run = this.turnTail
       .catch(() => undefined)
       .then(async () => {
-        if (!this._alive) throw new Error("Agent session is no longer available");
-        this.promptRunning = true;
-        this.agentSettled = undefined;
-        notifyRunningChange();
         try {
+          if (!this._alive) throw new Error("Agent session is no longer available");
+          this.promptRunning = true;
+          this.agentSettled = undefined;
+          notifyRunningChange();
           return await task();
         } finally {
           this.promptRunning = false;
@@ -410,6 +411,49 @@ export class AgentSessionWrapper {
       () => undefined,
     );
     return run;
+  }
+
+  async runScheduledTurn(message: string, signal: AbortSignal): Promise<void> {
+    const lastAssistant = () =>
+      this.inner.sessionManager
+        .getBranch()
+        .findLast((entry) => entry.type === "message" && entry.message.role === "assistant");
+    let admitted = false;
+    try {
+      await this.enqueueTurn(async () => {
+        signal.throwIfAborted();
+        if (this.inner.isStreaming || this.inner.isCompacting) await this.inner.waitForIdle();
+        await this.waitForExtensionsBound();
+        await this.modelConfig.sync(this.inner, this.modelSelection);
+        signal.throwIfAborted();
+        if (!this._alive) throw new Error("Agent session is no longer available");
+        this.modelSelection.assertReady(this.inner);
+        browserAgentRuntime.beginTurn(this.sessionId, "local");
+        const previous = lastAssistant()?.id;
+        this.scheduledTurnActive = true;
+        admitted = true;
+        try {
+          try {
+            await this.inner.prompt(message, { source: "rpc", expandPromptTemplates: false });
+          } finally {
+            if (this.inner.isStreaming || this.inner.isCompacting) await this.inner.waitForIdle();
+          }
+          if (this.agentSettled?.aborted || !this._alive) throw new Error("The scheduled turn was aborted");
+          const latest = lastAssistant();
+          if (!latest || latest.id === previous || latest.type !== "message" || latest.message.role !== "assistant") {
+            throw new Error("The scheduled turn did not produce an assistant response");
+          }
+          const { stopReason, errorMessage } = latest.message;
+          if (stopReason === "error" || stopReason === "aborted") {
+            throw new Error(errorMessage || "The scheduled turn ended before completion");
+          }
+        } finally {
+          this.scheduledTurnActive = false;
+        }
+      });
+    } finally {
+      if (admitted) this.emit({ type: "prompt_done" });
+    }
   }
 
   async runExternalTurn(params: {
@@ -1010,6 +1054,7 @@ export class AgentSessionWrapper {
   }
 
   private requestExtensionCustomUi<T>(factory: unknown, options?: unknown): Promise<T> {
+    if (this.scheduledTurnActive) return Promise.resolve(undefined as T);
     if (this.externalTurnActive) {
       this.emit({
         type: "channel_headless_ui_blocked",
@@ -1071,6 +1116,7 @@ export class AgentSessionWrapper {
     timeout?: number,
     signal?: AbortSignal,
   ): Promise<T> {
+    if (this.scheduledTurnActive) return Promise.resolve(defaultValue);
     if (this.externalTurnActive) {
       this.emit({
         type: "channel_headless_ui_blocked",

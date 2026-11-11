@@ -199,17 +199,21 @@ test("socket client rejects symbolic-link endpoints and revalidates before every
   assert.equal(requests, 0);
 });
 
-test("event subscription accepts the start response then forwards event envelopes", async (t) => {
+test("event subscription accepts the start response then forwards Herdr 0.8.2 lifecycle events", async (t) => {
   const { HerdrSocketClient } = await loadSocketClient();
+  const eventFrame = {
+    event: "pane_agent_detected",
+    data: { type: "pane_agent_detected", pane_id: "w1:p1", workspace_id: "w1", agent: "claude" },
+  };
   const { endpoint } = await listen(t, (socket, request) => {
     socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
-    socket.write(`${JSON.stringify({ type: "event", event: { type: "pane.updated", pane_id: "w1:p1" } })}\n`);
+    socket.write(`${JSON.stringify(eventFrame)}\n`);
   });
   const client = new HerdrSocketClient(endpoint);
   const event = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("event timeout")), 1_000);
     const stop = client.subscribe(
-      ["pane.updated"],
+      ["pane.agent_detected"],
       (value) => {
         clearTimeout(timer);
         stop();
@@ -221,7 +225,7 @@ test("event subscription accepts the start response then forwards event envelope
       },
     );
   });
-  assert.deepEqual(event, { type: "event", event: { type: "pane.updated", pane_id: "w1:p1" } });
+  assert.deepEqual(event, eventFrame);
 });
 
 test("event subscription rejects an invalid handshake and ignores non-allowlisted events", async (t) => {

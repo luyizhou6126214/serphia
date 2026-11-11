@@ -60,16 +60,14 @@ $$x = 2！$$
 
 Final paragraph.`;
 
-test("long streaming text uses a cheap escaped preview and restores complete Markdown at settlement", () => {
+test("long streaming text retains Markdown formatting and sanitization", () => {
   const source = followingMarkdown.repeat(20) + "\n<script>unsafe()</script>";
-  const preview = renderToStaticMarkup(createElement(MarkdownBody, { isStreaming: true }, source));
-  assert.match(preview, /data-streaming-preview/);
-  assert.doesNotMatch(preview, /<table>|<script>|class="katex/);
-  assert.match(preview, /&lt;script&gt;/);
-  const settled = renderToStaticMarkup(createElement(MarkdownBody, { isStreaming: false }, source));
-  assertFollowingMarkdown(settled);
-  assert.match(settled, /class="katex/);
-  assert.doesNotMatch(settled, /data-streaming-preview|<script>/);
+  for (const isStreaming of [true, false]) {
+    const html = renderToStaticMarkup(createElement(MarkdownBody, { isStreaming }, source));
+    assertFollowingMarkdown(html);
+    assert.match(html, /class="katex/);
+    assert.doesNotMatch(html, /data-streaming-preview|<script>/);
+  }
 });
 
 test("small streaming code stays readable without highlighting and highlights once complete", () => {

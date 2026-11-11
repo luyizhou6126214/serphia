@@ -49,6 +49,7 @@ export function useSessionHistory({
   const [error, setError] = useState<string | null>(null);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, publishMessages] = useState<AgentMessage[]>([]);
+  const [herdrAgentPaneIds, setHerdrAgentPaneIds] = useState<readonly string[] | undefined>();
   const [entryIds, setEntryIds] = useState<string[]>([]);
   const [previousCursor, setPreviousCursor] = useState<string | null>(null);
   const [historyRevision, setHistoryRevision] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export function useSessionHistory({
       historyRevisionRef.current = null;
       previousCursorRef.current = null;
       commitHistory([], []);
+      setHerdrAgentPaneIds(undefined);
       setData(null);
       setActiveLeafId(null);
       setError(null);
@@ -208,6 +210,7 @@ export function useSessionHistory({
           return isCurrent(scope) && isRelevant() ? (detail.agentState ?? null) : null;
         }
         setData(detail);
+        setHerdrAgentPaneIds(detail.context.herdrAgentPaneIds);
         setActiveLeafId(detail.leafId);
         const previousTrace = pendingSessionLoadTraceRef.current;
         if (previousTrace && previousTrace !== trace) failSessionLoadTrace(previousTrace);
@@ -293,6 +296,7 @@ export function useSessionHistory({
           maxBytes: HISTORY_PAGE_MAX_BYTES,
         });
         if (!navigation.isCurrent()) return;
+        setHerdrAgentPaneIds(result.context.herdrAgentPaneIds);
         commitHistory(result.context.messages, result.context.entryIds ?? []);
         updatePagingState(result.context.historyRevision, result.context.previousCursor);
         setError(null);
@@ -419,6 +423,7 @@ export function useSessionHistory({
     error,
     activeLeafId,
     messages,
+    herdrAgentPaneIds,
     entryIds,
     previousCursor,
     historyRevision,

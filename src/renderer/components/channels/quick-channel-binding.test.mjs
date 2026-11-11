@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const { QuickChannelBinding } = await importTestBundle("src/renderer/components/channels/quick-channel-binding", {
+  mainFields: ["module", "main"],
   stdin: {
     contents: 'export { QuickChannelBinding } from "./QuickChannelBinding.tsx";',
     resolveDir: import.meta.dirname,

@@ -2,6 +2,7 @@ import { importTestBundle } from "#test-bundle";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
+import { resolve } from "node:path";
 import { act, create } from "react-test-renderer";
 
 const { MarkdownBody, getMarkdownComponentIdentityForTest, parseStats } = await importTestBundle(
@@ -19,6 +20,9 @@ const { MarkdownBody, getMarkdownComponentIdentityForTest, parseStats } = await 
       {
         name: "markdown-body-stubs",
         setup(build) {
+          build.onResolve({ filter: /^@\/hooks\/useStreamingMarkdown$/ }, () => ({
+            path: resolve(import.meta.dirname, "../hooks/useStreamingMarkdown.ts"),
+          }));
           build.onResolve({ filter: /^@\// }, (args) => ({ path: args.path, namespace: "stub" }));
           build.onResolve({ filter: /^\.\/SessionProfiler$/ }, () => ({ path: "profiler", namespace: "stub" }));
           build.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({
@@ -31,7 +35,7 @@ const { MarkdownBody, getMarkdownComponentIdentityForTest, parseStats } = await 
                   : args.path === "@/lib/file-links"
                     ? "export const resolveLocalFileHref = () => null;"
                     : args.path === "@/lib/markdown"
-                      ? "export const parseStats = { count: 0 }; const remarkPlugins = [() => () => { parseStats.count++; }]; export const useMarkdownPlugins = () => ({ remarkPlugins, rehypePlugins: [] });"
+                      ? "export const parseStats = { count: 0 }; const remarkPlugins = [() => () => { parseStats.count++; }]; const rehypePlugins = []; export const useMarkdownPlugins = () => ({ remarkPlugins, rehypePlugins });"
                       : args.path === "@/lib/code-highlight-policy"
                         ? "export const shouldHighlightCode = () => false;"
                         : args.path === "@/lib/chat-appearance"
@@ -58,7 +62,7 @@ test("Markdown custom component types are module-stable", () => {
   for (const name of ["code", "pre", "a", "img", "table"]) assert.equal(first[name], second[name]);
 });
 
-test("stable Markdown skips parsing and long streaming updates never enter the Markdown parser", async (t) => {
+test("long streams coalesce parses, keep formatting live, and flush immediately on settlement", async (t) => {
   const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer;
@@ -67,21 +71,29 @@ test("stable Markdown skips parsing and long streaming updates never enter the M
     if (oldAct === undefined) delete globalThis.IS_REACT_ACT_ENVIRONMENT;
     else globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct;
   });
+  const initial = "# Heading\n\n" + "growing ".repeat(500);
   const before = parseStats.count;
   await act(async () => {
-    renderer = create(createElement(MarkdownBody, null, "stable content"));
+    renderer = create(createElement(MarkdownBody, { isStreaming: true }, initial));
   });
   assert.equal(parseStats.count, before + 1);
-  await act(async () => renderer.update(createElement(MarkdownBody, null, "stable content")));
-  assert.equal(parseStats.count, before + 1);
+  assert.equal(renderer.root.findByType("h1").children.join(""), "Heading");
+  let source = initial;
   for (let i = 0; i < 10; i++) {
-    await act(async () =>
-      renderer.update(createElement(MarkdownBody, { isStreaming: true }, "growing ".repeat(500) + i)),
-    );
+    source += ` ${i}`;
+    await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: true }, source)));
   }
   assert.equal(parseStats.count, before + 1);
-  await act(async () =>
-    renderer.update(createElement(MarkdownBody, { isStreaming: false }, "growing ".repeat(500) + 9)),
-  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 150)));
   assert.equal(parseStats.count, before + 2);
+  assert.ok(JSON.stringify(renderer.toJSON()).includes("0 1 2 3 4 5 6 7 8 9"));
+  const replacement = "# Replacement\n\n" + "new ".repeat(800);
+  await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: true }, replacement)));
+  assert.equal(renderer.root.findByType("h1").children.join(""), "Replacement");
+  source = replacement + " **finished**";
+  await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: false }, source)));
+  assert.equal(renderer.root.findByType("strong").children.join(""), "finished");
+  const settled = parseStats.count;
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 150)));
+  assert.equal(parseStats.count, settled);
 });

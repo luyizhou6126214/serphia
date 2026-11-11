@@ -283,8 +283,13 @@ export class HerdrSocketClient {
               onReady?.();
               continue;
             }
-            if (!started || value.type !== "event" || !isRecord(value.event)) continue;
-            const eventType = value.event.type;
+            if (!started) continue;
+            const eventType =
+              typeof value.event === "string" && isRecord(value.data)
+                ? value.event.replace("_", ".")
+                : value.type === "event" && isRecord(value.event)
+                  ? value.event.type
+                  : undefined;
             if (typeof eventType !== "string" || !allowedEvents.has(eventType)) continue;
             onEvent(value);
           }

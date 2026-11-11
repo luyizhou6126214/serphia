@@ -58,6 +58,8 @@ export interface HistoryWindow {
 }
 
 export interface PagedContextInfo extends ContextInfo {
+  /** Successful Herdr invocations on the active branch, including history outside the display page. */
+  herdrAgentPaneIds?: string[];
   totalMessages: number;
   loadedMessages: number;
   truncatedBefore: boolean;

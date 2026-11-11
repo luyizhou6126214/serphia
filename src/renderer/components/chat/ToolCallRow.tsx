@@ -57,6 +57,7 @@ export interface ToolCallRowProps {
    * without opening the row; ordinary output stays folded.
    */
   historyNotice?: boolean | undefined;
+  showFullInput?: boolean | undefined;
 }
 
 /**
@@ -83,6 +84,7 @@ export const ToolCallRow = memo(function ToolCallRow({
   browserSummary,
   onOpenBrowserTab,
   historyNotice = false,
+  showFullInput = false,
 }: ToolCallRowProps) {
   const model = useMemo(
     () =>
@@ -125,11 +127,12 @@ export const ToolCallRow = memo(function ToolCallRow({
       : !open && browserSummary
         ? browserSummary
         : model.summary;
+  const showCode = variant === "code" && !showFullInput;
   const bodyText = useMemo(
-    () => (open && inputRaw !== null ? formatToolBody(variant, inputRaw) : null),
-    [inputRaw, open, variant],
+    () => (open && inputRaw !== null ? (showFullInput ? inputRaw : formatToolBody(variant, inputRaw)) : null),
+    [inputRaw, open, showFullInput, variant],
   );
-  const ioInput = variant === "code" ? null : bodyText;
+  const ioInput = showCode ? null : bodyText;
 
   const collapsedContent = useMemo(
     () =>
@@ -150,7 +153,7 @@ export const ToolCallRow = memo(function ToolCallRow({
         <PatchResultView text={patch} />
       ) : (
         <>
-          {variant === "code" && bodyText !== null && (
+          {showCode && bodyText !== null && (
             <pre className="dsh-tool-code" style={{ fontSize: scaledChatFont(12) }}>
               <code>{bodyText}</code>
             </pre>

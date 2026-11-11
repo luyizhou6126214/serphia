@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ArrowRight, ChevronDown, Link2, MessageCircle, Unlink2, UsersRound, X } from "lucide-react";
 import type { ChannelBinding, ChannelsSnapshot } from "@shared/channel-types";
 import { call } from "@/lib/api-client";
 import {
@@ -7,6 +8,9 @@ import {
   type QuickChannelBindingPopoverLayout,
 } from "@/lib/quick-channel-binding-layout";
 import { useI18n } from "@/i18n";
+import { useQuickToolbarPopoverMotion } from "@/hooks/useQuickToolbarPopoverMotion";
+import "../QuickToolbar.css";
+import "./QuickChannelBinding.css";
 
 interface QuickChannelBindingProps {
   sessionId: string;
@@ -30,6 +34,8 @@ export function QuickChannelBinding({ sessionId, snapshot, isMobile, onSnapshotC
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const dialogId = useId();
+  const titleId = `${dialogId}-title`;
+  const descriptionId = `${dialogId}-description`;
 
   const closePopover = useCallback((restoreFocus = false) => {
     setOpen(false);
@@ -79,6 +85,9 @@ export function QuickChannelBinding({ sessionId, snapshot, isMobile, onSnapshotC
   );
   const available = snapshot.accounts.some((account) => account.configured) || snapshot.bindings.length > 0;
   const currentChannels = [...new Set(currentBindings.map((binding) => binding.channel))];
+  const showPopover = available && open && popoverLayout !== null;
+
+  useQuickToolbarPopoverMotion(dialogRef, showPopover);
 
   useEffect(() => {
     setOpen(false);
@@ -158,7 +167,7 @@ export function QuickChannelBinding({ sessionId, snapshot, isMobile, onSnapshotC
         ? "#07c160"
         : singleChannel === "feishu"
           ? "#3370ff"
-          : "var(--accent)";
+          : "var(--action-blue)";
   const label = bound
     ? online
       ? singleChannel
@@ -182,48 +191,26 @@ export function QuickChannelBinding({ sessionId, snapshot, isMobile, onSnapshotC
             setError("");
             setOpen((value) => !value);
           }}
-          style={{
-            minWidth: 0,
-            maxWidth: isMobile ? 148 : 280,
-            padding: "5px 9px",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            border: `1px solid ${bound ? `color-mix(in srgb, ${accent} 38%, var(--border))` : "var(--border)"}`,
-            borderRadius: 999,
-            background: bound ? `color-mix(in srgb, ${accent} 9%, var(--bg-panel))` : "var(--bg)",
-            color: "var(--text-muted)",
-            fontSize: 11,
-            whiteSpace: "nowrap",
-            cursor: "pointer",
-            overflow: "hidden",
-          }}
+          className="quick-toolbar-trigger"
+          style={{ maxWidth: isMobile ? 148 : 280 }}
         >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 7,
-              height: 7,
-              flexShrink: 0,
-              borderRadius: "50%",
-              background: bound ? (online ? accent : "var(--text-dim)") : "var(--accent)",
-              boxShadow: bound && online ? `0 0 0 2px color-mix(in srgb, ${accent} 18%, transparent)` : "none",
-            }}
-          />
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <span className="quick-toolbar-trigger-icon" aria-hidden="true">
+            <Link2 size={14} />
+            {bound && (
+              <span className="quick-toolbar-trigger-status" style={{ backgroundColor: online ? accent : undefined }} />
+            )}
+          </span>
+          <span className="quick-toolbar-trigger-label">
             {label}
             {!isMobile && currentBindings.length > 1
               ? ` · ${currentBindings.length} ${t("conversations", "conversations")}`
               : ""}
           </span>
-          <span aria-hidden="true" style={{ fontSize: 9, opacity: 0.7 }}>
-            ▾
-          </span>
+          <ChevronDown className="quick-toolbar-trigger-chevron" size={11} aria-hidden="true" />
         </button>
       </div>
 
-      {open &&
-        popoverLayout &&
+      {showPopover &&
         typeof document !== "undefined" &&
         createPortal(
           <div
@@ -231,152 +218,117 @@ export function QuickChannelBinding({ sessionId, snapshot, isMobile, onSnapshotC
             id={dialogId}
             role="dialog"
             tabIndex={-1}
-            aria-label={t("quickChannelBinding", "Quick messaging-channel binding")}
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
             data-testid="channel-quick-bind-popover"
             data-placement={popoverLayout.placement}
+            className="quick-toolbar-popover chat-appearance-scope"
             style={{
-              position: "fixed",
               top: popoverLayout.top,
               left: popoverLayout.left,
-              zIndex: 250,
               width: popoverLayout.width,
               maxHeight: popoverLayout.maxHeight,
-              overflowX: "hidden",
-              overflowY: "auto",
-              overscrollBehavior: "contain",
-              border: "1px solid var(--border)",
-              borderRadius: 9,
-              background: "var(--bg)",
-              boxShadow: "0 12px 34px rgba(0,0,0,.22)",
-              padding: 12,
-              outline: "none",
             }}
           >
-            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>
-              {t("quickChannelBinding", "Quick messaging-channel binding")}
-            </div>
-            <div style={{ marginTop: 4, color: "var(--text-dim)", fontSize: 10, lineHeight: 1.5 }}>
-              {t(
-                "quickChannelBindingDescription",
-                "Choose the messaging conversation that should share this active UI session.",
-              )}
-            </div>
-
-            {error && (
-              <div style={{ marginTop: 9, color: "#ef4444", fontSize: 11, overflowWrap: "anywhere" }}>{error}</div>
-            )}
-
-            <div style={{ display: "grid", gap: 8, marginTop: 11 }}>
-              {snapshot.bindings.length === 0 ? (
-                <div
-                  style={{
-                    border: "1px dashed var(--border)",
-                    borderRadius: 7,
-                    padding: 12,
-                    color: "var(--text-dim)",
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {t(
-                    "noBindableChannelConversations",
-                    "No messaging conversations are available yet. Ask an approved user to send the first message.",
-                  )}
+            <span className="quick-toolbar-halo" aria-hidden="true" />
+            <div className="quick-channel-binding-content">
+              <header className="quick-toolbar-header">
+                <span className="quick-toolbar-mark" aria-hidden="true">
+                  <Link2 size={19} />
+                </span>
+                <div>
+                  <h2 id={titleId}>{t("quickChannelBinding", "Quick messaging-channel binding")}</h2>
+                  <p id={descriptionId}>
+                    {t(
+                      "quickChannelBindingDescription",
+                      "Choose the messaging conversation that should share this active UI session.",
+                    )}
+                  </p>
                 </div>
-              ) : (
-                snapshot.bindings.map((binding) => {
-                  const account = snapshot.accounts.find((candidate) => candidate.id === binding.accountId);
-                  const boundHere = binding.sessionId === sessionId;
-                  const boundElsewhere = Boolean(binding.sessionId) && !boundHere;
-                  const busy = busyBindingId === binding.id;
-                  return (
-                    <div
-                      key={binding.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(0,1fr) auto",
-                        alignItems: "center",
-                        gap: 10,
-                        border: `1px solid ${boundHere ? "color-mix(in srgb, var(--accent) 35%, var(--border))" : "var(--border)"}`,
-                        borderRadius: 7,
-                        background: boundHere
-                          ? "color-mix(in srgb, var(--accent) 7%, var(--bg-panel))"
-                          : "var(--bg-panel)",
-                        padding: "9px 10px",
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            color: "var(--text)",
-                            fontSize: 11,
-                            fontWeight: 650,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {account?.name ?? channelName(binding.channel)} ·{" "}
-                          {binding.peerKind === "group"
-                            ? t("groupConversation", "Group")
-                            : t("directConversation", "DM")}
-                        </div>
-                        <div
-                          title={binding.peerId}
-                          style={{
-                            marginTop: 3,
-                            color: "var(--text-dim)",
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 10,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {binding.peerId}
-                        </div>
-                        {(boundHere || boundElsewhere) && (
-                          <div
-                            style={{
-                              marginTop: 3,
-                              color: boundHere ? "var(--accent)" : "var(--text-dim)",
-                              fontSize: 10,
-                            }}
-                          >
-                            {boundHere
-                              ? t("boundToCurrentSession", "Bound to current session")
-                              : t("boundToAnotherSession", "Bound to another session")}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        disabled={busyBindingId !== null}
-                        onClick={() => void updateBinding(binding, !boundHere)}
-                        style={{
-                          border: `1px solid ${boundHere ? "#ef444466" : "var(--accent)"}`,
-                          borderRadius: 6,
-                          background: boundHere ? "var(--bg)" : "var(--accent)",
-                          color: boundHere ? "#ef4444" : "white",
-                          padding: "6px 9px",
-                          fontSize: 10,
-                          whiteSpace: "nowrap",
-                          cursor: busyBindingId !== null ? "default" : "pointer",
-                          opacity: busyBindingId !== null && !busy ? 0.55 : 1,
-                        }}
-                      >
-                        {busy
-                          ? t("saving", "Saving…")
-                          : boundHere
-                            ? t("unbind", "Unbind")
-                            : boundElsewhere
-                              ? t("rebindHere", "Rebind here")
-                              : t("bindHere", "Bind here")}
-                      </button>
-                    </div>
-                  );
-                })
+                <button
+                  type="button"
+                  className="quick-toolbar-icon-button"
+                  aria-label={t("close", "Close")}
+                  onClick={() => closePopover(true)}
+                >
+                  <X size={15} aria-hidden="true" />
+                </button>
+              </header>
+
+              {error && (
+                <div className="quick-toolbar-error" role="alert">
+                  {error}
+                </div>
               )}
+
+              <div className="quick-channel-binding-list">
+                {snapshot.bindings.length === 0 ? (
+                  <div className="quick-toolbar-empty">
+                    {t(
+                      "noBindableChannelConversations",
+                      "No messaging conversations are available yet. Ask an approved user to send the first message.",
+                    )}
+                  </div>
+                ) : (
+                  snapshot.bindings.map((binding) => {
+                    const account = snapshot.accounts.find((candidate) => candidate.id === binding.accountId);
+                    const boundHere = binding.sessionId === sessionId;
+                    const boundElsewhere = Boolean(binding.sessionId) && !boundHere;
+                    const busy = busyBindingId === binding.id;
+                    const isGroup = binding.peerKind === "group";
+                    const ConversationIcon = isGroup ? UsersRound : MessageCircle;
+                    const conversationType = isGroup ? t("groupConversation", "Group") : t("directConversation", "DM");
+                    const conversationName = `${account?.name ?? channelName(binding.channel)} · ${conversationType}`;
+                    const ActionIcon = boundHere ? Unlink2 : ArrowRight;
+                    return (
+                      <div
+                        key={binding.id}
+                        className="quick-channel-binding-row"
+                        data-quick-toolbar-row
+                        data-channel={binding.channel}
+                        data-bound-here={boundHere}
+                      >
+                        <div className="quick-channel-binding-identity">
+                          <span className="quick-toolbar-mark" aria-hidden="true">
+                            <ConversationIcon size={16} />
+                          </span>
+                          <div className="quick-channel-binding-copy">
+                            <div className="quick-channel-binding-name" title={conversationName}>
+                              {conversationName}
+                            </div>
+                            <div className="quick-channel-binding-peer" title={binding.peerId}>
+                              {binding.peerId}
+                            </div>
+                            {(boundHere || boundElsewhere) && (
+                              <div className="quick-channel-binding-status">
+                                {boundHere
+                                  ? t("boundToCurrentSession", "Bound to current session")
+                                  : t("boundToAnotherSession", "Bound to another session")}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="quick-toolbar-action"
+                          disabled={busyBindingId !== null}
+                          aria-busy={busy || undefined}
+                          onClick={() => void updateBinding(binding, !boundHere)}
+                        >
+                          {busy
+                            ? t("saving", "Saving…")
+                            : boundHere
+                              ? t("unbind", "Unbind")
+                              : boundElsewhere
+                                ? t("rebindHere", "Rebind here")
+                                : t("bindHere", "Bind here")}
+                          <ActionIcon size={13} aria-hidden="true" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>,
           document.body,

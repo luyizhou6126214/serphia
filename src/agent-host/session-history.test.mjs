@@ -124,6 +124,32 @@ test("history pages preserve complete turns and reconstruct the full display his
   assert.deepEqual(reconstructedEntryIds, full.entryIds);
 });
 
+test("Herdr invocations follow the selected branch even when the calls precede the loaded page", () => {
+  const failed = toolResult("failed", "launch failed");
+  failed.message.isError = true;
+  const entries = chain([
+    user("delegate the document"),
+    assistant([
+      { type: "toolCall", id: "start", name: "herdr_agent_start", arguments: { paneId: "w2:p1", kind: "claude" } },
+      { type: "toolCall", id: "failed", name: "herdr_agent_start", arguments: { paneId: "w2:p2", kind: "codex" } },
+    ]),
+    toolResult("start", "started"),
+    failed,
+    assistant([{ type: "toolCall", id: "prompt", name: "herdr_agent_prompt", arguments: { paneId: "w2:p1" } }]),
+    toolResult("prompt", "accepted"),
+    user("continue the chat"),
+    assistant([{ type: "text", text: "done" }]),
+    assistant([{ type: "toolCall", id: "other", name: "herdr_agent_prompt", arguments: { paneId: "w3:p1" } }]),
+    toolResult("other", "accepted"),
+  ]);
+  entries[8].parentId = entries[0].id;
+  const options = { entries, historyWindow: { maxTurns: 1 }, historyRevision: "revision-one" };
+  const main = buildSessionHistoryPage({ ...options, leafId: entries[7].id });
+  assert.equal(main.truncatedBefore, true);
+  assert.deepEqual(main.herdrAgentPaneIds, ["w2:p1"]);
+  assert.deepEqual(buildSessionHistoryPage({ ...options, leafId: entries[9].id }).herdrAgentPaneIds, ["w3:p1"]);
+});
+
 test("oversized text blocks are deferred within the byte budget and can be read exactly", () => {
   const oversized = "large-output-".repeat(30_000);
   const entries = chain([

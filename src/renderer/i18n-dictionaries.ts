@@ -1,3 +1,4 @@
+import { enUS as reviewEnUS, zhCN as reviewZhCN, zhTW as reviewZhTW } from "./i18n/code-review.ts";
 import { enUS as routingEnUS, zhCN as routingZhCN, zhTW as routingZhTW } from "./i18n/model-routing.ts";
 import type { AppLanguage } from "../shared/app-language.ts";
 import { mergeDictionaries } from "./i18n/merge-dictionaries.ts";
@@ -14,6 +15,7 @@ import { enUS as modelsEnUS, zhCN as modelsZhCN, zhTW as modelsZhTW } from "./i1
 import { enUS as openInAppEnUS, zhCN as openInAppZhCN, zhTW as openInAppZhTW } from "./i18n/open-in-app.ts";
 import { enUS as rightPanelEnUS, zhCN as rightPanelZhCN, zhTW as rightPanelZhTW } from "./i18n/right-panel.ts";
 import { enUS as resourcesEnUS, zhCN as resourcesZhCN, zhTW as resourcesZhTW } from "./i18n/resources.ts";
+import { enUS as scheduleEnUS, zhCN as scheduleZhCN, zhTW as scheduleZhTW } from "./i18n/schedule.ts";
 import { enUS as sessionEnUS, zhCN as sessionZhCN, zhTW as sessionZhTW } from "./i18n/session.ts";
 import { enUS as settingsEnUS, zhCN as settingsZhCN, zhTW as settingsZhTW } from "./i18n/settings.ts";
 import { enUS as trajectoryEnUS, zhCN as trajectoryZhCN, zhTW as trajectoryZhTW } from "./i18n/trajectory.ts";
@@ -33,6 +35,8 @@ export const enUS = mergeDictionaries(
   openInAppEnUS,
   rightPanelEnUS,
   resourcesEnUS,
+  scheduleEnUS,
+  reviewEnUS,
   sessionEnUS,
   settingsEnUS,
   trajectoryEnUS,
@@ -52,6 +56,8 @@ export const zhCN = mergeDictionaries(
   openInAppZhCN,
   rightPanelZhCN,
   resourcesZhCN,
+  scheduleZhCN,
+  reviewZhCN,
   sessionZhCN,
   settingsZhCN,
   trajectoryZhCN,
@@ -71,6 +77,8 @@ export const zhTW = mergeDictionaries(
   openInAppZhTW,
   rightPanelZhTW,
   resourcesZhTW,
+  scheduleZhTW,
+  reviewZhTW,
   sessionZhTW,
   settingsZhTW,
   trajectoryZhTW,

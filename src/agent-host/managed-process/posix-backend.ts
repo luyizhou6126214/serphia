@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { ToolExecutionContext } from "../../shared/toolchains/types.ts";
 import {
   getProcessStartFingerprint,
   terminatePosixProcessGroup,
@@ -30,9 +29,9 @@ function deferred(): Deferred {
   return { promise, resolve, reject };
 }
 
-function cleanEnvironment(context: ToolExecutionContext, processId: string, runId: string): NodeJS.ProcessEnv {
+function cleanEnvironment(source: NodeJS.ProcessEnv, processId: string, runId: string): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(context.shellEnv)) {
+  for (const [key, value] of Object.entries(source)) {
     if (typeof value === "string") environment[key] = value;
   }
   environment.ELECTRON_RUN_AS_NODE = "1";
@@ -70,6 +69,12 @@ export interface PosixManagedProcessBackendOptions {
   now?: () => number;
 }
 
+type DirectLaunch = Pick<PreparedManagedProcessLaunch, "processId" | "runId" | "cwd"> & {
+  executable: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+};
+
 export class PosixManagedProcessBackend implements ManagedProcessBackend {
   private readonly options: Required<
     Pick<PosixManagedProcessBackendOptions, "platform" | "workerEntryPath" | "hostInstanceId">
@@ -97,7 +102,10 @@ export class PosixManagedProcessBackend implements ManagedProcessBackend {
     return () => this.events.off("event", listener);
   }
 
-  async prepare(input: PreparedManagedProcessLaunch, signal?: AbortSignal): Promise<PreparedContainment> {
+  async prepare(
+    input: PreparedManagedProcessLaunch | DirectLaunch,
+    signal?: AbortSignal,
+  ): Promise<PreparedContainment> {
     if (this.process) throw new Error("POSIX managed process backend was already prepared");
     if (signal?.aborted) throw new Error("Managed process start was cancelled");
     const spawnProcess = this.options.spawnProcess ?? spawn;
@@ -105,7 +113,7 @@ export class PosixManagedProcessBackend implements ManagedProcessBackend {
     try {
       worker = spawnProcess(process.execPath, [...(this.options.workerExecArgv ?? []), this.options.workerEntryPath], {
         cwd: input.cwd,
-        env: cleanEnvironment(input.context, input.processId, input.runId),
+        env: cleanEnvironment("executable" in input ? input.env : input.context.shellEnv, input.processId, input.runId),
         shell: false,
         detached: true,
         windowsHide: true,
@@ -143,8 +151,9 @@ export class PosixManagedProcessBackend implements ManagedProcessBackend {
       processId: input.processId,
       runId: input.runId,
       cwd: input.cwd,
-      command: input.command,
-      shell: input.shell,
+      ...("executable" in input
+        ? { executable: input.executable, args: input.args }
+        : { command: input.command, shell: input.shell }),
     };
     worker.send(bootstrap);
     await withTimeout(this.started.promise, WORKER_START_TIMEOUT_MS, "Managed process worker did not start");

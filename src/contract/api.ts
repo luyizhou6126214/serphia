@@ -1,6 +1,14 @@
 import type { AgentShell, AgentShellSettings } from "../shared/agent-shell";
 import type { AdvancedModelSettings, AutoRoutingConfig, CatalogModel, ModelSettingsSnapshot } from "./model-settings";
 import type {
+  ReviewActivityPage,
+  ReviewConfigSnapshot,
+  ReviewHistoryDetail,
+  ReviewHistoryRef,
+  ReviewHistoryRow,
+  ReviewModelStatus,
+} from "./code-review";
+import type {
   AgentCommand,
   AgentEvent,
   ApiKeyProviderStatus,
@@ -77,6 +85,20 @@ import type { PiRuntimeProbeResult } from "./runtime";
 import type { CredentialMutationOptions } from "./auth";
 import type { ExecutionHistoryPage, ExecutionQuery, ExecutionContentChunk } from "./executions";
 import type {
+  ReviewCommand,
+  ReviewCommandOutput,
+  ReviewDiff,
+  ReviewDiffRequest,
+  ReviewModelSelection,
+  ReviewBranches,
+  ReviewMcpSnapshot,
+  ReviewPreview,
+  ReviewReply,
+  ReviewRequest,
+  ReviewRun,
+} from "./code-review";
+import type { ScheduleSave, ScheduleTask } from "./schedule";
+import type {
   McpConfigurationSnapshot,
   McpScope,
   McpServerConfig,
@@ -88,6 +110,49 @@ import type {
 
 /** Request/response API surface (replaces HTTP routes). */
 export interface Api {
+  "codeReview.preview": { params: ReviewRequest; result: ReviewReply<ReviewPreview> };
+  "codeReview.branches": { params: { cwd: string }; result: ReviewReply<ReviewBranches> };
+  "codeReview.config.get": { params: void; result: ReviewReply<ReviewConfigSnapshot> };
+  "codeReview.config.status": { params: void; result: ReviewReply<ReviewModelStatus> };
+  "codeReview.config.save": {
+    params: ReviewConfigSnapshot;
+    result: ReviewReply<ReviewConfigSnapshot & { status: ReviewModelStatus }>;
+  };
+  "codeReview.mcp.get": { params: void; result: ReviewReply<ReviewMcpSnapshot> };
+  "codeReview.mcp.save": { params: ReviewMcpSnapshot; result: ReviewReply<ReviewMcpSnapshot> };
+  "codeReview.start": {
+    params: { previewId: string; model: ReviewModelSelection | null };
+    result: ReviewReply<ReviewRun>;
+  };
+  "codeReview.getRun": { params: { id?: string }; result: ReviewRun | null };
+  "codeReview.activity": { params: { id: string; after?: number }; result: ReviewActivityPage | null };
+  "codeReview.history.list": {
+    params: { cwd?: string; limit?: number; offset?: number };
+    result: ReviewReply<ReviewHistoryRow[]>;
+  };
+  "codeReview.history.open": { params: ReviewHistoryRef; result: ReviewReply<ReviewHistoryDetail> };
+  "codeReview.history.diff": {
+    params: { ref: ReviewHistoryRef; path: string };
+    result: ReviewReply<ReviewDiff | null>;
+  };
+  "codeReview.history.activity": {
+    params: { ref: ReviewHistoryRef; after?: number };
+    result: ReviewReply<ReviewActivityPage>;
+  };
+  "codeReview.cancel": { params: { id: string }; result: ReviewRun | null };
+  "codeReview.locateFinding": {
+    params: { id: string; findingId: number };
+    result: ReviewReply<{ path: string; root: string; line: number | null; stale: boolean }>;
+  };
+  "codeReview.diff": { params: ReviewDiffRequest; result: ReviewReply<ReviewDiff> };
+  "codeReview.command": { params: ReviewCommand; result: ReviewReply<ReviewCommandOutput> };
+  "codeReview.testModel": { params: { cwd: string; model: ReviewModelSelection | null }; result: ReviewReply<null> };
+  "schedule.list": { params: void; result: ScheduleTask[] };
+  "schedule.save": { params: ScheduleSave; result: ScheduleTask };
+  "schedule.pause": { params: { id: string; revision: number; paused: boolean }; result: ScheduleTask };
+  "schedule.run": { params: { id: string; revision: number }; result: ScheduleTask };
+  "schedule.remove": { params: { id: string }; result: { ok: true } };
+
   "mcp.config.get": { params: { scope: McpScope; cwd?: string }; result: McpConfigurationSnapshot };
   "mcp.config.upsert": {
     params: { scope: McpScope; cwd?: string; name: string; config: McpServerConfig; expectedRevision: string };
@@ -569,6 +634,7 @@ export interface Api {
 
 /** Server-push streams delivered over MessagePort RPC. */
 export interface Streams {
+  "schedule.changed": Record<string, never>;
   "mcp.changed": { sessionId: string; instances: import("./mcp").McpInstanceSnapshot[] };
   "mcp.oauth": McpOAuthSnapshot;
   "mcp.settings": { sessionId: string };

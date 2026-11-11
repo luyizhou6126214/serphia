@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { abortedAssistantEntryIds } from "./agent-settlement";
 import type { HistoryWindow, PagedContextInfo, TrajectoryContextEntry } from "../contract/types";
+import { getInvokedHerdrPaneIds } from "../shared/herdr/session-invocations";
 import type {
   AgentMessage,
   DeferredContentRef,
@@ -410,6 +411,7 @@ export function buildSessionHistoryPage(options: {
     const context = buildSessionContext(entries, options.leafId);
     return {
       ...context,
+      herdrAgentPaneIds: getInvokedHerdrPaneIds(context.messages),
       selectedModel,
       totalMessages: context.messages.length,
       loadedMessages: context.messages.length,
@@ -458,6 +460,7 @@ export function buildSessionHistoryPage(options: {
   return {
     messages: selected.map((item) => item.message),
     entryIds: selected.map((item) => item.entryId),
+    ...(cursor ? {} : { herdrAgentPaneIds: getInvokedHerdrPaneIds(allMessages.map(({ message }) => message)) }),
     ...settings,
     selectedModel,
     totalMessages: allMessages.length,

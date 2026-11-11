@@ -12,9 +12,11 @@ import { systemHandlers } from "./handlers/system";
 import { probePiRuntimeModules } from "./pi-runtime-probe";
 import { createSessionHandlers } from "./handlers/sessions";
 import { createTitleHandlers } from "./handlers/agent-title";
-import { createAgentHandlers } from "./handlers/agent";
+import { createAgentHandlers, openExistingAgentSession } from "./handlers/agent";
 import { resourceHandlers } from "./handlers/resources";
 import { createChannelHandlers, initializeChannels } from "./handlers/channels";
+import { CodeReviewService } from "./code-review/service";
+import { createCodeReviewHandlers } from "./handlers/code-review";
 import { createHerdrHandlers } from "./handlers/herdr";
 import { createProcessHandlers } from "./handlers/processes";
 import { createMcpHandlers } from "./handlers/mcp";
@@ -40,6 +42,11 @@ import { createFileWatchService, stopAllFileWatches } from "./file-watch";
 import { createAuthLoginService } from "./auth-login";
 import { modelCatalogRefreshCoordinator } from "./model-runtime";
 import { beginModelCredentialShutdown, settleModelCredentials } from "./model-credentials";
+import path from "node:path";
+import { desktopDataRoot } from "./desktop-data-root";
+import { ScheduledTasks } from "./scheduled-tasks";
+import { emitIndexedSessionChange } from "./session-change";
+import { resolveSessionPath } from "./session-reader";
 
 import { ChannelManager } from "./channels/channel-manager";
 
@@ -108,10 +115,32 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     server,
     bindEvents: (session, id) => bindings.ensure(session, id),
   });
+  const scheduledTasks = new ScheduledTasks(
+    path.join(desktopDataRoot(), "scheduled-tasks.json"),
+    server,
+    async (task, occurrence, signal) => {
+      const session = await openExistingAgentSession(task.sessionId, signal);
+      signal.throwIfAborted();
+      bindings.ensure(session, task.sessionId);
+      const origin = occurrence.trigger === "manual" ? "Manual run of scheduled task" : "Scheduled task";
+      try {
+        await session.runScheduledTurn(
+          `${origin}: ${task.name}\nRun time: ${new Date(occurrence.scheduledAt).toISOString()}\n\n${task.prompt}`,
+          signal,
+        );
+      } finally {
+        await emitIndexedSessionChange(server, task.sessionId, session.cwd).catch(() => undefined);
+      }
+    },
+    async (id) => Boolean(await resolveSessionPath(id)),
+  );
+  scheduledTasks.start();
   const titleHandlers = createTitleHandlers(server);
   const channelHandlers = createChannelHandlers(channelManager);
   const processHandlers = createProcessHandlers(managedProcesses, managedCall);
   const herdrHandlers = createHerdrHandlers(herdr, herdrCall);
+  const codeReview = new CodeReviewService();
+  const reviewHandlers = createCodeReviewHandlers(codeReview);
 
   const guard =
     <P, R>(handler: (params: P, context: RpcRequestContext) => R) =>
@@ -130,6 +159,30 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     };
 
   server.handle({
+    "codeReview.preview": guard(reviewHandlers["codeReview.preview"]),
+    "codeReview.branches": guard(reviewHandlers["codeReview.branches"]),
+    "codeReview.config.get": guard(reviewHandlers["codeReview.config.get"]),
+    "codeReview.config.status": guard(reviewHandlers["codeReview.config.status"]),
+    "codeReview.config.save": guard(reviewHandlers["codeReview.config.save"]),
+    "codeReview.mcp.get": guard(reviewHandlers["codeReview.mcp.get"]),
+    "codeReview.mcp.save": guard(reviewHandlers["codeReview.mcp.save"]),
+    "codeReview.start": guard(reviewHandlers["codeReview.start"]),
+    "codeReview.getRun": guard(reviewHandlers["codeReview.getRun"]),
+    "codeReview.activity": guard(reviewHandlers["codeReview.activity"]),
+    "codeReview.history.list": guard(reviewHandlers["codeReview.history.list"]),
+    "codeReview.history.open": guard(reviewHandlers["codeReview.history.open"]),
+    "codeReview.history.diff": guard(reviewHandlers["codeReview.history.diff"]),
+    "codeReview.history.activity": guard(reviewHandlers["codeReview.history.activity"]),
+    "codeReview.cancel": guard(reviewHandlers["codeReview.cancel"]),
+    "codeReview.locateFinding": guard(reviewHandlers["codeReview.locateFinding"]),
+    "codeReview.diff": guard(reviewHandlers["codeReview.diff"]),
+    "codeReview.command": guard(reviewHandlers["codeReview.command"]),
+    "codeReview.testModel": guard(reviewHandlers["codeReview.testModel"]),
+    "schedule.list": guard(() => scheduledTasks.list()),
+    "schedule.save": guard((params) => scheduledTasks.save(params)),
+    "schedule.pause": guard((params) => scheduledTasks.pause(params)),
+    "schedule.run": guard((params) => scheduledTasks.runNow(params)),
+    "schedule.remove": guard((params) => scheduledTasks.remove(params)),
     "mcp.config.get": guard(mcpHandlers["mcp.config.get"]),
     "mcp.config.upsert": guard(mcpHandlers["mcp.config.upsert"]),
     "mcp.config.remove": guard(mcpHandlers["mcp.config.remove"]),
@@ -375,6 +428,8 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
   });
 
   const shutdown = createHostShutdown([
+    { name: "code review", stop: () => codeReview.shutdown() },
+    { name: "scheduled task timer", stop: () => scheduledTasks.stop() },
     { name: "running subscription", stop: stopRunning },
     { name: "session event bindings", stop: bindings.close },
     { name: "credential lock waits", stop: beginModelCredentialShutdown },
@@ -387,6 +442,7 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     { name: "channels", stop: () => channelManager.shutdown() },
     { name: "file watches", stop: stopAllFileWatches },
     { name: "Agent sessions", stop: disposeAllRpcSessions },
+    { name: "scheduled task results", stop: () => scheduledTasks.settled() },
     { name: "MCP", stop: () => mcp.shutdown() },
     {
       name: "pending requests",

@@ -108,3 +108,9 @@ contain additional components and notices; those upstream files remain authorita
 
 Where an upstream version-specific license link and a canonical reference differ, the upstream component's bundled
 license and notices are authoritative.
+
+### Open Code Review
+
+Serphia redistributes the matching Open Code Review v1.13.7 executable from
+[Alibaba's release](https://github.com/alibaba/open-code-review/releases/tag/v1.13.7).
+The upstream Apache-2.0 license accompanies the executable in the application resources.
