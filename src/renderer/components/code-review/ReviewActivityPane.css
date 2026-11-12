@@ -14,8 +14,11 @@
 .cr-activity-header {
   flex: none;
   min-width: 0;
-  color: var(--cr-muted);
-  font-size: 11px;
+  padding: 6px 12px;
+}
+.cr-activity-header .composer-stats {
+  justify-content: flex-end;
+  padding: 0;
 }
 .cr-activity-feed {
   flex: 1;

@@ -6,11 +6,11 @@ import { createRpcClient, createRpcServer } from "./rpc.ts";
 import { RpcError } from "./types.ts";
 import { ToolchainError } from "../shared/toolchains/errors.ts";
 
-function createPair(t) {
+function createPair(t, clientOptions) {
   const { port1, port2 } = new MessageChannel();
   const server = createRpcServer();
   server.attachPort(port1);
-  const client = createRpcClient(port2);
+  const client = createRpcClient(port2, clientOptions);
   t.after(() => {
     client.close();
     server.detachPort(port1);
@@ -191,6 +191,18 @@ test("a long-running operation can use a dedicated per-call timeout", async (t) 
 
   const result = await client.callWithTimeout("host.ping", 100);
   assert.deepEqual(result, { ok: true, ts: 7 });
+});
+
+test("a zero per-call timeout waits past the default deadline and still rejects on disconnect", async (t) => {
+  const { client, server } = createPair(t, { callTimeoutMs: 5 });
+  server.handle({
+    "host.ping": () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, ts: 7 }), 35)),
+  });
+  assert.deepEqual(await client.callWithTimeout("host.ping", 0), { ok: true, ts: 7 });
+
+  const pending = client.callWithTimeout("host.ping", 0);
+  client.close();
+  await assert.rejects(pending, (error) => error instanceof RpcError && error.code === "CLOSED");
 });
 
 test("postMessage failure rejects and removes a pending call", async () => {

@@ -1,0 +1,332 @@
+diff --git a/cmd/opencodereview/llm_cmd.go b/cmd/opencodereview/llm_cmd.go
+index cdb54e9..b352b6d 100644
+--- a/cmd/opencodereview/llm_cmd.go
++++ b/cmd/opencodereview/llm_cmd.go
+@@ -105,8 +105,12 @@ func runLLMTestWithConfigPath(configPath string) error {
+ 	// way a provider rejecting that turn does, which is the distinction the tool
+ 	// round trip exists to draw.
+ 	send := func(msgs []llm.Message) (*llm.ChatResponse, error) {
+-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+-		defer cancel()
++		ctx := context.Background()
++		if !llm.RequestTimeoutDisabled() {
++			var cancel context.CancelFunc
++			ctx, cancel = context.WithTimeout(ctx, timeout)
++			defer cancel()
++		}
+ 		return llmClient.CompletionsWithCtx(ctx, llm.ChatRequest{
+ 			Model:     ep.Model,
+ 			Messages:  msgs,
+diff --git a/cmd/opencodereview/review_cmd.go b/cmd/opencodereview/review_cmd.go
+index 6726301..06da57f 100644
+--- a/cmd/opencodereview/review_cmd.go
++++ b/cmd/opencodereview/review_cmd.go
+@@ -558,9 +558,7 @@ func initMCPClients(ctx context.Context, cfg *Config, tools *tool.Registry, repo
+ 				fmt.Fprintf(os.Stderr, "[ocr] WARNING: remote MCP server %q has no URL configured, skipping\n", name)
+ 				continue
+ 			}
+-			initCtx, initCancel := context.WithTimeout(ctx, 30*time.Second)
+-			mc, err := mcp.NewRemoteClient(initCtx, name, serverCfg.URL, serverCfg.Headers, version)
+-			initCancel()
++			mc, err := mcp.NewRemoteClient(ctx, name, serverCfg.URL, serverCfg.Headers, version)
+ 			if err != nil {
+ 				fmt.Fprintf(os.Stderr, "[ocr] WARNING: failed to connect to remote MCP server %q: %v\n", name, err)
+ 				continue
+@@ -576,12 +574,10 @@ func initMCPClients(ctx context.Context, cfg *Config, tools *tool.Registry, repo
+ 		}
+ 		if serverCfg.Setup != "" {
+ 			fmt.Fprintf(os.Stderr, "[ocr] Running setup for MCP server %q: %s\n", name, serverCfg.Setup)
+-			setupCtx, setupCancel := context.WithTimeout(ctx, 5*time.Minute)
+-			setupCmd := shellCommand(setupCtx, serverCfg.Setup)
++			setupCmd := shellCommand(ctx, serverCfg.Setup)
+ 			setupCmd.Dir = repoDir
+ 			configureProcessGroup(setupCmd)
+ 			output, err := setupCmd.CombinedOutput()
+-			setupCancel()
+ 			if err != nil {
+ 				fmt.Fprintf(os.Stderr, "[ocr] ERROR: MCP server %q setup command failed.\n", name)
+ 				fmt.Fprintf(os.Stderr, "[ocr]   Command: %s\n", serverCfg.Setup)
+@@ -595,9 +591,7 @@ func initMCPClients(ctx context.Context, cfg *Config, tools *tool.Registry, repo
+ 			}
+ 		}
+ 
+-		initCtx, initCancel := context.WithTimeout(ctx, 30*time.Second)
+-		mc, err := mcp.NewClient(initCtx, name, serverCfg.Command, serverCfg.Args, serverCfg.Env, repoDir, version)
+-		initCancel()
++		mc, err := mcp.NewClient(ctx, name, serverCfg.Command, serverCfg.Args, serverCfg.Env, repoDir, version)
+ 		if err != nil {
+ 			fmt.Fprintf(os.Stderr, "[ocr] WARNING: failed to start MCP server %q: %v\n", name, err)
+ 			continue
+diff --git a/internal/agent/util.go b/internal/agent/util.go
+index 7460f5b..0347133 100644
+--- a/internal/agent/util.go
++++ b/internal/agent/util.go
+@@ -9,7 +9,6 @@ import (
+ 	"os/exec"
+ 	"regexp"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/alibaba/open-code-review/internal/llm"
+ 	"github.com/alibaba/open-code-review/internal/model"
+@@ -156,8 +155,6 @@ func reviewModeString(from, to, commit string) string {
+ 
+ // detectGitBranch returns the current git branch name for the given repo, or empty string on failure.
+ func detectGitBranch(ctx context.Context, repoDir string) string {
+-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+-	defer cancel()
+ 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD")
+ 	out, err := cmd.Output()
+ 	if err != nil || len(out) == 0 {
+diff --git a/internal/config/rules/sniffer.go b/internal/config/rules/sniffer.go
+index a0e7365..22d9956 100644
+--- a/internal/config/rules/sniffer.go
++++ b/internal/config/rules/sniffer.go
+@@ -11,15 +11,10 @@ import (
+ 	"os/exec"
+ 	"path/filepath"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/alibaba/open-code-review/internal/gitcmd"
+ )
+ 
+-// sniffTimeout bounds a single content peek. A peek is a best-effort hint, so
+-// exceeding it yields "" (no sniff) rather than failing the whole resolution.
+-const sniffTimeout = 5 * time.Second
+-
+ // systemLayer is the subset of *SystemRule that composedResolver depends on.
+ // Declaring it lets the lowest layer be decorated (see sniffer) without any
+ // caller — or the Resolver interface itself — changing.
+@@ -118,8 +113,7 @@ func (s *sniffer) peekFirstLine(path string) string {
+ // showAtRef reads path's content at s.ref via `git show <ref>:<path>`.
+ // Returns "" when the file does not exist at that ref or git fails.
+ func (s *sniffer) showAtRef(path string) string {
+-	ctx, cancel := context.WithTimeout(context.Background(), sniffTimeout)
+-	defer cancel()
++	ctx := context.Background()
+ 
+ 	args := []string{"-c", "core.quotepath=false", "show", "--end-of-options", s.ref + ":" + path}
+ 
+diff --git a/internal/diff/parser.go b/internal/diff/parser.go
+index 30c2be5..94c058b 100644
+--- a/internal/diff/parser.go
++++ b/internal/diff/parser.go
+@@ -11,7 +11,6 @@ import (
+ 	"os/exec"
+ 	"regexp"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/alibaba/open-code-review/internal/gitcmd"
+ 	"github.com/alibaba/open-code-review/internal/model"
+@@ -108,9 +107,6 @@ func ParseDiffText(ctx context.Context, diffText string, repoDir string, ref str
+ 	// like "++i" renders as "+++i" and still counts as an insertion.
+ 	inHunk := false
+ 
+-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+-	defer cancel()
+-
+ 	for _, line := range lines {
+ 		if oldPath, newPath, ok := parseDiffHeaderLine(line); ok {
+ 			// Flush previous diff
+diff --git a/internal/llm/client.go b/internal/llm/client.go
+index dda5833..b6f74f2 100644
+--- a/internal/llm/client.go
++++ b/internal/llm/client.go
+@@ -60,10 +60,8 @@ const responseHeaderTimeoutMargin = 30 * time.Second
+ // anthropic-sdk-go hardcoded 10-minute default (which each applies unless a client is
+ // supplied via WithHTTPClient) so a configured timeout_sec is honored on a slow
+ // endpoint (#1161). Shared by the OpenAI, OpenAI Responses and Anthropic constructors.
+-// A timeout of zero or less leaves ResponseHeaderTimeout unset (no cap), matching the
+-// SDKs' "no timeout" semantics; the callers clamp to a positive value first, so this
+-// only guards a direct call. Package var, not func, so a test can assert each
+-// constructor installs it, same as bedrockConfigLoadTimeout.
++// A timeout of zero leaves ResponseHeaderTimeout unset. Package var, not func,
++// so a test can assert each constructor installs it.
+ var httpClientWithHeaderTimeout = func(timeout time.Duration) *http.Client {
+ 	t, ok := http.DefaultTransport.(*http.Transport)
+ 	if !ok {
+@@ -592,7 +590,7 @@ type OpenAIClient struct {
+ // ExtraHeaders are applied per request (not baked into the SDK client) so
+ // SessionKeyTemplateVar can expand to the session key each request carries.
+ func NewOpenAIClient(cfg ClientConfig) *OpenAIClient {
+-	if cfg.Timeout <= 0 {
++	if cfg.Timeout <= 0 && !RequestTimeoutDisabled() {
+ 		cfg.Timeout = 5 * time.Minute
+ 	}
+ 	if cfg.SessionKey == "" {
+@@ -1162,7 +1160,7 @@ type AnthropicClient struct {
+ // available to ExtraHeaders/ExtraBody via SessionKeyTemplateVar, applied per
+ // request so it can expand to the session key each request carries.
+ func NewAnthropicClient(cfg ClientConfig) *AnthropicClient {
+-	if cfg.Timeout <= 0 {
++	if cfg.Timeout <= 0 && !RequestTimeoutDisabled() {
+ 		cfg.Timeout = 5 * time.Minute
+ 	}
+ 	if cfg.SessionKey == "" {
+@@ -1237,7 +1235,7 @@ func NewAnthropicClient(cfg ClientConfig) *AnthropicClient {
+ // AWS_BEARER_TOKEN_BEDROCK if set. Region comes from AWS_REGION or the active
+ // profile.
+ func NewAnthropicBedrockClient(cfg ClientConfig) *AnthropicClient {
+-	if cfg.Timeout <= 0 {
++	if cfg.Timeout <= 0 && !RequestTimeoutDisabled() {
+ 		cfg.Timeout = 5 * time.Minute
+ 	}
+ 	if cfg.SessionKey == "" {
+diff --git a/internal/llm/resolver.go b/internal/llm/resolver.go
+index 3399107..26a613a 100644
+--- a/internal/llm/resolver.go
++++ b/internal/llm/resolver.go
+@@ -205,6 +205,11 @@ func finalizeResolvedEndpoint(source string, ep ResolvedEndpoint, env envOverrid
+ 	return ep
+ }
+ 
++// RequestTimeoutDisabled reports whether the caller explicitly opted out of request deadlines.
++func RequestTimeoutDisabled() bool {
++	return strings.TrimSpace(os.Getenv(envOCRLLMTimeout)) == "0"
++}
++
+ // parseTimeoutEnv reads and validates the OCR_LLM_TIMEOUT environment variable.
+ // Returns the parsed duration and true if set, or 0 and false if unset/empty.
+ // Returns an error for invalid values (non-integer, negative, overflow) to give
+diff --git a/internal/llm/responses_client.go b/internal/llm/responses_client.go
+index 1315080..b25ac41 100644
+--- a/internal/llm/responses_client.go
++++ b/internal/llm/responses_client.go
+@@ -40,7 +40,7 @@ type OpenAIResponsesClient struct {
+ // ExtraHeaders are applied per request (not baked into the SDK client)
+ // so SessionKeyTemplateVar can expand to the session key each request carries.
+ func NewOpenAIResponsesClient(cfg ClientConfig) *OpenAIResponsesClient {
+-	if cfg.Timeout <= 0 {
++	if cfg.Timeout <= 0 && !RequestTimeoutDisabled() {
+ 		cfg.Timeout = 5 * time.Minute
+ 	}
+ 	if cfg.SessionKey == "" {
+diff --git a/internal/llmloop/compression.go b/internal/llmloop/compression.go
+index 153fbc6..2148136 100644
+--- a/internal/llmloop/compression.go
++++ b/internal/llmloop/compression.go
+@@ -300,7 +300,7 @@ func (r *Runner) triggerAsyncCompression(ctx context.Context, st *compressionSta
+ 		return
+ 	}
+ 	msgSnapshot := copyMessages(messages)
+-	asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
++	asyncCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+ 	job := &compressionJob{done: make(chan struct{}), cancel: cancel, snapshotLen: len(messages)}
+ 	st.pendingJob = job
+ 	st.mu.Unlock()
+diff --git a/internal/llmloop/loop.go b/internal/llmloop/loop.go
+index 8614275..54f4b95 100644
+--- a/internal/llmloop/loop.go
++++ b/internal/llmloop/loop.go
+@@ -90,9 +90,7 @@ func NewRunner(deps Deps, task Task) *Runner {
+ // Run returns (cancelPendingCompression runs as a deferred call on
+ // every exit, and triggerAsyncCompression refuses to start a second job while
+ // one is pending), so this normally returns quickly — but the wait length
+-// ultimately depends on the LLM client honouring context cancellation, and no
+-// additional deadline is imposed here: the job already carries its own
+-// timeout.
++// ultimately depends on the LLM client honouring context cancellation.
+ // Both diff-review and scan modes call this prior to session finalization so
+ // background compression goroutines are joined before session_end is written.
+ func (r *Runner) WaitBackground() {
+diff --git a/internal/tool/code_search.go b/internal/tool/code_search.go
+index 8548f16..db97f6f 100644
+--- a/internal/tool/code_search.go
++++ b/internal/tool/code_search.go
+@@ -11,13 +11,9 @@ import (
+ 	"os/exec"
+ 	"strconv"
+ 	"strings"
+-	"time"
+ )
+ 
+-const (
+-	gitGrepMaxCount = 100
+-	gitGrepTimeout  = 10 * time.Second
+-)
++const gitGrepMaxCount = 100
+ 
+ // CodeSearchProvider performs text search across the repository using git grep.
+ type CodeSearchProvider struct {
+@@ -113,10 +109,7 @@ func hasTraversalPathComponent(pathspec string) bool {
+ 	return false
+ }
+ 
+-func (p *CodeSearchProvider) runGitGrep(parentCtx context.Context, cmdArgs []string) (string, string, error) {
+-	ctx, cancel := context.WithTimeout(parentCtx, gitGrepTimeout)
+-	defer cancel()
+-
++func (p *CodeSearchProvider) runGitGrep(ctx context.Context, cmdArgs []string) (string, string, error) {
+ 	if p.FileReader.Runner != nil {
+ 		stdout, stderr, err := p.FileReader.Runner.RunSplit(ctx, p.FileReader.RepoDir, cmdArgs...)
+ 		if ctx.Err() != nil && err != nil {
+diff --git a/internal/tool/file_find.go b/internal/tool/file_find.go
+index 1527e6b..f7d7ade 100644
+--- a/internal/tool/file_find.go
++++ b/internal/tool/file_find.go
+@@ -10,15 +10,11 @@ import (
+ 	"os/exec"
+ 	"path/filepath"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/alibaba/open-code-review/internal/diff"
+ )
+ 
+-const (
+-	fileFindMaxCount = 100
+-	fileFindTimeout  = 10 * time.Second
+-)
++const fileFindMaxCount = 100
+ 
+ // FileFindProvider finds files by name or pattern in the repository using git ls-files.
+ type FileFindProvider struct {
+@@ -98,10 +94,7 @@ func (p *FileFindProvider) Execute(ctx context.Context, args map[string]any) (st
+ 
+ // listGitFiles returns tracked and untracked files (respecting .gitignore) via git ls-files.
+ // In range/commit mode it uses git ls-tree to list files at the reviewed ref.
+-func (p *FileFindProvider) listGitFiles(parentCtx context.Context) ([]string, error) {
+-	ctx, cancel := context.WithTimeout(parentCtx, fileFindTimeout)
+-	defer cancel()
+-
++func (p *FileFindProvider) listGitFiles(ctx context.Context) ([]string, error) {
+ 	var output []byte
+ 	var err error
+ 
+diff --git a/internal/tool/filereader.go b/internal/tool/filereader.go
+index 9aaf086..ca68428 100644
+--- a/internal/tool/filereader.go
++++ b/internal/tool/filereader.go
+@@ -12,7 +12,6 @@ import (
+ 	"os/exec"
+ 	"path/filepath"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/alibaba/open-code-review/internal/gitcmd"
+ 	"github.com/alibaba/open-code-review/internal/pathutil"
+@@ -115,10 +114,7 @@ func (fr *FileReader) resolveWorkspacePath(path string) (string, error) {
+ 	return resolvedPath, nil
+ }
+ 
+-func (fr *FileReader) readFromGitShow(parentCtx context.Context, path string) (string, error) {
+-	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
+-	defer cancel()
+-
++func (fr *FileReader) readFromGitShow(ctx context.Context, path string) (string, error) {
+ 	args := []string{"-c", "core.quotepath=false", "show", "--end-of-options", fr.Ref + ":" + path}
+ 	if fr.Runner != nil {
+ 		output, err := fr.Runner.Output(ctx, fr.RepoDir, args...)
+@@ -144,9 +140,7 @@ func (fr *FileReader) ReadLines(ctx context.Context, path string, startLine, max
+ 	case ModeWorkspace:
+ 		return fr.readLinesFromDisk(path, startLine, maxLines)
+ 	case ModeRange, ModeCommit:
+-		innerCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+-		defer cancel()
+-		return fr.readLinesFromGitShow(innerCtx, path, startLine, maxLines)
++		return fr.readLinesFromGitShow(ctx, path, startLine, maxLines)
+ 	default:
+ 		return fr.readLinesFromDisk(path, startLine, maxLines)
+ 	}

@@ -4,11 +4,13 @@ import path from "node:path";
 import type {
   ReviewActivityEntry,
   ReviewActivityPage,
+  ReviewActivityStats,
   ReviewDiff,
   ReviewHistoryDetail,
   ReviewHistoryRow,
   ReviewRun,
 } from "../../contract/code-review";
+import { summarizeReviewActivity } from "./activity-stats";
 import { ReviewError } from "./output";
 import { relativePath, sessionId, workspaceDiff, type PreparedScope, type Workspace } from "./scope";
 
@@ -212,10 +214,16 @@ export async function readHistoryEntries(home: string, id: string) {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  return { entries: [...rows.values()].sort((a, b) => a.id - b.id), truncated };
+  const entries = [...rows.values()].sort((a, b) => a.id - b.id);
+  return { entries, truncated, stats: meta.run.activityStats ?? summarizeReviewActivity(entries) };
 }
 
-export function historyPage(entries: ReviewActivityEntry[], after: number, truncated: boolean): ReviewActivityPage {
+export function historyPage(
+  entries: ReviewActivityEntry[],
+  after: number,
+  truncated: boolean,
+  stats: ReviewActivityStats,
+): ReviewActivityPage {
   if (!Number.isSafeInteger(after) || after < 0) throw new ReviewError("invalidOutput");
   const page: ReviewActivityEntry[] = [];
   let cursor = after;
@@ -228,7 +236,7 @@ export function historyPage(entries: ReviewActivityEntry[], after: number, trunc
     cursor = entry.id;
     bytes += size;
   }
-  return { entries: page, cursor, more: (entries.at(-1)?.id ?? 0) > cursor, truncated };
+  return { entries: page, cursor, more: (entries.at(-1)?.id ?? 0) > cursor, truncated, stats };
 }
 
 export async function deleteHistoryBySession(home: string, root: string, id: string) {

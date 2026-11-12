@@ -28,7 +28,6 @@ export function ReviewToolsDialog({
   request,
   selectedFile,
   model,
-  nativeModel,
   lastSessionId,
   openModels,
   onResume,
@@ -40,7 +39,6 @@ export function ReviewToolsDialog({
   request: ReviewRequest | null;
   selectedFile: string | null;
   model: ReviewModelSelection | null;
-  nativeModel: boolean;
   lastSessionId?: string;
   openModels: () => void;
   onResume: (id: string, scope: ReviewScope) => void;
@@ -207,7 +205,7 @@ export function ReviewToolsDialog({
     setOutput(null);
     setStatus("");
     try {
-      if (action === "testModel" && cwd && (model || nativeModel)) {
+      if (action === "testModel" && cwd && model) {
         const reply = await call("codeReview.testModel", { cwd, model });
         setStatus(reply.ok ? t("reviewTestPassed", "Connection verified") : reviewIssueText(reply.issue, t));
       } else if (next) {
@@ -445,10 +443,7 @@ export function ReviewToolsDialog({
             <button
               type="submit"
               className="cr-control cr-primary"
-              disabled={
-                busy ||
-                (!command() && action !== "openModels" && !(action === "testModel" && cwd && (model || nativeModel)))
-              }
+              disabled={busy || (!command() && action !== "openModels" && !(action === "testModel" && cwd && model))}
             >
               <Play size={14} />
               {busy ? t("reviewCommandRunning", "Running…") : t("reviewRunCommand", "Run command")}

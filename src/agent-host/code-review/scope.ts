@@ -97,7 +97,7 @@ export async function reviewOptionArgs(
   options: ReviewOptions | undefined,
 ) {
   const preview: string[] = [];
-  const execution: string[] = [];
+  const execution = ["--timeout", "0"];
   const delegate: string[] = [];
   const scan = prepared.scope.kind === "scan";
   if (options?.background) {
@@ -118,7 +118,6 @@ export async function reviewOptionArgs(
   for (const [key, value, maximum] of [
     ["concurrency", options?.concurrency ?? REVIEW_OPTION_DEFAULTS.concurrency, 32],
     ["max-git-procs", options?.maxGitProcs, 64],
-    ["timeout", options?.timeout ?? REVIEW_OPTION_DEFAULTS.timeout, 60],
     ["max-tools", options?.maxTools ?? REVIEW_OPTION_DEFAULTS.maxTools, 500],
     ["max-tokens-budget", options?.maxTokensBudget ?? REVIEW_OPTION_DEFAULTS.maxTokensBudget, 2_000_000],
   ] as const) {

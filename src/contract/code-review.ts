@@ -14,7 +14,6 @@ export type ReviewOptions = {
   tools?: string;
   effort?: "auto" | "low" | "medium" | "high";
   concurrency?: number;
-  timeout?: number;
   maxTokens?: number;
   maxTokensBudget?: number;
   maxTools?: number;
@@ -29,7 +28,6 @@ export type ReviewOptions = {
 export const REVIEW_OPTION_DEFAULTS = {
   effort: "low",
   concurrency: 1,
-  timeout: 0,
   maxTokens: 0,
   maxTokensBudget: 0,
   maxTools: 0,
@@ -45,9 +43,8 @@ export type ReviewBranches = {
 };
 export type ReviewExportFormat = "text" | "json" | "sarif" | "html";
 export const OCR_CONFIG_LIMIT = 256 * 1024;
-export type ReviewModelSource = "serphia" | "ocr";
-export type ReviewConfigSnapshot = { revision: string; text: string; source: ReviewModelSource };
-export type ReviewModelStatus = { source: ReviewModelSource; nativeModel?: string; effort: "low" | "medium" | "high" };
+export type ReviewConfigSnapshot = { revision: string; text: string };
+export type ReviewEngineStatus = { effort: "low" | "medium" | "high" };
 export type ReviewMcpSnapshot = { revision: string; text: string };
 
 export type ReviewCommand =
@@ -60,7 +57,7 @@ export type ReviewCommand =
   | { kind: "ruleCheck"; cwd: string; file: string; rule?: string }
   | { kind: "delegatePreview"; request: ReviewRequest; format?: "text" | "json" }
   | { kind: "delegateRule"; request: ReviewRequest; files: string; format?: "text" | "json" }
-  | { kind: "engineConfig"; key: "language" | "max_tokens" | "effort" | "llm.timeout_sec"; value?: string }
+  | { kind: "engineConfig"; key: "language" | "max_tokens" | "effort"; value?: string }
   | { kind: "completion"; shell: "bash" | "zsh" | "fish" | "powershell" }
   | {
       kind: "help";
@@ -133,6 +130,8 @@ export type ReviewRun = {
   startedAt: number;
   finishedAt?: number;
   model: string;
+  contextWindow?: number;
+  activityStats?: ReviewActivityStats;
   worktreeBranch?: string;
   scope: ReviewScope;
   diffScope?: ReviewScope;
@@ -161,6 +160,10 @@ export type ReviewActivityEntry = ActivityBase &
         durationMs?: number;
         inputTokens?: number;
         outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        contextWindow?: number;
+        toolUse?: boolean;
         issue?: ReviewIssue;
         diagnostic?: string;
       }
@@ -176,12 +179,24 @@ export type ReviewActivityEntry = ActivityBase &
       }
     | { kind: "warning" | "engine"; message: string }
   );
+export type ReviewActivityStats = {
+  modelCalls: number;
+  toolCalls: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  context?: { tokens: number; window: number };
+  modelDurationMs?: number;
+  toolDurationMs?: number;
+};
 export type ReviewActivityPage = {
   entries: ReviewActivityEntry[];
   cursor: number;
   more: boolean;
   truncated: boolean;
   firstId?: number;
+  stats?: ReviewActivityStats;
 };
 
 export type ReviewHistoryRef = { archiveId: string } | { cwd: string; sessionId: string };

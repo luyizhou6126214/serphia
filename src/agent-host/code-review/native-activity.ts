@@ -38,10 +38,10 @@ export class NativeReviewActivity {
     private replay = false,
   ) {}
 
-  static async start(home: string, root: string, log: ReviewActivityLog, captureModels = false) {
+  static async start(home: string, root: string, log: ReviewActivityLog) {
     const directory = sessionDirectory(home, root);
     const previous = new Set(await readdir(directory).catch(() => []));
-    return new NativeReviewActivity(directory, previous, log, captureModels);
+    return new NativeReviewActivity(directory, previous, log);
   }
 
   get sessionId() {
@@ -134,6 +134,10 @@ export class NativeReviewActivity {
             reasoning: typeof row.reasoning_content === "string" ? row.reasoning_content : "",
             inputTokens: typeof row.usage?.prompt_tokens === "number" ? row.usage.prompt_tokens : undefined,
             outputTokens: typeof row.usage?.completion_tokens === "number" ? row.usage.completion_tokens : undefined,
+            cacheReadTokens: typeof row.usage?.cache_read_tokens === "number" ? row.usage.cache_read_tokens : undefined,
+            cacheWriteTokens:
+              typeof row.usage?.cache_write_tokens === "number" ? row.usage.cache_write_tokens : undefined,
+            toolUse: Array.isArray(row.tool_calls) ? row.tool_calls.length > 0 : undefined,
             ...(typeof row.error === "string" ? { issue: issueFromDiagnostics(row.error), diagnostic: row.error } : {}),
           });
           continue;

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertSuccessfulSpawn, resolvePackageFile } from "./process-utils.mjs";
+import { prepareOcrSdk } from "./prepare-ocr-sdk.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -14,6 +15,7 @@ export function cleanMainBuildOutputs(projectRoot = root) {
 }
 
 export function buildMain(projectRoot = root) {
+  prepareOcrSdk(projectRoot);
   cleanMainBuildOutputs(projectRoot);
   const tsupCli = resolvePackageFile(projectRoot, "tsup", "dist/cli-default.js");
   assertSuccessfulSpawn(

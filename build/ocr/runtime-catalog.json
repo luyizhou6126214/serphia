@@ -1,5 +1,12 @@
 {
   "version": "v1.13.7",
+  "source": {
+    "commit": "b1dcffb0729f3f2e3e47170968a5014a2e035580",
+    "go": "go1.26.10",
+    "url": "https://codeload.github.com/alibaba/open-code-review/tar.gz/b1dcffb0729f3f2e3e47170968a5014a2e035580",
+    "bytes": 6828090,
+    "sha256": "667ca5e62952fa78177e030a4e5517c2c242bc71f77d05a4e921bc94678f9777"
+  },
   "license": {
     "url": "https://raw.githubusercontent.com/alibaba/open-code-review/v1.13.7/LICENSE",
     "bytes": 11356,
@@ -7,24 +14,28 @@
   },
   "artifacts": {
     "darwin-arm64": {
-      "asset": "opencodereview-darwin-arm64",
-      "bytes": 55366066,
-      "sha256": "ce2eab495483f9b119992b48253a4e2f6969c27c3b02514350d9e7aa0083b4e8"
+      "bytes": 55333042,
+      "sha256": "cf9fdb27e5fbb20972fc22c15f548fa5595fc65cc63e80c5a70a945007f82edd",
+      "darwinCode": {
+        "sha256": "8860356a9860570a5f0daa8c1f26341daa424f4202f4600f3c7245a283905230",
+        "bytes": 54903968
+      }
     },
     "darwin-x64": {
-      "asset": "opencodereview-darwin-amd64",
-      "bytes": 58361600,
-      "sha256": "fa7b63f25e7002aec38e6980b071d1b53e6681aeb9e144b7bfe84833de5e3de6"
+      "bytes": 58324720,
+      "sha256": "849b3d890a2790ad853bf6fcb731bb61f401175c932fc613701904d98d58de58",
+      "darwinCode": {
+        "sha256": "f73c0e2316960c64600d7a227074478d600481b1ff5ba20acad9a920468850d5",
+        "bytes": 58324720
+      }
     },
     "win32-x64": {
-      "asset": "opencodereview-windows-amd64.exe",
-      "bytes": 58079232,
-      "sha256": "b637d002471056c57f50c947583188dbeafa043aeb5875ee16ab4355b1eb2d36"
+      "bytes": 58044416,
+      "sha256": "8f4cc74e7c5a185e1028d72d7edd1ce8d1c9067e664aeb2e15986b403ccb8300"
     },
     "linux-x64": {
-      "asset": "opencodereview-linux-amd64",
-      "bytes": 56606882,
-      "sha256": "8c1ff786161b6dc0e8dcb06107f18bda8b6181b39ce573400add4a39f90cf19d"
+      "bytes": 56574078,
+      "sha256": "d54c8b7178b08b07096fbf48554ac41456dd37cff0cd9e0ec0e4ea9ffb6a8e4c"
     }
   }
 }

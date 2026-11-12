@@ -111,6 +111,8 @@ license and notices are authoritative.
 
 ### Open Code Review
 
-Serphia redistributes the matching Open Code Review v1.13.7 executable from
-[Alibaba's release](https://github.com/alibaba/open-code-review/releases/tag/v1.13.7).
+Serphia builds Open Code Review v1.13.7 from
+[Alibaba's source](https://github.com/alibaba/open-code-review/releases/tag/v1.13.7)
+with the timeout changes in `build/ocr/no-deadlines.patch`. The first bundled-tools
+build for each target uses Go 1.26.10. Set `SERPHIA_OCR_GO` to select the Go executable.
 The upstream Apache-2.0 license accompanies the executable in the application resources.

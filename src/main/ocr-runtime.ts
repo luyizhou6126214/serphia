@@ -33,8 +33,8 @@ export async function resolveOcrRuntime(
   const matchesRelease =
     binary.length === artifact.bytes && createHash("sha256").update(binary).digest("hex") === artifact.sha256;
   if (!matchesRelease) {
-    const code = platform === "darwin" && darwinCodeDigest(binary, manifest.darwinCode?.bytes);
-    if (!code || code.sha256 !== manifest.darwinCode?.sha256 || code.bytes !== manifest.darwinCode?.bytes) {
+    const expected = "darwinCode" in artifact ? artifact.darwinCode : undefined;
+    if (!expected || darwinCodeDigest(binary, expected.bytes)?.sha256 !== expected.sha256) {
       throw new Error("OCR executable failed verification");
     }
   }

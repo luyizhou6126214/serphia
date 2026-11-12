@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowRight,
   Download,
+  Files,
   Ellipsis,
   FolderOpen,
   FolderPlus,
@@ -17,7 +19,7 @@ import {
 import type {
   ReviewFinding,
   ReviewHistoryRef,
-  ReviewModelStatus,
+  ReviewEngineStatus,
   ReviewOptions,
   ReviewRequest,
   ReviewScope,
@@ -27,7 +29,7 @@ import { useI18n } from "@/i18n";
 import { call } from "@/lib/api-client";
 import { getFileName } from "@/lib/file-paths";
 import { useCodeReview } from "@/hooks/useCodeReview";
-import { reviewIssueText, reviewStateText } from "./copy";
+import { reviewIssueText, reviewScopeText, reviewStateText } from "./copy";
 import { ReviewLayout, type ReviewTab } from "./ReviewLayout";
 import { ReviewFilesPane } from "./ReviewFilesPane";
 import { ReviewHistoryPage } from "./ReviewHistoryPage";
@@ -79,7 +81,7 @@ export function CodeReviewPage({
   const [dialog, setDialog] = useState<"options" | "history" | "rules" | "engine" | "config" | "mcp" | "export" | null>(
     null,
   );
-  const [modelStatus, setModelStatus] = useState<ReviewModelStatus>({ source: "serphia", effort: "low" });
+  const [engineStatus, setEngineStatus] = useState<ReviewEngineStatus>({ effort: "low" });
   const [historyRef, setHistoryRef] = useState<ReviewHistoryRef | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [onlyFindings, setOnlyFindings] = useState(false);
@@ -117,12 +119,11 @@ export function CodeReviewPage({
     };
   }, [selectedCwd, effectiveKind, from, to, commit, scanPaths, options]);
   const models = useReviewModel(selectedCwd, modelsRevision);
-  const nativeModel = modelStatus.source === "ocr";
   useEffect(() => {
     let current = true;
     void call("codeReview.config.status")
       .then((result) => {
-        if (current && result.ok) setModelStatus(result.value);
+        if (current && result.ok) setEngineStatus(result.value);
       })
       .catch(() => undefined);
     return () => {
@@ -141,14 +142,15 @@ export function CodeReviewPage({
   const liveVisible = visible && !historyRef;
   const starting = busy === "start";
   const docked = starting || Boolean(currentRun);
-  useReviewMotion(
+  const captureLaunchPosition = useReviewMotion(
     page,
     liveVisible && active,
     liveVisible && state === "complete",
     liveVisible && docked,
     liveVisible && tab === "review" && !docked,
   );
-  const hasChanges = files.some((item) => item.included);
+  const fileCount = files.filter((item) => item.included).length;
+  const hasChanges = fileCount > 0;
   const included = files.filter(
     (item) => item.included && (!onlyFindings || findings.some((finding) => finding.path === item.path)),
   );
@@ -194,6 +196,25 @@ export function CodeReviewPage({
     setStale(false);
     setIssue(null);
   }
+
+  const runStatus = workspace.loading
+    ? t("reviewLoadingProject", "Loading project…")
+    : busy === "preview"
+      ? t("reviewPreviewing", "Checking changes…")
+      : starting
+        ? t("reviewStatusChecking", "Preparing the review…")
+        : preview
+          ? hasChanges
+            ? models.model
+              ? t("reviewReady", "Ready for review")
+              : t("reviewSelectModel", "Choose a model")
+            : t("reviewEmptyScope", "No reviewable changes")
+          : reviewStateText(state, t);
+  const launchTitle = request
+    ? reviewScopeText(request.scope, t)
+    : selectedCwd
+      ? t("reviewScope", "Review scope")
+      : t("reviewWorkspace", "Workspace");
 
   const notices = (
     <>
@@ -429,41 +450,70 @@ export function CodeReviewPage({
               )}
               <footer className="cr-runbar" data-review-controls>
                 {!docked && (
-                  <span className="cr-launch-aura" aria-hidden="true">
-                    <i data-review-halo />
-                  </span>
+                  <>
+                    <div className="cr-launch-light" aria-hidden="true">
+                      <i className="cr-light-blue" data-review-halo />
+                      <i className="cr-light-violet" data-review-halo />
+                    </div>
+                    <span className="cr-launch-edge" aria-hidden="true">
+                      <i data-review-edge />
+                    </span>
+                    <div className="cr-launch-hero">
+                      <div className="cr-launch-copy" data-review-launch-copy>
+                        <div className="cr-launch-status" data-ready={Boolean(preview && hasChanges && models.model)}>
+                          <i aria-hidden="true" />
+                          <span role="status">{runStatus}</span>
+                        </div>
+                        <h2 title={launchTitle}>{launchTitle}</h2>
+                        {preview && (
+                          <div className="cr-launch-files">
+                            <Files size={13} aria-hidden="true" />
+                            {t("reviewLaunchFiles", "{count} files in scope").replace("{count}", String(fileCount))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="cr-launch-art" aria-hidden="true">
+                        <div className="cr-launch-orbits">
+                          <i className="cr-orbit-ring" />
+                          <i className="cr-orbit-ring" />
+                          <i className="cr-orbit-ring" />
+                          <i className="cr-orbit-satellite" data-review-orbit="inner">
+                            <span />
+                          </i>
+                          <i className="cr-orbit-satellite cr-orbit-satellite-outer" data-review-orbit="outer">
+                            <span />
+                          </i>
+                        </div>
+                        <span className="cr-launch-mark" data-review-mark>
+                          <GitPullRequest size={30} strokeWidth={1.55} />
+                        </span>
+                      </div>
+                    </div>
+                  </>
                 )}
-                <div className="cr-statusbar" role="status">
-                  {!docked && (
-                    <span className="cr-launch-mark" aria-hidden="true">
-                      <GitPullRequest size={18} strokeWidth={1.7} />
+                {docked && (
+                  <div className="cr-statusbar" role="status">
+                    <span className="cr-run-state" data-state={state ?? "idle"}>
+                      <i data-review-signal />
+                      {runStatus}
                     </span>
-                  )}
-                  <span className="cr-run-state" data-state={state ?? "idle"}>
-                    <i data-review-signal />
-                    {workspace.loading
-                      ? t("reviewLoadingProject", "Loading project…")
-                      : busy === "preview"
-                        ? t("reviewPreviewing", "Checking changes…")
-                        : busy === "start"
-                          ? t("reviewStatusChecking", "Preparing the review…")
-                          : preview && hasChanges
-                            ? t("reviewReady", "Ready for review")
-                            : reviewStateText(state, t)}
-                  </span>
-                  {state && !preview && run?.model && (
-                    <span className="cr-status-caption" title={run.model}>
-                      {run.model}
-                    </span>
-                  )}
-                  {run && !preview && state && run.warningCount > 0 && (
-                    <span className="cr-status-warning">
-                      {t("reviewWarningCount", "{count} review warnings").replace("{count}", String(run.warningCount))}
-                    </span>
-                  )}
-                </div>
+                    {state && !preview && run?.model && (
+                      <span className="cr-status-caption" title={run.model}>
+                        {run.model}
+                      </span>
+                    )}
+                    {run && !preview && state && run.warningCount > 0 && (
+                      <span className="cr-status-warning">
+                        {t("reviewWarningCount", "{count} review warnings").replace(
+                          "{count}",
+                          String(run.warningCount),
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {!docked && notices}
-                <div className="cr-run-controls">
+                <div className="cr-run-controls" data-review-launch-controls>
                   <div className="cr-run-actions">
                     {exportable && (
                       <button type="button" className="cr-control cr-run-export" onClick={() => setDialog("export")}>
@@ -480,19 +530,7 @@ export function CodeReviewPage({
                     </button>
                   </div>
                   <div className="cr-run-launch">
-                    {nativeModel ? (
-                      <button
-                        type="button"
-                        className="cr-control cr-model-trigger"
-                        disabled={isBusy}
-                        onClick={() => setDialog("config")}
-                      >
-                        <span>{modelStatus.nativeModel ?? t("reviewOcrUseNative", "Native OCR connection")}</span>
-                        <Settings2 size={14} />
-                      </button>
-                    ) : (
-                      <ReviewModelPicker selection={models} disabled={isBusy} openSettings={onOpenModels} />
-                    )}
+                    <ReviewModelPicker selection={models} disabled={isBusy} openSettings={onOpenModels} />
                     {active ? (
                       <button
                         type="button"
@@ -506,18 +544,19 @@ export function CodeReviewPage({
                     ) : (
                       <button
                         type="button"
-                        className="cr-control cr-primary"
-                        disabled={isBusy || (!preview && !runMatches) || !hasChanges || (!nativeModel && !models.model)}
+                        className="cr-control cr-primary cr-start-button"
+                        disabled={isBusy || (!preview && !runMatches) || !hasChanges || !models.model}
                         onClick={() => {
-                          if (nativeModel || models.model) {
-                            setStale(false);
-                            setOnlyFindings(false);
-                            void start(nativeModel ? null : models.model);
-                          }
+                          if (!models.model) return;
+                          if (!docked) captureLaunchPosition();
+                          setStale(false);
+                          setOnlyFindings(false);
+                          void start(models.model);
                         }}
                       >
-                        <Play size={14} />
+                        {docked && <Play size={14} />}
                         {runMatches && !preview ? t("reviewRunAgain", "Review again") : t("reviewStart", "Run review")}
+                        {!docked && <ArrowRight size={16} aria-hidden="true" />}
                       </button>
                     )}
                   </div>
@@ -569,7 +608,7 @@ export function CodeReviewPage({
           <ReviewOptionsDialog
             value={options}
             kind={effectiveKind}
-            defaultEffort={modelStatus.effort}
+            defaultEffort={engineStatus.effort}
             onSave={setOptions}
             onClose={() => setDialog(null)}
           />
@@ -579,14 +618,9 @@ export function CodeReviewPage({
             busy={isBusy}
             onClose={() => setDialog(null)}
             onSaved={(status) => {
-              setModelStatus(status);
+              setEngineStatus(status);
               if (request) void previewChanges();
             }}
-            onOpenModels={() => {
-              setDialog(null);
-              onOpenModels();
-            }}
-            onOpenMcp={() => setDialog("mcp")}
           />
         )}
         {liveVisible && dialog === "mcp" && <ReviewMcpDialog onClose={() => setDialog(null)} running={active} />}
@@ -599,8 +633,7 @@ export function CodeReviewPage({
             cwd={selectedCwd}
             request={request}
             selectedFile={file?.path ?? null}
-            model={nativeModel ? null : models.model}
-            nativeModel={nativeModel}
+            model={models.model}
             lastSessionId={run?.request.cwd === selectedCwd ? run.sessionId : undefined}
             openModels={onOpenModels}
             onOpenHistory={(ref) => {

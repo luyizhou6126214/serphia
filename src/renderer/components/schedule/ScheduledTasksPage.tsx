@@ -1,5 +1,20 @@
-import { CalendarClock, ChevronDown, Clock, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Folder,
+  MessageCircle,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ScheduleRule, ScheduleRun, ScheduleSave, ScheduleTask } from "@contract/schedule";
 import type { SessionInfo } from "@contract/types";
 import { useI18n, type AppLanguage } from "@/i18n";
@@ -7,6 +22,8 @@ import { call, subscribe } from "@/lib/api-client";
 import { getFileName } from "@/lib/file-paths";
 import { formatAbsoluteDateTime, formatNumber } from "@/lib/locale-format";
 import { getSessionDisplayTitle } from "@/lib/session-list";
+import { isDefaultSessionDirectory } from "@shared/session-workspace";
+import { worktreePathsEqual } from "@shared/worktree-path";
 import "./ScheduledTasksPage.css";
 
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -56,6 +73,323 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function SessionSelect({
+  sessions,
+  value,
+  onChange,
+}: {
+  sessions: readonly SessionInfo[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const listId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [projectView, setProjectView] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const selected = sessions.find((session) => session.id === value);
+  const selectedTitle = selected
+    ? getSessionDisplayTitle(selected, 72)
+    : value
+      ? t("scheduleSessionUnavailable", "Session unavailable")
+      : "";
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const normalSessions = sessions
+    .filter((session) => isDefaultSessionDirectory(session.cwd))
+    .sort((a, b) => b.modified.localeCompare(a.modified));
+  const projects: { path: string; sessions: SessionInfo[]; modified: string }[] = [];
+  for (const session of sessions) {
+    if (isDefaultSessionDirectory(session.cwd)) continue;
+    const path = session.projectRoot || session.cwd;
+    if (!path) continue;
+    const project = projects.find((item) => worktreePathsEqual(item.path, path));
+    if (project) {
+      project.sessions.push(session);
+      if (session.modified > project.modified) project.modified = session.modified;
+    } else {
+      projects.push({ path, sessions: [session], modified: session.modified });
+    }
+  }
+  projects.sort((a, b) => b.modified.localeCompare(a.modified));
+  const currentProject = projectView
+    ? projects.find((project) => worktreePathsEqual(project.path, projectView))
+    : undefined;
+  const matchesSession = (session: SessionInfo) =>
+    !normalizedQuery ||
+    `${getSessionDisplayTitle(session, 72)} ${session.id} ${session.cwd}`.toLocaleLowerCase().includes(normalizedQuery);
+  const visibleNormalSessions = normalSessions.filter(matchesSession);
+  const visibleProjects = projects.filter(
+    (project) =>
+      !normalizedQuery ||
+      `${project.path} ${getFileName(project.path)} ${project.sessions.map((session) => getSessionDisplayTitle(session, 72)).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(normalizedQuery),
+  );
+  const visibleProjectSessions = currentProject?.sessions.filter(matchesSession) ?? [];
+  const entries: ({ kind: "session"; session: SessionInfo } | { kind: "project"; path: string })[] = projectView
+    ? visibleProjectSessions.map((session) => ({ kind: "session", session }))
+    : [
+        ...visibleNormalSessions.map((session) => ({ kind: "session" as const, session })),
+        ...visibleProjects.map((project) => ({ kind: "project" as const, path: project.path })),
+      ];
+  const activeEntry = entries[activeIndex];
+
+  const openProject = (path: string) => {
+    const project = projects.find((item) => worktreePathsEqual(item.path, path));
+    if (!project?.sessions.some(matchesSession)) setQuery("");
+    setProjectView(path);
+    setActiveIndex(0);
+  };
+
+  const choose = (id: string) => {
+    onChange(id);
+    setQuery("");
+    setOpen(false);
+    setProjectView(null);
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      setQuery("");
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(0);
+        requestAnimationFrame(() => inputRef.current?.focus());
+      } else if (entries.length) {
+        setActiveIndex((index) => (index + (event.key === "ArrowDown" ? 1 : -1) + entries.length) % entries.length);
+      }
+      return;
+    }
+    if (event.key === "Enter" && open && activeEntry) {
+      event.preventDefault();
+      if (activeEntry.kind === "session") choose(activeEntry.session.id);
+      else openProject(activeEntry.path);
+    }
+  };
+
+  return (
+    <div
+      className="schedule-session-select"
+      onKeyDown={onKeyDown}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+          setQuery("");
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={`schedule-session-trigger${open ? " is-open" : ""}${value ? " has-value" : ""}`}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-required="true"
+        aria-label={t("scheduleSession", "Run in session")}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            setQuery("");
+            return;
+          }
+          setOpen(true);
+          setQuery("");
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+      >
+        <span className="schedule-session-trigger-copy">
+          <span className="schedule-session-trigger-title">
+            {selectedTitle || t("scheduleSelectSession", "Select a session")}
+          </span>
+          {selected?.cwd && (
+            <span className="schedule-session-trigger-meta">{getFileName(selected.cwd) || selected.cwd}</span>
+          )}
+        </span>
+        <ChevronDown size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="schedule-session-popover">
+          {projectView && (
+            <div className="schedule-session-popover-heading">
+              <button
+                type="button"
+                className="schedule-session-back"
+                aria-label={t("back", "Back")}
+                onClick={() => {
+                  setProjectView(null);
+                  setQuery("");
+                  setActiveIndex(0);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+              >
+                <ArrowLeft size={15} aria-hidden="true" />
+              </button>
+              <Folder size={16} aria-hidden="true" />
+              <span title={projectView}>{getFileName(projectView) || projectView}</span>
+            </div>
+          )}
+          <div className="schedule-session-search">
+            <Search size={15} aria-hidden="true" />
+            <input
+              ref={inputRef}
+              role="combobox"
+              aria-expanded="true"
+              aria-autocomplete="list"
+              aria-controls={listId}
+              aria-activedescendant={
+                activeEntry
+                  ? `${listId}-${activeEntry.kind}-${encodeURIComponent(
+                      activeEntry.kind === "session" ? activeEntry.session.id : activeEntry.path,
+                    )}`
+                  : undefined
+              }
+              aria-label={t("searchSessions", "Search sessions")}
+              placeholder={t("searchSessions", "Search sessions")}
+              value={query}
+              autoComplete="off"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActiveIndex(0);
+              }}
+            />
+          </div>
+          <div
+            className="schedule-session-options"
+            id={listId}
+            role="listbox"
+            aria-label={t("scheduleSession", "Run in session")}
+          >
+            {projectView ? (
+              visibleProjectSessions.length ? (
+                visibleProjectSessions.map((session, index) => (
+                  <button
+                    key={session.id}
+                    id={`${listId}-session-${encodeURIComponent(session.id)}`}
+                    type="button"
+                    role="option"
+                    aria-selected={session.id === value}
+                    className={`schedule-session-option${index === activeIndex ? " is-active" : ""}${session.id === value ? " is-current" : ""}`}
+                    title={session.cwd || undefined}
+                    onMouseMove={() => setActiveIndex(index)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => choose(session.id)}
+                  >
+                    <span className="schedule-session-option-icon">
+                      <MessageCircle size={15} aria-hidden="true" />
+                    </span>
+                    <span className="schedule-session-option-copy">
+                      <span className="schedule-session-option-title">{getSessionDisplayTitle(session, 72)}</span>
+                      <span className="schedule-session-option-meta">
+                        {session.worktreeBranch || getFileName(session.cwd) || session.cwd}
+                      </span>
+                    </span>
+                    {session.id === value && (
+                      <Check size={16} className="schedule-session-option-check" aria-hidden="true" />
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div className="schedule-session-empty">{t("noMatchingSessions", "No matching sessions")}</div>
+              )
+            ) : (
+              <>
+                {visibleNormalSessions.length > 0 && (
+                  <div
+                    className="schedule-session-group"
+                    role="group"
+                    aria-label={t("scheduleRegularSessions", "Regular sessions")}
+                  >
+                    <div className="schedule-session-group-label">
+                      <MessageCircle size={13} aria-hidden="true" />
+                      {t("scheduleRegularSessions", "Regular sessions")}
+                    </div>
+                    {visibleNormalSessions.map((session, index) => (
+                      <button
+                        key={session.id}
+                        id={`${listId}-session-${encodeURIComponent(session.id)}`}
+                        type="button"
+                        role="option"
+                        aria-selected={session.id === value}
+                        className={`schedule-session-option${index === activeIndex ? " is-active" : ""}${session.id === value ? " is-current" : ""}`}
+                        onMouseMove={() => setActiveIndex(index)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => choose(session.id)}
+                      >
+                        <span className="schedule-session-option-icon is-regular">
+                          <MessageCircle size={15} aria-hidden="true" />
+                        </span>
+                        <span className="schedule-session-option-copy">
+                          <span className="schedule-session-option-title">{getSessionDisplayTitle(session, 72)}</span>
+                          <span className="schedule-session-option-meta">
+                            {t("scheduleRegularSession", "Regular session")}
+                          </span>
+                        </span>
+                        {session.id === value && (
+                          <Check size={16} className="schedule-session-option-check" aria-hidden="true" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {visibleProjects.length > 0 && (
+                  <div className="schedule-session-group" role="group" aria-label={t("scheduleProjects", "Projects")}>
+                    <div className="schedule-session-group-label">
+                      <Folder size={13} aria-hidden="true" />
+                      {t("scheduleProjects", "Projects")}
+                    </div>
+                    {visibleProjects.map((project, index) => {
+                      const entryIndex = visibleNormalSessions.length + index;
+                      return (
+                        <button
+                          key={project.path}
+                          id={`${listId}-project-${encodeURIComponent(project.path)}`}
+                          type="button"
+                          role="option"
+                          aria-selected="false"
+                          className={`schedule-session-option schedule-session-project${entryIndex === activeIndex ? " is-active" : ""}`}
+                          title={project.path}
+                          onMouseMove={() => setActiveIndex(entryIndex)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => openProject(project.path)}
+                        >
+                          <span className="schedule-session-option-icon is-project">
+                            <Folder size={15} aria-hidden="true" />
+                          </span>
+                          <span className="schedule-session-option-copy">
+                            <span className="schedule-session-option-title">
+                              {getFileName(project.path) || project.path}
+                            </span>
+                            <span className="schedule-session-option-meta">
+                              {project.path} · {project.sessions.length}
+                            </span>
+                          </span>
+                          <ChevronRight size={15} className="schedule-session-project-chevron" aria-hidden="true" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {visibleNormalSessions.length === 0 && visibleProjects.length === 0 && (
+                  <div className="schedule-session-empty">{t("noMatchingSessions", "No matching sessions")}</div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScheduleEditor({
   task,
   sessions,
@@ -96,7 +430,11 @@ function ScheduleEditor({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy || !name.trim() || !prompt.trim() || !sessionId) return;
+    if (busy || !name.trim() || !prompt.trim()) return;
+    if (!sessionId) {
+      setError(t("scheduleSelectSession", "Select a session"));
+      return;
+    }
     setError("");
     let rule: ScheduleRule;
     if (kind === "once") {
@@ -140,28 +478,10 @@ function ScheduleEditor({
           {t("scheduleName", "Task name")}
           <input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} />
         </label>
-        <label>
-          {t("scheduleSession", "Run in session")}
-          <select
-            required
-            value={sessionId}
-            title={selectedSession?.cwd}
-            onChange={(event) => setSessionId(event.target.value)}
-          >
-            <option value="" disabled>
-              {t("scheduleSelectSession", "Select a session")}
-            </option>
-            {sessionId && !selectedSession && (
-              <option value={sessionId}>{t("scheduleSessionUnavailable", "Session unavailable")}</option>
-            )}
-            {sessions.map((session) => (
-              <option key={session.id} value={session.id} title={session.cwd}>
-                {getSessionDisplayTitle(session, 52)}
-                {session.cwd ? ` · ${getFileName(session.cwd) || session.cwd}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="schedule-session-field">
+          <span>{t("scheduleSession", "Run in session")}</span>
+          <SessionSelect sessions={sessions} value={sessionId} onChange={setSessionId} />
+        </div>
         {sessions.length === 0 && (
           <p className="schedule-hint">{t("scheduleNoSessions", "Start a conversation before scheduling a task.")}</p>
         )}

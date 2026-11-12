@@ -165,7 +165,6 @@ export async function prepareReviewMcp(home: string, workspace: Workspace, signa
       cwd: workspace.root,
       env,
       signal,
-      timeout: 5 * 60_000,
     });
     if (result.code !== 0) throw new ReviewError("mcpSetup");
     ranSetup = true;

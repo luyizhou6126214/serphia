@@ -98,17 +98,6 @@ export function ReviewOptionsDialog({
       t("reviewTipConcurrency", "Maximum parallel review tasks. Higher values can increase model request rate."),
     ],
     [
-      "timeout",
-      t("reviewTimeLimit", "Task timeout (minutes)"),
-      0,
-      60,
-      String(REVIEW_OPTION_DEFAULTS.timeout),
-      t(
-        "reviewTipTimeout",
-        "Time allowed for each task, including retries. Set to 0 to remove the per-task time limit.",
-      ),
-    ],
-    [
       "maxTokens",
       t("reviewPromptBudget", "Prompt tokens per task"),
       0,

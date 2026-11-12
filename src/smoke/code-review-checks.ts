@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { devNull } from "node:os";
 import path from "node:path";
@@ -65,10 +65,30 @@ export async function runCodeReviewChecks(
   assert.equal((await call("system.validateCwd", { path: root })).ok, true);
   const workspace: ReviewRequest = { cwd: root, scope: { kind: "workspace" } };
   const preview = async (request = workspace) => unwrap(await call("codeReview.preview", request));
+  const engineConfigDir = path.join(userData, "code-review", "engine", ".opencodereview");
+  await mkdir(engineConfigDir, { recursive: true });
+  const legacyConfig = {
+    provider: "fixture.provider",
+    model: "old-model",
+    custom_providers: { "fixture.provider": { api_key: "old-fixture-key" } },
+    LLM: { auth_token: "old-fixture-token" },
+    telemetry: { enabled: false },
+  };
+  const settingsFile = path.join(engineConfigDir, "serphia-config.json");
+  const runtimeFile = path.join(engineConfigDir, "config.json");
+  await writeFile(settingsFile, JSON.stringify({ source: "ocr", config: legacyConfig }));
+  await writeFile(runtimeFile, JSON.stringify(legacyConfig));
   const first = await preview();
   assert.equal(first.root, await realpath(root));
   assert.ok(first.files.some((entry) => entry.path === "math.ts" && entry.included));
   assert.ok(!first.files.some((entry) => entry.path === ".env" && entry.included));
+
+  assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")), { config: { telemetry: { enabled: false } } });
+  assert.deepEqual(JSON.parse(await readFile(runtimeFile, "utf8")), {
+    language: "中文",
+    effort: "low",
+    telemetry: { enabled: false },
+  });
 
   let mode: "success" | "finding" | "auth" | "hold" = "success";
   let requests = 0;
@@ -76,8 +96,6 @@ export async function runCodeReviewChecks(
   const observedTools = new Set<string>();
   let remoteMcpCalls = 0;
   const apiKey = "ocr-smoke-key";
-  const nativeKey = "ocr-native-fixture-key";
-  let nativeRequests = 0;
   let sawChinese = false;
   const model = "smoke-review-model";
   const provider = "ocr-smoke";
@@ -120,12 +138,12 @@ export async function runCodeReviewChecks(
       res.once("close", () => {
         closed++;
       });
-      const native = req.headers.authorization === `Bearer ${nativeKey}`;
-      if ((!native && req.headers.authorization !== `Bearer ${apiKey}`) || mode === "auth") {
+      if (req.headers.authorization !== `Bearer ${apiKey}` || mode === "auth") {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: { message: "invalid api key", type: "invalid_request_error" } }));
         return;
       }
+      assert.equal(req.headers["x-stainless-timeout"], undefined);
       if (mode === "hold") {
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         res.flushHeaders();
@@ -154,11 +172,6 @@ export async function runCodeReviewChecks(
       }
       const rawRequest = Buffer.concat(chunks).toString("utf8");
       const input = JSON.parse(rawRequest);
-      if (native) {
-        assert.equal(req.headers["x-ocr-fixture"], "native");
-        assert.equal(input.ocr_fixture, true);
-        nativeRequests++;
-      }
       sawChinese ||= rawRequest.includes("中文");
       assert.equal(input.model, model);
       if (input.reasoning_effort) observedThinking.add(input.reasoning_effort);
@@ -209,7 +222,12 @@ export async function runCodeReviewChecks(
         : { role: "assistant", content: "ok" };
       const finish_reason = toolCalls.length ? "tool_calls" : "stop";
       const common = { id: "chatcmpl-smoke", created: 1, model };
-      const usage = { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 };
+      const usage = {
+        prompt_tokens: 12,
+        completion_tokens: 3,
+        total_tokens: 15,
+        prompt_tokens_details: { cached_tokens: 4 },
+      };
       if (input.stream) {
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         const chunk = { ...common, object: "chat.completion.chunk" };
@@ -314,35 +332,19 @@ require("node:readline").createInterface({input:process.stdin}).on("line", line 
     });
     await call("auth.setApiKey", { provider, key: apiKey });
     const config = unwrap(await call("codeReview.config.get"));
-    assert.equal(config.source, "serphia");
-    assert.equal(JSON.parse(config.text).language, "中文");
+    assert.deepEqual(JSON.parse(config.text), { language: "中文", telemetry: { enabled: false } });
     const configText = JSON.stringify({
       language: "中文",
-      provider: "fixture.provider",
-      model,
-      custom_providers: {
-        "fixture.provider": {
-          url: `http://127.0.0.1:${address.port}/v1`,
-          protocol: "openai",
-          api_key: nativeKey,
-          models: [model],
-          timeout_sec: 60,
-          extra_body: { ocr_fixture: true },
-          extra_headers: { "X-Ocr-Fixture": "native" },
-          retry_codes: [418],
-        },
-      },
       telemetry: { enabled: false, exporter: "console" },
     });
     const stored = unwrap(await call("codeReview.config.save", { ...config, text: configText }));
     assert.deepEqual(await call("codeReview.config.save", config), { ok: false, issue: "configChanged" });
-    assert.deepEqual(await call("codeReview.config.save", { ...stored, text: '{"llm":{"timeout_sec":"1"}}' }), {
+    assert.deepEqual(await call("codeReview.config.save", { ...stored, text: '{"LLM":{"timeout_sec":1}}' }), {
       ok: false,
       issue: "configInvalid",
     });
     assert.deepEqual(unwrap(await call("codeReview.mcp.get")), savedMcp);
     unwrap(await call("codeReview.testModel", { cwd: root, model: selection }));
-    assert.equal(nativeRequests, 0);
     mode = "auth";
     assert.deepEqual(await call("codeReview.testModel", { cwd: root, model: selection }), {
       ok: false,
@@ -375,6 +377,14 @@ require("node:readline").createInterface({input:process.stdin}).on("line", line 
     assert.ok(observedTools.has("review_local_lookup"));
     assert.ok(remoteMcpCalls > 0);
     const activity = await call("codeReview.activity", { id: running.id });
+    const totals = activity?.stats;
+    assert.ok(totals && totals.modelCalls > 0 && totals.toolCalls > 0);
+    assert.equal(totals.inputTokens, totals.modelCalls * 12);
+    assert.equal(totals.outputTokens, totals.modelCalls * 3);
+    assert.equal(totals.cacheReadTokens, totals.modelCalls * 4);
+    assert.equal(totals.cacheWriteTokens, 0);
+    assert.deepEqual(totals.context, { tokens: 15, window: finished.contextWindow });
+    assert.deepEqual(finished.activityStats, totals);
     assert.ok(
       activity?.entries.some(
         (entry) =>
@@ -408,6 +418,7 @@ require("node:readline").createInterface({input:process.stdin}).on("line", line 
       }
     };
     const mcpRef = { archiveId: running.id };
+    assert.deepEqual(unwrap(await call("codeReview.history.activity", { ref: mcpRef })).stats, totals);
     const persistedMcp = await historyActivity(mcpRef);
     assert.ok(
       persistedMcp.some(
@@ -619,27 +630,6 @@ require("node:readline").createInterface({input:process.stdin}).on("line", line 
     assert.ok((await preview({ cwd: folder, scope: { kind: "scan" } })).files.some((entry) => entry.included));
     await writeFile(file, "export const value = 5;\n");
 
-    const shared = unwrap(await call("codeReview.config.get"));
-    const nativeConfig = unwrap(await call("codeReview.config.save", { ...shared, source: "ocr" }));
-    assert.equal(nativeConfig.status.nativeModel, model);
-    assert.deepEqual(await call("codeReview.testModel", { cwd: root, model: selection }), {
-      ok: false,
-      issue: "configChanged",
-    });
-    unwrap(await call("codeReview.testModel", { cwd: root, model: null }));
-    const nativeRun = unwrap(await call("codeReview.start", { previewId: (await preview()).id, model: null }));
-    const nativeFinished = await waitFor(
-      () => readRun(nativeRun.id),
-      (run) => !!run?.finishedAt,
-    );
-    assert.equal(nativeFinished?.state, "complete", JSON.stringify(nativeFinished));
-    assert.ok(nativeRequests > 1);
-    assert.ok((await historyActivity({ archiveId: nativeRun.id })).some((entry) => entry.kind === "model"));
-    const nativeRequestCount = nativeRequests;
-    unwrap(await call("codeReview.config.save", { ...nativeConfig, source: "serphia" }));
-    unwrap(await call("codeReview.testModel", { cwd: root, model: selection }));
-    assert.equal(nativeRequests, nativeRequestCount);
-
     mode = "hold";
     const before = requests;
     const cancelPreview = await preview();
@@ -700,9 +690,8 @@ require("node:readline").createInterface({input:process.stdin}).on("line", line 
           (current) => current === requests,
         );
         const recovered = unwrap(await call("codeReview.config.get"));
-        assert.equal(recovered.source, "serphia");
         assert.equal(JSON.parse(recovered.text).language, "中文");
-        assert.deepEqual(JSON.parse(recovered.text).custom_providers["fixture.provider"].retry_codes, [418]);
+        assert.deepEqual(JSON.parse(recovered.text).telemetry, { enabled: false, exporter: "console" });
         assert.equal(await call("codeReview.getRun", {}), null);
         await checkSavedReview();
         git("update-ref", "refs/pull/42/head", "HEAD^");
@@ -717,7 +706,7 @@ require("node:readline").createInterface({input:process.stdin}).on("line", line 
     }
 
     console.log(
-      "OCR smoke passed: Chinese default, shared and native models, MCP stdio/HTTP, local/remote/PR refs, workspace/branch/commit/scan, all report formats, restart-safe history, legacy sessions, and cancellation",
+      "OCR smoke passed: Chinese default, native config migration, Serphia model authentication, MCP stdio/HTTP, local/remote/PR refs, workspace/branch/commit/scan, all report formats, restart-safe history, legacy sessions, and cancellation",
     );
   } finally {
     server.closeAllConnections();

@@ -17,13 +17,11 @@ import {
   configSnapshot,
   projectReviewConfig,
   readReviewSettings,
-  reviewConnection,
-  reviewModelStatus,
+  reviewEngineStatus,
   updateReviewSettings,
   writeReviewSettings,
   type ReviewSettings,
 } from "./config";
-import { nativeReviewEnvironment } from "./native-environment";
 import { assertPathAllowed } from "../path-authorization";
 import { desktopDataRoot } from "../desktop-data-root";
 import { callMain } from "../parent-rpc";
@@ -49,7 +47,7 @@ import {
 } from "./history-store";
 import { legacyHistoryRows, legacyRun } from "./history-legacy";
 
-type PreviewSnapshot = { preview: ReviewPreview; hash: string; expires: number; request: ReviewRequest };
+type PreviewSnapshot = { preview: ReviewPreview; hash: string; request: ReviewRequest };
 type Activity = { log: ReviewActivityLog; native?: NativeReviewActivity };
 type Task = {
   run: ReviewRun;
@@ -59,9 +57,6 @@ type Task = {
   activity: Activity;
 };
 type Viewer = { controller: AbortController; promise: Promise<void>; ready: Promise<string> };
-
-const PREVIEW_TIMEOUT = 30_000;
-const REVIEW_TIMEOUT = 20 * 60_000;
 
 export class CodeReviewService {
   private readonly closing = new AbortController();
@@ -108,10 +103,6 @@ export class CodeReviewService {
     }
   }
 
-  private shortSignal() {
-    return AbortSignal.any([this.closing.signal, AbortSignal.timeout(PREVIEW_TIMEOUT)]);
-  }
-
   private withConfigWrite<T>(operation: () => Promise<T>) {
     const write = this.configWrite.then(operation);
     this.configWrite = write.then(
@@ -123,15 +114,15 @@ export class CodeReviewService {
 
   async branches(cwd: string) {
     const { home } = await this.storage();
-    return listReviewBranches(await resolveWorkspace(cwd, home, this.shortSignal()));
+    return listReviewBranches(await resolveWorkspace(cwd, home, this.closing.signal));
   }
 
   async getConfig() {
     return configSnapshot(await readReviewSettings((await this.storage()).home));
   }
 
-  async modelStatus() {
-    return reviewModelStatus(await readReviewSettings((await this.storage()).home));
+  async engineStatus() {
+    return reviewEngineStatus(await readReviewSettings((await this.storage()).home));
   }
 
   async saveConfig(input: ReviewConfigSnapshot) {
@@ -141,7 +132,7 @@ export class CodeReviewService {
       const { home } = await this.storage();
       const settings = updateReviewSettings(await readReviewSettings(home), input);
       await this.commitConfig(home, settings);
-      return { ...configSnapshot(settings), status: reviewModelStatus(settings) };
+      return { ...configSnapshot(settings), status: reviewEngineStatus(settings) };
     });
   }
 
@@ -194,7 +185,6 @@ export class CodeReviewService {
       cwd: workspace.root,
       env: workspace.env,
       signal,
-      timeout: PREVIEW_TIMEOUT,
       args: [
         ...scope.args,
         ...options.preview,
@@ -213,7 +203,7 @@ export class CodeReviewService {
 
   async preview(request: ReviewRequest) {
     const { executable, version } = await this.runtime();
-    const signal = this.shortSignal();
+    const signal = this.closing.signal;
     const prepared = await this.prepare(request, signal);
     const files = await this.loadPreview(executable, prepared, signal);
     const hash = await scopeFingerprint(prepared.workspace, prepared.scope, files, signal);
@@ -226,70 +216,53 @@ export class CodeReviewService {
       files,
     };
     for (const [id, existing] of this.previews) {
-      if (existing.expires <= Date.now() || existing.request.cwd === request.cwd || this.previews.size >= 12)
-        this.previews.delete(id);
+      if (existing.request.cwd === request.cwd || this.previews.size >= 12) this.previews.delete(id);
     }
-    this.previews.set(preview.id, { preview, hash, request, expires: Date.now() + 15 * 60_000 });
+    this.previews.set(preview.id, { preview, hash, request });
     return preview;
   }
 
   async diff(request: ReviewDiffRequest) {
-    const { workspace, scope } = await this.prepare(request, this.shortSignal());
+    const { workspace, scope } = await this.prepare(request, this.closing.signal);
     return workspaceDiff(workspace, scope, request.path);
   }
 
-  async testModel(cwd: string, selection: ReviewModelSelection | null) {
+  async testModel(cwd: string, selection: ReviewModelSelection) {
     await assertPathAllowed(cwd);
     return this.withConfigWrite(async () => {
       if (this.running) throw new ReviewError("busy");
       const { executable } = await this.runtime();
       const { home } = await this.storage();
-      const settings = await readReviewSettings(home);
-      if ((selection === null) !== (settings.source === "ocr")) throw new ReviewError("configChanged");
-      const signal = this.shortSignal();
-      const env = privateEnvironment(home);
-      const probe = async (connection: Record<string, string>) => {
+      const signal = this.closing.signal;
+      const provider = await resolveReviewModel(cwd, selection);
+      await projectReviewConfig(home, await readReviewSettings(home));
+      return withReviewGateway(provider, signal, async (gateway) => {
         const result = await runOcr({
           executable,
           args: ["llm", "test"],
           cwd: home,
-          env: { ...env, ...connection },
+          env: { ...privateEnvironment(home), ...gateway.env },
           signal,
-          timeout: PREVIEW_TIMEOUT,
         });
         if (result.code !== 0) throw new ReviewError(issueFromDiagnostics(result.stderr + result.stdout));
         return null;
-      };
-      await projectReviewConfig(home, settings);
-      if (settings.source === "ocr") return probe(nativeReviewEnvironment(settings));
-      const provider = await resolveReviewModel(cwd, selection);
-      return withReviewGateway(provider, signal, (gateway) =>
-        probe({ ...this.gatewayOverrides(settings, provider.model.provider), ...gateway.env }),
-      );
+      });
     });
   }
 
-  private gatewayOverrides(settings: ReviewSettings, provider: string): Record<string, string> {
-    const connection = reviewConnection(settings, provider);
-    return typeof connection.timeout_sec === "number" && connection.timeout_sec > 0
-      ? { OCR_LLM_TIMEOUT: String(connection.timeout_sec) }
-      : {};
-  }
-
-  async start(previewId: string, selection: ReviewModelSelection | null) {
+  async start(previewId: string, selection: ReviewModelSelection) {
     if (this.running) {
       throw new ReviewError("busy");
     }
     const snapshot = this.previews.get(previewId);
-    if (!snapshot || snapshot.expires <= Date.now()) throw new ReviewError("stalePreview");
+    if (!snapshot) throw new ReviewError("stalePreview");
     this.starting = true;
     try {
-      const { home } = await this.storage();
-      const settings = await this.withConfigWrite(() => readReviewSettings(home));
-      if ((selection === null) !== (settings.source === "ocr")) throw new ReviewError("configChanged");
-      const provider = settings.source === "serphia" ? await resolveReviewModel(snapshot.request.cwd, selection) : null;
+      await this.configWrite;
+      if (!this.previews.has(previewId)) throw new ReviewError("stalePreview");
+      const provider = await resolveReviewModel(snapshot.request.cwd, selection);
       const { executable } = await this.runtime();
-      const signal = this.shortSignal();
+      const signal = this.closing.signal;
       const prepared = await this.prepare(snapshot.request, signal);
       const hash = await scopeFingerprint(prepared.workspace, prepared.scope, snapshot.preview.files, signal);
       if (prepared.workspace.root !== snapshot.preview.root || hash !== snapshot.hash)
@@ -315,7 +288,8 @@ export class CodeReviewService {
         files: snapshot.preview.files,
         state: "running",
         startedAt: Date.now(),
-        model: provider?.model.name ?? reviewModelStatus(settings).nativeModel ?? "OCR",
+        model: provider.model.name,
+        contextWindow: provider.model.contextWindow > 0 ? provider.model.contextWindow : undefined,
         worktreeBranch,
         findings: [],
         warningCount: 0,
@@ -324,7 +298,7 @@ export class CodeReviewService {
       this.previews.delete(previewId);
       this.latestReport = null;
       const activity = { log: new ReviewActivityLog() };
-      const promise = this.execute(run, snapshot, executable, provider, settings, controller.signal, activity);
+      const promise = this.execute(run, snapshot, executable, provider, controller.signal, activity);
       this.latest = { run, snapshot, controller, promise, activity };
       return structuredClone(run);
     } finally {
@@ -336,8 +310,7 @@ export class CodeReviewService {
     run: ReviewRun,
     snapshot: PreviewSnapshot,
     executable: string,
-    provider: Awaited<ReturnType<typeof resolveReviewModel>> | null,
-    settings: ReviewSettings,
+    provider: Awaited<ReturnType<typeof resolveReviewModel>>,
     signal: AbortSignal,
     activity: Activity,
   ) {
@@ -381,66 +354,52 @@ export class CodeReviewService {
           throw new ReviewError("stalePreview");
         }
         await projectReviewConfig(home, await readReviewSettings(home));
-        activity.native = await NativeReviewActivity.start(home, workspace.root, activity.log, !provider);
-        const invoke = async (connection: Record<string, string>) => {
-          const stderr = activity.log.stderr();
-          const result = await runOcr({
-            executable,
-            cwd: workspace.root,
-            env: { ...mcp.env, ...connection },
-            signal,
-            onStderr: stderr.write,
-            timeout: REVIEW_TIMEOUT,
-            args: [
-              ...scope.args,
-              ...options.preview,
-              ...options.execution,
-              "--repo",
-              workspace.root,
-              "--format",
-              "json",
-              "--audience",
-              "human",
-              "--output",
-              file,
-              "--color",
-              "never",
-            ],
-          }).finally(stderr.flush);
-          const output = await stat(file).catch((error: NodeJS.ErrnoException) => {
-            if (error.code === "ENOENT") return null;
-            throw error;
-          });
-          if (output && output.size > MAX_REPORT_BYTES) throw new ReviewError("scopeLimit");
-          const raw = output ? await readFile(file, "utf8") : "";
-          const text = activity.log.redactReport(raw);
-          activity.log.reportWarnings(text);
-          const parsed = parseReview(text, result.code, result.stderr, "");
-          const stale = await scopeFingerprint(workspace, scope, run.files, signal).then(
-            (hash) => hash !== snapshot.hash,
-            () => true,
-          );
-          const mcpWarning = /^\[ocr\] WARNING: .*MCP server/mu.test(result.stderr);
-          return { parsed: { ...parsed, stale, mcpWarning }, text, home };
-        };
-        if (provider) {
-          return withReviewGateway(
-            provider,
-            signal,
-            (gateway) => invoke({ ...this.gatewayOverrides(settings, provider.model.provider), ...gateway.env }),
-            activity.log,
-          );
-        }
-        const connection = nativeReviewEnvironment(settings, mcp.env.PATH);
-        const native = reviewConnection(settings);
-        activity.log.addSecrets([
-          native.api_key,
-          native.auth_token,
-          ...Object.entries(connection)
-            .filter(([key]) => /TOKEN|KEY|SECRET/u.test(key))
-            .map(([, value]) => value),
-        ]);
-        return invoke(connection);
+        activity.native = await NativeReviewActivity.start(home, workspace.root, activity.log);
+        return withReviewGateway(
+          provider,
+          signal,
+          async (gateway) => {
+            const stderr = activity.log.stderr();
+            const result = await runOcr({
+              executable,
+              cwd: workspace.root,
+              env: { ...mcp.env, ...gateway.env },
+              signal,
+              onStderr: stderr.write,
+              args: [
+                ...scope.args,
+                ...options.preview,
+                ...options.execution,
+                "--repo",
+                workspace.root,
+                "--format",
+                "json",
+                "--audience",
+                "human",
+                "--output",
+                file,
+                "--color",
+                "never",
+              ],
+            }).finally(stderr.flush);
+            const output = await stat(file).catch((error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return null;
+              throw error;
+            });
+            if (output && output.size > MAX_REPORT_BYTES) throw new ReviewError("scopeLimit");
+            const raw = output ? await readFile(file, "utf8") : "";
+            const text = activity.log.redactReport(raw);
+            activity.log.reportWarnings(text);
+            const parsed = parseReview(text, result.code, result.stderr, "");
+            const stale = await scopeFingerprint(workspace, scope, run.files, signal).then(
+              (hash) => hash !== snapshot.hash,
+              () => true,
+            );
+            const mcpWarning = /^\[ocr\] WARNING: .*MCP server/mu.test(result.stderr);
+            return { parsed: { ...parsed, stale, mcpWarning }, text, home };
+          },
+          activity.log,
+        );
       });
       signal.throwIfAborted();
       this.latestReport = { runId: run.id, text: report.text };
@@ -459,6 +418,7 @@ export class CodeReviewService {
       do {
         await activity.native?.read(completed.sessionId);
       } while (activity.native?.more);
+      completed.activityStats = activity.log.stats();
       if (archive) {
         activity.log.onSettled = undefined;
         await archive.finish(completed, activity.log.pendingEntries()).catch(() => {
@@ -489,7 +449,7 @@ export class CodeReviewService {
     const active = this.latest?.run.finishedAt ? undefined : this.latest?.run.id;
     const rows = await listHistoryArchives(home, active);
     if (cwd) {
-      const signal = this.shortSignal();
+      const signal = this.closing.signal;
       const workspace = await resolveWorkspace(cwd, home, signal, false).catch(() => null);
       if (workspace) {
         const native = await this.runtime()
@@ -499,7 +459,6 @@ export class CodeReviewService {
               cwd: workspace.root,
               env: workspace.env,
               signal,
-              timeout: PREVIEW_TIMEOUT,
               args: ["session", "list", "--json", "--limit", "0", "--repo", workspace.root, "--color", "never"],
             }),
           )
@@ -518,7 +477,7 @@ export class CodeReviewService {
 
   private async loadLegacyHistory(ref: Extract<ReviewHistoryRef, { sessionId: string }>) {
     const { home } = await this.storage();
-    const { root } = await resolveWorkspace(ref.cwd, home, this.shortSignal(), false);
+    const { root } = await resolveWorkspace(ref.cwd, home, this.closing.signal, false);
     const id = sessionId(ref.sessionId);
     const [detail, comments, report] = await Promise.all([
       this.command({ kind: "sessionShow", cwd: root, id }),
@@ -540,6 +499,7 @@ export class CodeReviewService {
       run: legacyRun(root, id, detail.text, comments.text, report, scanPaths),
       entries,
       truncated: log.truncated,
+      stats: log.stats(),
     };
   }
 
@@ -581,8 +541,8 @@ export class CodeReviewService {
 
   async historyActivity(ref: ReviewHistoryRef, after = 0) {
     if (!("archiveId" in ref)) {
-      const { entries, truncated } = await this.getLegacyHistory(ref);
-      return historyPage(entries, after, truncated);
+      const { entries, truncated, stats } = await this.getLegacyHistory(ref);
+      return historyPage(entries, after, truncated, stats);
     }
     this.assertArchived(ref.archiveId);
     const { home } = await this.storage();
@@ -594,8 +554,8 @@ export class CodeReviewService {
       });
       this.savedActivity = { id, value };
     }
-    const { entries, truncated } = await this.savedActivity.value;
-    return historyPage(entries, after, truncated);
+    const { entries, truncated, stats } = await this.savedActivity.value;
+    return historyPage(entries, after, truncated, stats);
   }
 
   cancel(id: string) {
@@ -614,7 +574,7 @@ export class CodeReviewService {
     }
     const file = await resolveReviewFile(task.run.root, finding.path);
     await assertPathAllowed(file);
-    const signal = this.shortSignal();
+    const signal = this.closing.signal;
     task.run.stale ||= await this.prepare(task.snapshot.request, signal)
       .then(
         async ({ workspace, scope }) =>
@@ -647,8 +607,7 @@ export class CodeReviewService {
         const snapshot = configSnapshot(settings);
         const config = JSON.parse(snapshot.text);
         const { key, value } = command;
-        if (key === "llm.timeout_sec") config.llm = { ...config.llm, timeout_sec: Number(value) };
-        else if (value === undefined) delete config[key];
+        if (value === undefined) delete config[key];
         else config[key] = key === "max_tokens" ? Number(value) : value;
         await this.commitConfig(home, updateReviewSettings(settings, { ...snapshot, text: JSON.stringify(config) }));
         return { text: key };
@@ -658,7 +617,7 @@ export class CodeReviewService {
     const { home } = await this.storage();
     if (command?.kind === "viewer") return { text: "", viewerUrl: await this.openViewer(executable, home) };
 
-    const signal = this.shortSignal();
+    const signal = this.closing.signal;
     if (command?.kind === "sessionExport" && command.format && command.format !== "html") {
       if (!["text", "json", "sarif"].includes(command.format)) throw new ReviewError("failed");
       const workspace = await resolveWorkspace(command.cwd, home, signal, false);
@@ -682,7 +641,6 @@ export class CodeReviewService {
             cwd: workspace.root,
             env: workspace.env,
             signal,
-            timeout: PREVIEW_TIMEOUT,
           });
           if (result.code !== 0) throw new ReviewError(issueFromDiagnostics(result.stderr));
           return result.stdout;
@@ -723,7 +681,6 @@ export class CodeReviewService {
         cwd: workspace.root,
         env: workspace.env,
         signal,
-        timeout: PREVIEW_TIMEOUT,
       });
       if (result.code !== 0) throw new ReviewError(issueFromDiagnostics(result.stderr));
       return {
@@ -747,7 +704,6 @@ export class CodeReviewService {
         cwd: workspace?.root ?? home,
         env: workspace?.env ?? privateEnvironment(home),
         signal,
-        timeout: PREVIEW_TIMEOUT,
       });
     const result = await invoke();
     if (result.code !== 0) throw new ReviewError(issueFromDiagnostics(result.stderr));
@@ -770,7 +726,6 @@ export class CodeReviewService {
       resolve = onReady;
       reject = onError;
     });
-    const timeout = setTimeout(() => controller.abort(), PREVIEW_TIMEOUT);
     let stdout = "";
     const promise = runOcr({
       executable,
@@ -778,14 +733,10 @@ export class CodeReviewService {
       cwd: home,
       env: privateEnvironment(home),
       signal,
-      timeout: REVIEW_TIMEOUT,
       onStdout: (chunk) => {
         stdout = (stdout + chunk.toString("utf8")).slice(-4096);
         const url = /Viewer ready: (http:\/\/127\.0\.0\.1:\d{1,5})(?:\s|$)/u.exec(stdout)?.[1];
-        if (url) {
-          clearTimeout(timeout);
-          resolve(url);
-        }
+        if (url) resolve(url);
       },
     })
       .then(
@@ -793,7 +744,6 @@ export class CodeReviewService {
         () => reject(new ReviewError("failed")),
       )
       .finally(() => {
-        clearTimeout(timeout);
         this.viewer = null;
       });
     this.viewer = { controller, promise, ready };

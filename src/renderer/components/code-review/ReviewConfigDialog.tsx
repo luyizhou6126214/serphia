@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Braces, Plug, Settings2, X } from "lucide-react";
-import {
-  OCR_CONFIG_LIMIT,
-  type ReviewConfigSnapshot,
-  type ReviewModelSource,
-  type ReviewModelStatus,
-} from "@contract/code-review";
+import { Settings2, X } from "lucide-react";
+import type { ReviewConfigSnapshot, ReviewEngineStatus } from "@contract/code-review";
 import { useI18n } from "@/i18n";
 import { call } from "@/lib/api-client";
 import { reviewIssueText } from "./copy";
@@ -14,38 +9,19 @@ import { ReviewSelect } from "./ReviewSelect";
 type Json = Record<string, unknown>;
 const object = (value: unknown): Json | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Json) : null;
-const connection = {
-  url: "",
-  protocol: "openai",
-  model: "",
-  auth_header: "",
-  timeout_sec: 300,
-  extra_body: {},
-  extra_headers: {},
-  retry_codes: [],
-};
-const providerFields = { ...connection, api_key: "", api_key_cmd: "", models: [], aws_region: "", aws_profile: "" };
-const legacyFields = { ...connection, auth_token: "", auth_token_cmd: "", use_anthropic: false };
-
 export function ReviewConfigDialog({
   busy,
   onClose,
   onSaved,
-  onOpenModels,
-  onOpenMcp,
 }: {
   busy: boolean;
   onClose: () => void;
-  onSaved: (status: ReviewModelStatus) => void;
-  onOpenModels: () => void;
-  onOpenMcp: () => void;
+  onSaved: (status: ReviewEngineStatus) => void;
 }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const [snapshot, setSnapshot] = useState<ReviewConfigSnapshot>();
-  const [source, setSource] = useState<ReviewModelSource>("serphia");
-  const [draft, setDraft] = useState("");
-  const [advanced, setAdvanced] = useState(false);
+  const [config, setConfig] = useState<Json>();
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState("");
@@ -60,8 +36,7 @@ export function ReviewConfigDialog({
         if (!current) return;
         if (result.ok) {
           setSnapshot(result.value);
-          setDraft(result.value.text);
-          setSource(result.value.source);
+          setConfig(JSON.parse(result.value.text));
           setMessage("");
         } else setMessage(reviewIssueText(result.issue, t));
       })
@@ -76,34 +51,17 @@ export function ReviewConfigDialog({
     };
   }, [revision, t]);
 
-  let config: Json | null = null;
-  try {
-    config = object(JSON.parse(draft));
-  } catch {
-    /* The editor retains incomplete JSON. */
-  }
   const telemetry = object(config?.telemetry);
-  const disabled = !snapshot || loading || busy;
-  const fieldDisabled = disabled || !config;
-  const dirty = snapshot && (snapshot.text !== draft || snapshot.source !== source);
+  const disabled = !snapshot || !config || loading || busy;
+  const text = JSON.stringify(config, null, 2);
+  const dirty = snapshot && snapshot.text !== text;
 
   function update(key: string, value: unknown, section?: string) {
     if (!config) return;
     const target = section ? { ...(object(config[section]) ?? {}) } : { ...config };
     if (value === undefined) delete target[key];
     else target[key] = value;
-    setDraft(JSON.stringify(section ? { ...config, [section]: target } : target, null, 2));
-  }
-
-  function insertProvider(custom: boolean) {
-    if (!config) return;
-    const section = custom ? "custom_providers" : "providers";
-    const name = custom ? "my-provider" : "openai";
-    const existing = object(config[section]) ?? {};
-    update(section, {
-      ...existing,
-      [name]: { ...providerFields, protocol: custom ? providerFields.protocol : "", ...object(existing[name]) },
-    });
+    setConfig(section ? { ...config, [section]: target } : target);
   }
 
   async function save() {
@@ -111,11 +69,11 @@ export function ReviewConfigDialog({
     setLoading(true);
     setMessage("");
     try {
-      const result = await call("codeReview.config.save", { revision: snapshot.revision, text: draft, source });
+      const result = await call("codeReview.config.save", { revision: snapshot.revision, text });
       if (result.ok) {
         const { status, ...saved } = result.value;
         setSnapshot(saved);
-        setDraft(saved.text);
+        setConfig(JSON.parse(saved.text));
         onSaved(status);
         setMessage(t("reviewOcrConfigSaved", "OCR configuration saved."));
       } else setMessage(reviewIssueText(result.issue, t));
@@ -159,7 +117,7 @@ export function ReviewConfigDialog({
         }}
       >
         <div className="cr-options-content">
-          <fieldset className="cr-option-section" disabled={fieldDisabled}>
+          <fieldset className="cr-option-section" disabled={disabled}>
             <legend>{t("reviewOcrDefaults", "Review defaults")}</legend>
             <div className="cr-form-grid">
               {field(
@@ -192,7 +150,7 @@ export function ReviewConfigDialog({
                 <ReviewSelect
                   label={t("reviewEffort", "OCR review passes")}
                   value={String(config?.effort || "low")}
-                  disabled={fieldDisabled}
+                  disabled={disabled}
                   onChange={(value) => update("effort", value)}
                 >
                   <option value="low">{t("thinkingLow", "Low")}</option>
@@ -203,40 +161,6 @@ export function ReviewConfigDialog({
             </div>
           </fieldset>
           <fieldset className="cr-option-section" disabled={disabled}>
-            <legend>
-              <Plug size={14} />
-              {t("reviewOcrConnection", "Model connection")}
-            </legend>
-            <ReviewSelect
-              label={t("reviewOcrConnection", "Model connection")}
-              value={source}
-              disabled={disabled}
-              onChange={(value) => setSource(value as ReviewModelSource)}
-            >
-              <option value="serphia">{t("reviewOcrUseSerphia", "Serphia models and authentication")}</option>
-              <option value="ocr">{t("reviewOcrUseNative", "Native OCR connection")}</option>
-            </ReviewSelect>
-            <p className="cr-field-tip">
-              {source === "ocr"
-                ? t(
-                    "reviewOcrNativeHint",
-                    "OCR uses provider and credential settings from the JSON below. Test the connection from OCR tools.",
-                  )
-                : t(
-                    "reviewOcrSerphiaHint",
-                    "Reviews use the model and authentication selected in Serphia. Native connection fields are saved for when you switch to OCR.",
-                  )}
-            </p>
-            <div className="cr-config-actions">
-              <button type="button" className="cr-control" onClick={onOpenModels}>
-                {t("reviewManageModels", "Manage models and authentication")}
-              </button>
-              <button type="button" className="cr-control" onClick={onOpenMcp}>
-                {t("reviewMcp", "OCR MCP")}
-              </button>
-            </div>
-          </fieldset>
-          <fieldset className="cr-option-section" disabled={fieldDisabled}>
             <legend>{t("reviewOcrTelemetry", "Telemetry")}</legend>
             <label className="cr-option-toggle">
               <input
@@ -252,7 +176,7 @@ export function ReviewConfigDialog({
                 <ReviewSelect
                   label={t("reviewOcrExporter", "Exporter")}
                   value={String(telemetry?.exporter || "")}
-                  disabled={fieldDisabled}
+                  disabled={disabled}
                   onChange={(value) => update("exporter", value || undefined, "telemetry")}
                 >
                   <option value="">{t("thinkingAuto", "Auto")}</option>
@@ -278,67 +202,6 @@ export function ReviewConfigDialog({
               <span>{t("reviewOcrContentLogging", "Include prompts and model responses in telemetry")}</span>
             </label>
           </fieldset>
-          <fieldset className="cr-option-section" disabled={disabled}>
-            <legend>
-              <Braces size={14} />
-              {t("reviewOcrJson", "Advanced JSON")}
-            </legend>
-            <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}>
-              <summary>{t("reviewOcrEditJson", "Edit OCR configuration JSON")}</summary>
-              {advanced && (
-                <div className="cr-config-json">
-                  <p className="cr-field-tip">
-                    {t(
-                      "reviewOcrJsonHint",
-                      "Set provider and model, then edit the matching entry in providers or custom_providers. For legacy connections, use llm. Templates add missing fields without replacing saved values.",
-                    )}
-                  </p>
-                  <div className="cr-config-actions">
-                    <button
-                      type="button"
-                      className="cr-control"
-                      disabled={!config}
-                      onClick={() => insertProvider(false)}
-                    >
-                      {t("reviewOcrBuiltinTemplate", "Built-in provider template")}
-                    </button>
-                    <button
-                      type="button"
-                      className="cr-control"
-                      disabled={!config}
-                      onClick={() => insertProvider(true)}
-                    >
-                      {t("reviewOcrCustomTemplate", "Custom provider template")}
-                    </button>
-                    <button
-                      type="button"
-                      className="cr-control"
-                      disabled={!config}
-                      onClick={() => update("llm", { ...legacyFields, ...object(config?.llm) })}
-                    >
-                      {t("reviewOcrLegacyTemplate", "Legacy LLM template")}
-                    </button>
-                  </div>
-                  <textarea
-                    className="cr-mcp-editor"
-                    aria-label={t("reviewOcrJson", "Advanced JSON")}
-                    value={draft}
-                    aria-invalid={!config}
-                    rows={12}
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    maxLength={OCR_CONFIG_LIMIT}
-                    onChange={(event) => setDraft(event.target.value)}
-                  />
-                  {!config && (
-                    <p className="cr-field-tip" role="status">
-                      {t("reviewOcrConfigInvalid", "Check the OCR configuration JSON and field values.")}
-                    </p>
-                  )}
-                </div>
-              )}
-            </details>
-          </fieldset>
           {(message || busy) && (
             <p className="cr-inline-message" role="status">
               {message || t("reviewErrorBusy", "A review is already running.")}
@@ -354,7 +217,7 @@ export function ReviewConfigDialog({
           >
             {t("reviewReload", "Reload")}
           </button>
-          <button type="submit" className="cr-control cr-primary" disabled={fieldDisabled || !dirty}>
+          <button type="submit" className="cr-control cr-primary" disabled={disabled || !dirty}>
             {t("reviewMcpSave", "Save configuration")}
           </button>
         </footer>

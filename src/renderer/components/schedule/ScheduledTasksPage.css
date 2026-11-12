@@ -275,7 +275,8 @@ button.schedule-primary:hover:not(:disabled) {
   background: rgb(0 0 0 / 40%);
 }
 .schedule-editor form,
-.schedule-editor label {
+.schedule-editor label,
+.schedule-session-field {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -289,7 +290,8 @@ button.schedule-primary:hover:not(:disabled) {
   margin: 0 0 3px;
 }
 .schedule-editor label,
-.schedule-editor legend {
+.schedule-editor legend,
+.schedule-session-field {
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -306,6 +308,238 @@ button.schedule-primary:hover:not(:disabled) {
   color: var(--text);
   font: inherit;
   font-size: 13px;
+}
+.schedule-editor :is(input, textarea, select):focus {
+  border-color: var(--border);
+  outline: none !important;
+  box-shadow: none;
+}
+.schedule-session-select {
+  position: relative;
+  min-width: 0;
+}
+.schedule-editor .schedule-session-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  text-align: start;
+  font: inherit;
+  font-size: 13px;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+.schedule-editor .schedule-session-trigger:hover,
+.schedule-editor .schedule-session-trigger.is-open {
+  border-color: color-mix(in srgb, var(--text-muted) 48%, var(--border));
+  background: var(--bg-hover);
+}
+.schedule-editor .schedule-session-trigger:focus-visible {
+  outline: none !important;
+}
+.schedule-session-trigger.has-value {
+  color: var(--text);
+}
+.schedule-session-trigger > svg {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+.schedule-session-trigger.is-open > svg {
+  transform: rotate(180deg);
+}
+.schedule-session-trigger-copy,
+.schedule-session-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.schedule-session-trigger-title,
+.schedule-session-option-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-session-trigger-meta,
+.schedule-session-option-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-session-popover {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 7px);
+  inset-inline: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 18%),
+    0 2px 6px rgb(0 0 0 / 8%);
+  animation: schedule-session-pop-in 120ms ease-out;
+}
+.schedule-session-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 7px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+}
+.schedule-session-popover-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 11px 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.schedule-session-popover-heading > span {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-editor .schedule-session-back {
+  display: grid;
+  flex: none;
+  width: 25px;
+  height: 25px;
+  min-height: 25px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+.schedule-editor .schedule-session-back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.schedule-editor .schedule-session-search input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  outline: none !important;
+  box-shadow: none;
+}
+.schedule-session-options {
+  display: grid;
+  max-height: min(270px, 38vh);
+  overflow: auto;
+  padding: 3px 5px 5px;
+  overscroll-behavior: contain;
+}
+.schedule-session-group + .schedule-session-group {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+.schedule-session-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+.schedule-editor .schedule-session-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  font: inherit;
+  font-size: 12px;
+}
+.schedule-editor .schedule-session-option:hover,
+.schedule-editor .schedule-session-option.is-active {
+  background: var(--bg-hover);
+}
+.schedule-editor .schedule-session-option.is-current {
+  background: var(--bg-selected);
+}
+.schedule-session-option-icon {
+  display: grid;
+  flex: none;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.schedule-session-option-icon.is-regular {
+  color: var(--accent);
+}
+.schedule-session-option-icon.is-project {
+  color: var(--text);
+}
+.schedule-session-option-copy {
+  flex: 1;
+}
+.schedule-session-option-check {
+  flex: none;
+  color: var(--accent);
+}
+.schedule-session-project-chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+.schedule-session-empty {
+  padding: 18px 10px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 12px;
+}
+.schedule-session-footer {
+  padding: 7px 11px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+@keyframes schedule-session-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 .dark .schedule-editor {
   color-scheme: dark;

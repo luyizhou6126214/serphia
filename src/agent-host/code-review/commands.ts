@@ -92,7 +92,7 @@ export function getCommandSpec(command: ReviewCommand): CommandSpec {
     }
     case "engineConfig": {
       const { key, value } = command;
-      if (!["language", "max_tokens", "effort", "llm.timeout_sec"].includes(key)) throw new ReviewError("failed");
+      if (!["language", "max_tokens", "effort"].includes(key)) throw new ReviewError("failed");
       if (value === undefined) {
         if (key !== "max_tokens" && key !== "effort") throw new ReviewError("failed");
         return { args: ["config", "unset", key] };

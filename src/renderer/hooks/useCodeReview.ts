@@ -55,7 +55,7 @@ export function useCodeReview(request: ReviewRequest | null) {
     }
   }, [request, key, active]);
 
-  async function start(model: ReviewModelSelection | null) {
+  async function start(model: ReviewModelSelection) {
     if (!request || pending.current || active) return;
     pending.current = true;
     setBusy("start");

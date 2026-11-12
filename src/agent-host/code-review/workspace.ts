@@ -85,7 +85,6 @@ export async function resolveWorkspace(cwd: unknown, home: string, signal: Abort
           cwd: root,
           env,
           signal,
-          timeout: 12_000,
           maxBuffer: MAX_INPUT_BYTES,
           encoding: "buffer",
           windowsHide: true,

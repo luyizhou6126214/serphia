@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReviewActivityEntry, ReviewHistoryRef } from "@contract/code-review";
+import type { ReviewActivityEntry, ReviewActivityStats, ReviewHistoryRef } from "@contract/code-review";
 import { call } from "@/lib/api-client";
 
 type Snapshot = {
@@ -8,6 +8,7 @@ type Snapshot = {
   truncated: boolean;
   more?: boolean;
   connectionError: boolean;
+  stats?: ReviewActivityStats;
 };
 
 export function useReviewActivity(
@@ -58,6 +59,7 @@ export function useReviewActivity(
           !page.entries.length &&
           previous.truncated === page.truncated &&
           previous.more === page.more &&
+          JSON.stringify(previous.stats) === JSON.stringify(page.stats) &&
           !previous.connectionError
             ? previous
             : {
@@ -65,6 +67,7 @@ export function useReviewActivity(
                 entries: [...rows.values()].sort((a, b) => a.id - b.id),
                 truncated: page.truncated,
                 more: page.more,
+                stats: page.stats,
                 connectionError: false,
               },
         );

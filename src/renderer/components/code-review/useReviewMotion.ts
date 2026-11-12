@@ -1,6 +1,6 @@
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import type { RefObject } from "react";
+import { useRef, type RefObject } from "react";
 
 gsap.registerPlugin(useGSAP);
 
@@ -13,24 +13,39 @@ export function useReviewMotion(
   docked: boolean,
   readyPanelVisible: boolean,
 ) {
+  const launchPosition = useRef<DOMRect | null>(null);
+
+  function captureLaunchPosition() {
+    const controls = scope.current?.querySelector("[data-review-launch-controls]");
+    launchPosition.current = controls?.getBoundingClientRect() ?? null;
+  }
+
   useGSAP(
     () => {
       if (!docked) return;
+      const initialPosition = launchPosition.current;
+      launchPosition.current = null;
       const media = gsap.matchMedia();
       media.add(
         motion,
         () => {
-          gsap.from("[data-review-controls]", {
-            y: -14,
-            duration: 0.24,
-            ease: "power2.out",
-            clearProps: "transform",
-          });
+          const controls = scope.current?.querySelector("[data-review-launch-controls]");
+          if (controls && initialPosition) {
+            const position = controls.getBoundingClientRect();
+            gsap.from(controls, {
+              x: initialPosition.right - position.right,
+              y: initialPosition.top - position.top,
+              duration: 0.55,
+              ease: "power4.out",
+              clearProps: "transform",
+            });
+          }
           gsap.from("[data-review-transcript]", {
-            opacity: 0.65,
-            duration: 0.2,
+            autoAlpha: 0,
+            y: 12,
+            duration: 0.42,
             ease: "power2.out",
-            clearProps: "opacity",
+            clearProps: "opacity,visibility,transform",
           });
         },
         scope.current ?? undefined,
@@ -93,19 +108,56 @@ export function useReviewMotion(
       media.add(
         motion,
         () => {
-          gsap.fromTo(
-            "[data-review-halo]",
-            { xPercent: -13, yPercent: 6, opacity: 0.48 },
-            {
-              xPercent: 17,
-              yPercent: -4,
-              opacity: 0.86,
-              duration: 3.6,
-              ease: "sine.inOut",
-              repeat: -1,
-              yoyo: true,
-            },
-          );
+          gsap.from("[data-review-controls]", {
+            autoAlpha: 0,
+            y: 14,
+            scale: 0.975,
+            duration: 0.48,
+            ease: "power3.out",
+            clearProps: "opacity,visibility,transform",
+          });
+          gsap.from("[data-review-launch-copy] > *", {
+            autoAlpha: 0,
+            y: 8,
+            stagger: 0.055,
+            duration: 0.38,
+            ease: "power2.out",
+            clearProps: "opacity,visibility,transform",
+          });
+          gsap.to("[data-review-mark]", {
+            y: -6,
+            duration: 2.6,
+            ease: "sine.inOut",
+            repeat: -1,
+            yoyo: true,
+          });
+          gsap.to("[data-review-halo]", {
+            xPercent: (index) => (index === 0 ? 27 : -29),
+            yPercent: (index) => (index === 0 ? -11 : 13),
+            opacity: 0.94,
+            duration: (index) => (index === 0 ? 3.2 : 4.4),
+            ease: "sine.inOut",
+            repeat: -1,
+            yoyo: true,
+          });
+          gsap.to('[data-review-orbit="inner"]', {
+            rotation: "+=360",
+            duration: 6,
+            ease: "none",
+            repeat: -1,
+          });
+          gsap.to('[data-review-orbit="outer"]', {
+            rotation: "-=360",
+            duration: 10,
+            ease: "none",
+            repeat: -1,
+          });
+          gsap.to("[data-review-edge]", {
+            rotation: "+=360",
+            duration: 9,
+            ease: "none",
+            repeat: -1,
+          });
         },
         scope.current ?? undefined,
       );
@@ -113,6 +165,8 @@ export function useReviewMotion(
     },
     { scope, dependencies: [readyPanelVisible], revertOnUpdate: true },
   );
+
+  return captureLaunchPosition;
 }
 
 export function useReviewEntrance(target: RefObject<HTMLElement | null>, open: boolean) {

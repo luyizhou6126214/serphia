@@ -71,7 +71,7 @@ export interface PiRpc {
 type Pending = {
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | undefined;
 };
 
 type SubEntry = {
@@ -160,10 +160,13 @@ export function createRpcClient(port: RpcClientPort, options: RpcClientOptions =
   const invoke = <M extends ApiMethod>(method: M, params: unknown, timeoutMs: number): Promise<ApiResult<M>> =>
     new Promise((resolve, reject) => {
       const id = makeId();
-      const timer = setTimeout(() => {
-        if (!pending.delete(id)) return;
-        reject(new RpcError({ code: "TIMEOUT", message: `RPC call timed out: ${String(method)}` }));
-      }, timeoutMs);
+      const timer =
+        timeoutMs === 0
+          ? undefined
+          : setTimeout(() => {
+              if (!pending.delete(id)) return;
+              reject(new RpcError({ code: "TIMEOUT", message: `RPC call timed out: ${String(method)}` }));
+            }, timeoutMs);
       pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
@@ -192,7 +195,7 @@ export function createRpcClient(port: RpcClientPort, options: RpcClientOptions =
 
     callWithTimeout(method, timeoutMs, ...args) {
       const params = (args[0] ?? undefined) as unknown;
-      const safeTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : callTimeoutMs;
+      const safeTimeout = Number.isFinite(timeoutMs) && timeoutMs >= 0 ? timeoutMs : callTimeoutMs;
       return invoke(method, params, safeTimeout);
     },
 

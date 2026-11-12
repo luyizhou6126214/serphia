@@ -1,5 +1,6 @@
 import { StringDecoder } from "node:string_decoder";
 import type { ReviewActivityEntry, ReviewActivityPage } from "../../contract/code-review";
+import { ReviewActivityTotals } from "./activity-stats";
 
 type ModelEntry = Extract<ReviewActivityEntry, { kind: "model" }>;
 type ToolEntry = Extract<ReviewActivityEntry, { kind: "tool" }>;
@@ -27,31 +28,25 @@ function sameArguments(left: string, right: string) {
 
 /** A cursor tracks updates to existing rows as well as new rows. */
 export class ReviewActivityLog {
+  private totals = new ReviewActivityTotals();
+  private runningModels = new Map<number, ModelEntry>();
   private rows = new Map<number, Slot>();
   private tools = new Map<string, number>();
   private pending = new Set<number>();
   private revision = 0;
   private nextId = 0;
   private size = 0;
-  private secrets = new Set<string>();
+  private gatewayToken = "";
   private warnings = new Set<string>();
   onSettled?: (entry: ReviewActivityEntry) => void;
   truncated = false;
 
   setGatewayToken(token: string) {
-    this.addSecrets([token]);
-  }
-
-  addSecrets(values: unknown[]) {
-    for (const value of values) {
-      if (typeof value !== "string" || value.trim().length < 6) continue;
-      this.secrets.add(value);
-      this.secrets.add(JSON.stringify(value).slice(1, -1));
-    }
+    this.gatewayToken = token;
   }
 
   redactReport(text: string) {
-    if (!text || !this.secrets.size) return text;
+    if (!text || !this.gatewayToken) return text;
     try {
       return JSON.stringify(
         JSON.parse(text, (key: string, value: unknown) =>
@@ -64,8 +59,7 @@ export class ReviewActivityLog {
   }
 
   private safe(text: string) {
-    for (const secret of this.secrets) text = text.replaceAll(secret, "[redacted]");
-    return text;
+    return this.gatewayToken ? text.replaceAll(this.gatewayToken, "[redacted]") : text;
   }
 
   private diagnostic(text: string) {
@@ -85,13 +79,15 @@ export class ReviewActivityLog {
   }
 
   private put(row: ReviewActivityEntry) {
+    const previous = this.rows.get(row.id);
+    this.totals.record(row, previous?.entry ?? this.runningModels.get(row.id));
     const size =
       row.kind === "model"
         ? row.text.length + row.reasoning.length
         : row.kind === "tool"
           ? row.input.length + (row.output?.length ?? 0)
           : row.message.length;
-    this.size += size - (this.rows.get(row.id)?.size ?? 0);
+    this.size += size - (previous?.size ?? 0);
     this.rows.set(row.id, { entry: row, revision: ++this.revision, size });
     if (!("status" in row) || row.status !== "running") this.onSettled?.(row);
     while (this.rows.size > MAX_ENTRIES || this.size > MAX_BYTES) {
@@ -106,7 +102,9 @@ export class ReviewActivityLog {
 
   beginModel(model: string, provider: string, at = Date.now()) {
     const id = ++this.nextId;
-    this.put({ kind: "model", id, at, model, provider, text: "", reasoning: "", status: "running" });
+    const row: ModelEntry = { kind: "model", id, at, model, provider, text: "", reasoning: "", status: "running" };
+    this.put(row);
+    this.runningModels.set(id, row);
     return id;
   }
 
@@ -130,17 +128,22 @@ export class ReviewActivityLog {
           | "reasoning"
           | "inputTokens"
           | "outputTokens"
+          | "cacheReadTokens"
+          | "cacheWriteTokens"
+          | "contextWindow"
+          | "toolUse"
           | "durationMs"
           | "issue"
           | "diagnostic"
         >
       >,
   ) {
-    const row = this.rows.get(id)?.entry;
+    const visible = this.rows.get(id)?.entry;
+    const row = visible ?? this.runningModels.get(id);
     if (row?.kind !== "model") return;
     const text = this.safe(patch.text ?? row.text);
     const reasoning = this.safe(patch.reasoning ?? row.reasoning);
-    this.put({
+    const finished: ModelEntry = {
       ...row,
       ...patch,
       text: text.slice(0, MAX_FIELD),
@@ -148,7 +151,13 @@ export class ReviewActivityLog {
       diagnostic: patch.diagnostic ? this.diagnostic(patch.diagnostic) : undefined,
       durationMs: patch.durationMs ?? Date.now() - row.at,
       truncated: row.truncated || text.length > MAX_FIELD || reasoning.length > MAX_FIELD,
-    });
+    };
+    if (visible) this.put(finished);
+    else {
+      this.totals.record(finished, row);
+      this.onSettled?.(finished);
+    }
+    this.runningModels.delete(id);
   }
 
   beginTool(callId: string, name: string, args: string) {
@@ -283,7 +292,12 @@ export class ReviewActivityLog {
       more: entries.length < changed.length,
       truncated: this.truncated,
       firstId: this.rows.keys().next().value,
+      stats: this.stats(),
     };
+  }
+
+  stats() {
+    return this.totals.snapshot();
   }
 
   pendingEntries(): ReviewActivityEntry[] {

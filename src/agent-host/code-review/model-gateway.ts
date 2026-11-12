@@ -8,6 +8,7 @@ import {
   type ToolCall,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { Agent } from "undici";
 import type { ReviewModelSelection } from "../../contract/code-review";
 import { THINKING_LEVELS } from "../../shared/thinking-levels";
 import { createDesktopAgentSessionServices } from "../desktop-session-services";
@@ -41,7 +42,28 @@ const ZERO_USAGE = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-export async function resolveReviewModel(cwd: string, selection: ReviewModelSelection | null) {
+const PROVIDER_FETCH_APIS = new Set([
+  "openai-completions",
+  "openai-responses",
+  "azure-openai-responses",
+  "openai-codex-responses",
+  "anthropic-messages",
+  "mistral-conversations",
+  "pi-messages",
+]);
+
+function activityUsage(usage: AssistantMessage["usage"]) {
+  const inputTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  if (inputTokens === 0 && usage.output === 0) return undefined;
+  return {
+    inputTokens,
+    outputTokens: usage.output,
+    cacheReadTokens: usage.cacheRead,
+    cacheWriteTokens: usage.cacheWrite,
+  };
+}
+
+export async function resolveReviewModel(cwd: string, selection: ReviewModelSelection) {
   if (
     !selection ||
     typeof selection.provider !== "string" ||
@@ -190,6 +212,9 @@ export async function withReviewGateway<T>(
   const sessionId = randomUUID();
   const cache = new Map<string, AssistantMessage>();
   const { runtime, model, reasoning } = provider;
+  const dispatcher = PROVIDER_FETCH_APIS.has(model.api)
+    ? new Agent({ connect: { timeout: 0 }, headersTimeout: 0, bodyTimeout: 0 })
+    : undefined;
   const serve = async (req: IncomingMessage, res: ServerResponse) => {
     if (
       req.method !== "POST" ||
@@ -203,6 +228,7 @@ export async function withReviewGateway<T>(
     res.once("close", () => disconnected.abort());
     let row: number | undefined;
     let diagnostic: string | undefined;
+    let usage: ReturnType<typeof activityUsage>;
     try {
       const request = await readRequest(req);
       const context = toContext(request, model, cache);
@@ -217,11 +243,21 @@ export async function withReviewGateway<T>(
         requested && Number.isSafeInteger(requested) && requested > 0
           ? Math.min(requested, model.maxTokens || requested)
           : undefined;
+      const requestSignal = AbortSignal.any([signal, disconnected.signal]);
+      const fetchOptions = { dispatcher } as RequestInit;
+      let contextWindow = model.contextWindow;
       const stream = runtime.streamSimple(model, context, {
         maxTokens,
         reasoning,
         sessionId,
-        signal: AbortSignal.any([signal, disconnected.signal]),
+        signal: requestSignal,
+        timeoutMs: dispatcher ? 0 : undefined,
+        maxRetryDelayMs: 0,
+        websocketConnectTimeoutMs: model.api === "openai-codex-responses" ? 0 : undefined,
+        fetch: dispatcher ? (input, init) => fetch(input, { ...init, ...fetchOptions }) : undefined,
+        onResponse: (_response, respondingModel) => {
+          contextWindow = respondingModel.contextWindow;
+        },
       });
       for await (const event of stream) {
         if (row !== undefined && (event.type === "text_delta" || event.type === "thinking_delta")) {
@@ -229,6 +265,7 @@ export async function withReviewGateway<T>(
         }
       }
       const answer = await stream.result();
+      usage = activityUsage(answer.usage);
       if (answer.stopReason === "error" || answer.stopReason === "aborted" || answer.stopReason === "deferred") {
         diagnostic = answer.errorMessage;
         throw new ReviewError(issueFromDiagnostics(answer.errorMessage ?? ""));
@@ -240,8 +277,9 @@ export async function withReviewGateway<T>(
           provider: answer.provider,
           text: answer.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""),
           reasoning: answer.content.flatMap((block) => (block.type === "thinking" ? [block.thinking] : [])).join(""),
-          inputTokens: answer.usage.input + answer.usage.cacheRead + answer.usage.cacheWrite,
-          outputTokens: answer.usage.output,
+          ...usage,
+          contextWindow: runtime.getModel(answer.provider, answer.model)?.contextWindow ?? contextWindow,
+          toolUse: answer.content.some((block) => block.type === "toolCall"),
         });
       if (res.destroyed) return;
       for (const call of writeResponse(res, request, answer)) {
@@ -255,6 +293,7 @@ export async function withReviewGateway<T>(
       if (row !== undefined)
         activity?.finishModel(row, {
           status: "error",
+          ...usage,
           issue,
           diagnostic:
             diagnostic ?? (error instanceof Error && !(error instanceof ReviewError) ? error.message : undefined),
@@ -264,12 +303,12 @@ export async function withReviewGateway<T>(
       res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify({ error: { message: issue } }));
     }
   };
-  const server = createServer((req, res) => void serve(req, res));
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
+  const server = createServer({ requestTimeout: 0, headersTimeout: 0 }, (req, res) => void serve(req, res));
   try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
     const address = server.address();
     if (!address || typeof address === "string") throw new ReviewError("failed");
     return await operation({
@@ -279,10 +318,12 @@ export async function withReviewGateway<T>(
         OCR_LLM_PROTOCOL: "openai",
         OCR_LLM_MODEL: model.id,
         OCR_LLM_TOKEN: token,
+        OCR_LLM_TIMEOUT: "0",
       },
     });
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    await dispatcher?.destroy();
   }
 }

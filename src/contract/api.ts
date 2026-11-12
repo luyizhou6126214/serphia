@@ -6,7 +6,7 @@ import type {
   ReviewHistoryDetail,
   ReviewHistoryRef,
   ReviewHistoryRow,
-  ReviewModelStatus,
+  ReviewEngineStatus,
 } from "./code-review";
 import type {
   AgentCommand,
@@ -113,15 +113,15 @@ export interface Api {
   "codeReview.preview": { params: ReviewRequest; result: ReviewReply<ReviewPreview> };
   "codeReview.branches": { params: { cwd: string }; result: ReviewReply<ReviewBranches> };
   "codeReview.config.get": { params: void; result: ReviewReply<ReviewConfigSnapshot> };
-  "codeReview.config.status": { params: void; result: ReviewReply<ReviewModelStatus> };
+  "codeReview.config.status": { params: void; result: ReviewReply<ReviewEngineStatus> };
   "codeReview.config.save": {
     params: ReviewConfigSnapshot;
-    result: ReviewReply<ReviewConfigSnapshot & { status: ReviewModelStatus }>;
+    result: ReviewReply<ReviewConfigSnapshot & { status: ReviewEngineStatus }>;
   };
   "codeReview.mcp.get": { params: void; result: ReviewReply<ReviewMcpSnapshot> };
   "codeReview.mcp.save": { params: ReviewMcpSnapshot; result: ReviewReply<ReviewMcpSnapshot> };
   "codeReview.start": {
-    params: { previewId: string; model: ReviewModelSelection | null };
+    params: { previewId: string; model: ReviewModelSelection };
     result: ReviewReply<ReviewRun>;
   };
   "codeReview.getRun": { params: { id?: string }; result: ReviewRun | null };
@@ -146,7 +146,7 @@ export interface Api {
   };
   "codeReview.diff": { params: ReviewDiffRequest; result: ReviewReply<ReviewDiff> };
   "codeReview.command": { params: ReviewCommand; result: ReviewReply<ReviewCommandOutput> };
-  "codeReview.testModel": { params: { cwd: string; model: ReviewModelSelection | null }; result: ReviewReply<null> };
+  "codeReview.testModel": { params: { cwd: string; model: ReviewModelSelection }; result: ReviewReply<null> };
   "schedule.list": { params: void; result: ScheduleTask[] };
   "schedule.save": { params: ScheduleSave; result: ScheduleTask };
   "schedule.pause": { params: { id: string; revision: number; paused: boolean }; result: ScheduleTask };

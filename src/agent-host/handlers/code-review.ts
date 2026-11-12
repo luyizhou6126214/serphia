@@ -26,7 +26,7 @@ export function createCodeReviewHandlers(service: CodeReviewService) {
     "codeReview.preview": (params) => reply(() => service.preview(params)),
     "codeReview.branches": (params) => reply(() => service.branches(params?.cwd)),
     "codeReview.config.get": () => reply(() => service.getConfig()),
-    "codeReview.config.status": () => reply(() => service.modelStatus()),
+    "codeReview.config.status": () => reply(() => service.engineStatus()),
     "codeReview.config.save": (params) => reply(() => service.saveConfig(params)),
     "codeReview.mcp.get": () => reply(() => service.getMcp()),
     "codeReview.mcp.save": (params) => reply(() => service.saveMcp(params)),

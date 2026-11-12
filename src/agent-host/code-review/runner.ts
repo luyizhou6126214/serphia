@@ -11,7 +11,6 @@ type Options = {
   cwd: string;
   env: Record<string, string>;
   signal: AbortSignal;
-  timeout: number;
   onStdout?: (bytes: Buffer) => void;
   onStderr?: (bytes: Buffer) => void;
 };
@@ -23,7 +22,6 @@ export async function runOcr(options: Options) {
   const { executable, args, cwd, env, signal } = options;
   signal.throwIfAborted();
   const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(new ReviewError("timeout")), options.timeout);
   const runSignal = AbortSignal.any([signal, controller.signal]);
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
@@ -143,7 +141,5 @@ export async function runOcr(options: Options) {
   } catch (error) {
     if (runSignal.aborted) runSignal.throwIfAborted();
     throw error instanceof ReviewError ? error : new ReviewError("containment");
-  } finally {
-    clearTimeout(deadline);
   }
 }
