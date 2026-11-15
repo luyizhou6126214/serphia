@@ -4,6 +4,8 @@ export const enUS: Record<string, string> = {
   reasoningShort: "Reasoning",
   permissionShort: "Access",
   attachLocalFiles: "Add images or local file references",
+  composerImagePreview: "Preview image",
+  composerFileUnavailable: "File unavailable",
   attachLocalFilesDescription:
     "Add images or local file references. The agent reads absolute paths on this computer; moved files, remote agents, or sandboxes may not be able to access them.",
   draftPersistenceFailed:
@@ -63,7 +65,6 @@ export const enUS: Record<string, string> = {
   modelsOfflineCache: "Offline: using the cached model directory.",
   permissionFull: "Full access",
   permissionFullDescription: "All tools, code orchestration, image generation, classification and search",
-  permissionCustom: "Custom",
   permissionReadOnly: "Read only",
   permissionReadOnlyDescription: "No tools, read-only",
   permissionStandard: "Standard",
@@ -99,6 +100,8 @@ export const zhCN: Record<string, string> = {
   reasoningShort: "推理",
   permissionShort: "权限",
   attachLocalFiles: "添加图片或本地文件引用",
+  composerImagePreview: "预览图片",
+  composerFileUnavailable: "文件不可用",
   attachLocalFilesDescription:
     "添加图片或本地文件引用。Agent 会读取本机绝对路径；文件移动后、远程 Agent 或沙箱环境可能无法访问。",
   draftPersistenceFailed: "草稿未能保存到此设备。当前内容仍保留在页面中，请检查可用存储空间。",
@@ -156,7 +159,6 @@ export const zhCN: Record<string, string> = {
   modelsOfflineCache: "离线：正在使用缓存的模型目录。",
   permissionFull: "完全访问",
   permissionFullDescription: "全部工具、代码编排、生图、决策分类与搜索",
-  permissionCustom: "自定义",
   permissionReadOnly: "只读",
   permissionReadOnlyDescription: "禁用工具，仅可对话",
   permissionStandard: "标准",
@@ -192,6 +194,8 @@ export const zhTW: Record<string, string> = {
   reasoningShort: "推理",
   permissionShort: "權限",
   attachLocalFiles: "新增圖片或本機檔案參考",
+  composerImagePreview: "預覽圖片",
+  composerFileUnavailable: "檔案無法使用",
   attachLocalFilesDescription:
     "新增圖片或本機檔案參考。Agent 會讀取本機絕對路徑；檔案移動後、遠端 Agent 或沙盒環境可能無法存取。",
   draftPersistenceFailed: "草稿未能儲存到此裝置。目前內容仍保留在頁面中，請檢查可用的儲存空間。",
@@ -249,7 +253,6 @@ export const zhTW: Record<string, string> = {
   modelsOfflineCache: "離線：正在使用快取的模型目錄。",
   permissionFull: "完整存取",
   permissionFullDescription: "全部工具、程式碼編排、生圖、決策分類與搜尋",
-  permissionCustom: "自訂",
   permissionReadOnly: "唯讀",
   permissionReadOnlyDescription: "停用工具，僅能對話",
   permissionStandard: "標準",

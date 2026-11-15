@@ -135,7 +135,7 @@ function harness() {
 
 test("starts, observes readiness, reads output, writes stdin and stops an owned process", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "pi-managed-service-"));
-  const { service, parentCalls } = harness();
+  const { service, events, parentCalls, workers } = harness();
   const started = await service.startForAgent("session-a", cwd, true, {
     command: "npm run dev -- --host 127.0.0.1",
     label: "frontend",
@@ -143,6 +143,12 @@ test("starts, observes readiness, reads output, writes stdin and stops an owned 
   });
   assert.equal(started.state, "ready");
   assert.equal(started.endpoints[0].url, "http://127.0.0.1:4173/");
+  workers[0].stdout.write("Also listening at http://localhost:4174/\n");
+  const previews = events.filter(({ data }) => data.reason === "endpoint");
+  assert.deepEqual(
+    previews.map(({ data }) => [data.runId, data.preview]),
+    [[started.runId, { ownerSessionId: "session-a", endpointId: started.endpoints[0].id }]],
+  );
   assert.equal(
     parentCalls.some((entry) => entry.method === "managedProcesses.register"),
     true,

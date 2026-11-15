@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getPresetFromTools, getToolNamesForPreset, PRESET_DEFAULT, PRESET_FULL } from "./tool-presets.ts";
+import { getPresetFromToolNames, getToolNamesForPreset, PRESET_DEFAULT, PRESET_FULL } from "./tool-presets.ts";
 
-const tools = (activeNames) =>
-  PRESET_FULL.map((name) => ({ name, description: name, active: activeNames.includes(name) }));
-
-test("tool preset detection distinguishes none, default, full, and custom built-ins", () => {
-  assert.equal(getPresetFromTools(tools([])), "none");
-  assert.equal(getPresetFromTools(tools(PRESET_DEFAULT)), "default");
-  assert.equal(getPresetFromTools(tools(PRESET_FULL)), "full");
-  assert.equal(getPresetFromTools(tools(["read"])), "custom");
-  assert.equal(getPresetFromTools(tools(PRESET_FULL.filter((name) => name !== "codemode"))), "custom");
+test("tool preset detection uses the three available labels", () => {
+  assert.equal(getPresetFromToolNames([]), "none");
+  assert.equal(getPresetFromToolNames(PRESET_DEFAULT), "default");
+  assert.equal(getPresetFromToolNames(PRESET_FULL), "full");
+  assert.equal(getPresetFromToolNames(["read"]), "default");
+  assert.equal(getPresetFromToolNames(PRESET_FULL.filter((name) => name !== "codemode")), "default");
   assert.ok(getToolNamesForPreset("full").includes("codemode"));
   assert.ok(getToolNamesForPreset("full").includes("tool_search"));
 });

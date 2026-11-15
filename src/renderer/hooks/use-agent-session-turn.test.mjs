@@ -393,6 +393,19 @@ async function mountRuntime(t, initial, overrides = {}) {
   };
 }
 
+test("reopening an idle PowerShell session restores Full access from the saved selection", async (t) => {
+  const toolNames = ["powershell", "read", "edit", "write", "ls", "codemode", "tool_search"];
+  const fixture = await mountRuntime(t, { ...runtimeDetail({ running: false }), toolNames });
+  assert.equal(fixture.current.toolPreset, "full");
+
+  testApi.queueCommand(
+    "get_tools",
+    toolNames.map((name) => ({ name, active: true, executionAllowed: true })),
+  );
+  await act(async () => fixture.current.loadTools("fixture"));
+  assert.equal(fixture.current.toolPreset, "full");
+});
+
 test("an initial running snapshot arriving after prompt_done cannot resurrect the turn", async (t) => {
   const initial = createDeferred();
   const fixture = await mountRuntime(t, initial.promise);

@@ -117,7 +117,7 @@ export function BrowserSettings({ sessionId }: { sessionId: string | null }) {
               onChange={(restoreTabs) => void update({ panel: { restoreTabs } })}
             />
             <Toggle
-              label={t("browserOpenPanelOnUse", "Open Browser panel when Agent starts browsing")}
+              label={t("browserOpenPanelOnUse", "Open Browser panel for Agent browsing and local previews")}
               checked={settings.panel.openOnAgentUse}
               onChange={(openOnAgentUse) => void update({ panel: { openOnAgentUse } })}
             />

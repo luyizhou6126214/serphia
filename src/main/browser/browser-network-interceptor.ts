@@ -13,6 +13,7 @@ import { BrowserNetworkPolicy, createSessionNetworkPolicyOptions } from "./brows
 import { applyHeaderRules, validateHeaderRules } from "./browser-header-rules.ts";
 import { BrowserError } from "./browser-error.ts";
 import { BrowserPermissionGrantStore } from "./browser-permission-grants.ts";
+import { previewRequestUrl } from "./browser-preview-origin.ts";
 
 const PERMISSION_TIMEOUT_MS = 30_000;
 
@@ -30,7 +31,9 @@ export interface BrowserNetworkInterceptorOptions {
   profileId: string;
   getNavigationSettings: () => BrowserNavigationSettings;
   getAdvancedRuntimePolicy: () => BrowserAdvancedRuntimePolicy;
-  getTabForWebContents: (webContentsId: number) => { tabId: string; visible: boolean } | undefined;
+  getTabForWebContents: (
+    webContentsId: number,
+  ) => { tabId: string; visible: boolean; previewOrigin?: string } | undefined;
   getIdentityForWebContents: (webContentsId: number) => BrowserIdentityProfile | undefined;
   resolveSecret: (ref: string) => string | undefined;
   emit: (event: BrowserEvent) => void;
@@ -152,11 +155,22 @@ export class BrowserNetworkInterceptor {
 
     session.webRequest.onBeforeRequest((details, callback) => {
       if (this.disposed || details.url === "about:blank") return callback({ cancel: false });
+      const previewOrigin =
+        typeof details.webContentsId === "number"
+          ? this.options.getTabForWebContents(details.webContentsId)?.previewOrigin
+          : undefined;
+      const previewUrl =
+        previewOrigin &&
+        (details.resourceType === "mainFrame" || safeOrigin(details.frame?.top?.url ?? "") === previewOrigin)
+          ? previewRequestUrl(details.url, previewOrigin)
+          : null;
       void this.policy
-        .check(details.url, {
+        .check(previewUrl ?? details.url, {
           settings: this.options.getNavigationSettings(),
           allowAboutBlank: true,
-          userApprovedPrivateNetwork: this.locallyApprovedPrivateOrigins.has(safeOrigin(details.url) ?? ""),
+          userApprovedHttp: previewUrl !== null,
+          userApprovedPrivateNetwork:
+            previewUrl !== null || this.locallyApprovedPrivateOrigins.has(safeOrigin(details.url) ?? ""),
         })
         .then(() => callback({ cancel: false }))
         .catch((error: unknown) => {

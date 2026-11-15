@@ -105,7 +105,7 @@ test("loading session tools reconciles the preset with current authorized tools"
   await act(async () => f.current.handleToolPresetChange("none"));
   api.state.tools = api.state.tools.filter((tool) => tool.name === "powershell");
   await act(async () => f.current.loadTools("session"));
-  assert.equal(f.preset, "custom");
+  assert.equal(f.preset, "default");
   assert.deepEqual(await f.current.initialToolNames(), ["powershell"]);
 });
 

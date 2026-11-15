@@ -4,6 +4,7 @@ import test from "node:test";
 
 const panel = await readFile(new URL("./ProcessPanel.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const browserTabs = await readFile(new URL("../hooks/useBrowserPanelTabs.ts", import.meta.url), "utf8");
 const settings = await readFile(new URL("./SettingsConfig.tsx", import.meta.url), "utf8");
 const contract = await readFile(new URL("../../contract/processes.ts", import.meta.url), "utf8");
 
@@ -21,8 +22,9 @@ test("managed process UI exposes lifecycle controls and independent Browser open
   for (const method of ["stop", "restart", "dismiss", "export", "write"]) {
     assert.match(panel, new RegExp(`call\\(\\"processes\\.${method}\\"`));
   }
-  assert.match(panel, /browserCreateUserTab/);
-  assert.match(panel, /ownerSessionId: process\.ownerSessionId/);
+  assert.match(panel, /browserOpenProcessPreview/);
+  assert.match(panel, /runId: process\.runId/);
+  assert.match(browserTabs, /preview\.ownerSessionId !== currentSession\.current/);
   assert.match(shell, /PROCESSES_TAB_ID/);
   assert.match(shell, /activateUi/);
 });

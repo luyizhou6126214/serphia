@@ -264,6 +264,7 @@ export interface BrowserCreateProfileInput {
 export type BrowserDataType = "cookies" | "cache" | "local-storage" | "indexed-db" | "service-workers" | "all";
 
 export interface BrowserTabInfo {
+  processPreview?: true;
   id: string;
   ownerSessionId: string | null;
   profileId: string;
@@ -289,6 +290,20 @@ export interface BrowserCreateTabInput {
   url?: string;
   ownerSessionId?: string | null;
   activate?: boolean;
+}
+
+export interface BrowserElementReference {
+  url: string;
+  selector: string;
+  tag: string;
+  label?: string;
+}
+
+export interface BrowserProcessPreviewInput {
+  processId: string;
+  runId: string;
+  endpointId: string;
+  automatic?: boolean;
 }
 
 export interface BrowserBoundsInput {

@@ -17,6 +17,8 @@ import type {
   BrowserConfirmationProof,
   BrowserCreateProfileInput,
   BrowserCreateTabInput,
+  BrowserElementReference,
+  BrowserProcessPreviewInput,
   BrowserDataType,
   BrowserEvent,
   BrowserHeaderRule,
@@ -227,6 +229,9 @@ export interface PiBridge {
   ) => Promise<BrowserSettingsPublic>;
   browserListTabs: (sessionId?: string) => Promise<BrowserTabInfo[]>;
   browserCreateUserTab: (input: BrowserCreateTabInput) => Promise<BrowserTabInfo>;
+  browserOpenProcessPreview: (input: BrowserProcessPreviewInput) => Promise<BrowserTabInfo | null>;
+  browserPickElement: (tabId: string, requestId: string) => Promise<BrowserElementReference | null>;
+  browserCancelElementPick: (tabId: string, requestId: string) => Promise<void>;
   browserActivateTab: (tabId: string) => Promise<void>;
   browserNavigateUser: (tabId: string, url: string) => Promise<void>;
   browserGoBack: (tabId: string) => Promise<void>;

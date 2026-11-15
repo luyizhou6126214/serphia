@@ -504,13 +504,9 @@
   background: var(--bg);
 }
 
-.right-panel-container.right-panel-fullscreen > :not(.right-panel-resizer) {
+.right-panel-container.right-panel-fullscreen > * {
   width: auto !important;
   min-width: 0 !important;
-}
-
-.right-panel-container.right-panel-fullscreen .right-panel-resizer {
-  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

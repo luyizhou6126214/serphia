@@ -12,7 +12,7 @@ import {
   createCodemodeExtension,
 } from "@earendil-works/pi-coding-agent";
 import { importTestBundle } from "#test-bundle";
-import { codingToolAvailability, getToolNamesForPreset, getPresetFromTools } from "../shared/tool-presets.ts";
+import { codingToolAvailability, getToolNamesForPreset, getPresetFromToolNames } from "../shared/tool-presets.ts";
 import { excludedPiTools } from "../shared/pi-tool-policy.ts";
 const {
   DesktopSessionToolStore,
@@ -92,22 +92,8 @@ test("permission presets follow the configured available shell while declaration
   assert.ok(full.includes("powershell"));
   assert.ok(!full.includes("bash"));
   assert.deepEqual(getToolNamesForPreset("default", choices), ["read", "powershell", "edit", "write"]);
-  const tools = [
-    ...choices.map((tool) => ({
-      ...tool,
-      description: "",
-      active: full.includes(tool.name),
-      executionAllowed: full.includes(tool.name),
-    })),
-    ...full
-      .filter((name) => !choices.some((tool) => tool.name === name))
-      .map((name) => ({ name, description: "", active: true })),
-  ];
-  assert.equal(getPresetFromTools(tools), "full");
-  assert.equal(
-    getPresetFromTools([{ name: "powershell", description: "", active: true, executionAllowed: true }]),
-    "custom",
-  );
+  assert.equal(getPresetFromToolNames(full), "full");
+  assert.equal(getPresetFromToolNames(["powershell"]), "default");
   assert.ok(
     !getToolNamesForPreset("full", codingToolAvailability("darwin", { "shell.powershell": {} })).includes("powershell"),
   );

@@ -123,6 +123,10 @@ if (typeof preloadLocation === "string" && isTrustedPreloadLocation(preloadLocat
       ipcRenderer.invoke("desktop:browser:update-settings", patch, confirmation),
     browserListTabs: (sessionId) => ipcRenderer.invoke("desktop:browser:list-tabs", sessionId),
     browserCreateUserTab: (input) => ipcRenderer.invoke("desktop:browser:create-user-tab", input),
+    browserOpenProcessPreview: (input) => ipcRenderer.invoke("desktop:browser:open-process-preview", input),
+    browserPickElement: (tabId, requestId) => ipcRenderer.invoke("desktop:browser:pick-element", tabId, requestId),
+    browserCancelElementPick: (tabId, requestId) =>
+      ipcRenderer.invoke("desktop:browser:cancel-element-pick", tabId, requestId),
     browserActivateTab: (tabId) => ipcRenderer.invoke("desktop:browser:activate-tab", tabId),
     browserNavigateUser: (tabId, url) => ipcRenderer.invoke("desktop:browser:navigate-user", tabId, url),
     browserGoBack: (tabId) => ipcRenderer.invoke("desktop:browser:go-back", tabId),

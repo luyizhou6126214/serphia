@@ -5,8 +5,12 @@ import { createElement, useCallback, useState } from "react";
 import { act, create } from "react-test-renderer";
 import { importTestBundle } from "#test-bundle";
 
-const { ReplyImage } = await importTestBundle("reply-image", {
-  stdin: { contents: 'export {ReplyImage} from "./ReplyImage.tsx";', resolveDir: import.meta.dirname, loader: "tsx" },
+const { MessageImage } = await importTestBundle("reply-image", {
+  stdin: {
+    contents: 'export {MessageImage} from "./MessageImage.tsx";',
+    resolveDir: import.meta.dirname,
+    loader: "tsx",
+  },
   tsconfig: path.resolve(import.meta.dirname, "../../../tsconfig.renderer.json"),
   external: ["react"],
   plugins: [
@@ -61,7 +65,7 @@ test("visible reply images load original tool content automatically, with retry 
       if (requests.length === 1) throw Error("temporary read error");
       setImage({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
     }, []);
-    return createElement(ReplyImage, { image, onLoad: load });
+    return createElement(MessageImage, { image, onLoad: load });
   }
   await act(async () => {
     view = create(createElement(Harness), { createNodeMock: () => ({}) });

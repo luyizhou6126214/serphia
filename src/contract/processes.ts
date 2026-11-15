@@ -146,7 +146,8 @@ export interface ManagedProcessChangedEvent {
   revision: number;
   processId: string;
   runId: string;
-  reason: "created" | "state" | "readiness" | "exit" | "dismissed";
+  reason: "created" | "state" | "readiness" | "endpoint" | "exit" | "dismissed";
+  preview?: { ownerSessionId: string; endpointId: string };
   activateUi?: boolean;
 }
 

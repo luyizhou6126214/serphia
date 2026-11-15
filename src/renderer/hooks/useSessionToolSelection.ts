@@ -1,7 +1,12 @@
 import { useCallback, useRef, useState, type RefObject } from "react";
 import { call } from "@/lib/api-client";
 import { sendAgentCommand } from "@/lib/agent-client";
-import { getPresetFromTools, getToolNamesForPreset, getSelectedToolNames, type ToolPreset } from "@shared/tool-presets";
+import {
+  getPresetFromToolNames,
+  getToolNamesForPreset,
+  getSelectedToolNames,
+  type ToolPreset,
+} from "@shared/tool-presets";
 import { LatestRequestGate } from "@/lib/latest-request-gate";
 
 export function useSessionToolSelection({
@@ -43,7 +48,7 @@ export function useSessionToolSelection({
             const names = getSelectedToolNames(tools);
             desired.current = { owner: key, names };
             setSelected(names);
-            setPreset(getPresetFromTools(tools));
+            setPreset(getPresetFromToolNames(names));
           }
         }
         return tools;
@@ -93,7 +98,7 @@ export function useSessionToolSelection({
     [captureCommandView, ensuringNewSessionRef, gate, isActive, sessionIdRef, setPreset, setSelected, intents, key],
   );
   const handleToolPresetChange = useCallback(
-    async (next: "none" | "default" | "full") => {
+    async (next: ToolPreset) => {
       if (!isActive()) return;
       const owns = captureCommandView(),
         request = intents.begin();

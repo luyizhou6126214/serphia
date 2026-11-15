@@ -36,6 +36,7 @@ import {
   managedProcessCommandHash,
   managedProcessCommandDisplay,
   managedProcessNetworkWarnings,
+  mergeManagedLoopbackEndpoints,
   normalizeManagedProcessLabel,
   normalizeManagedReadBytes,
   normalizeManagedWaitMs,
@@ -1088,16 +1089,8 @@ export class ManagedProcessService {
   }
 
   private mergeEndpoints(record: ManagedRecord, endpoints: ManagedLoopbackEndpoint[]): void {
-    let changed = false;
-    for (const endpoint of endpoints) {
-      const existing = record.endpoints.find((candidate) => candidate.url === endpoint.url);
-      if (existing) {
-        existing.lastSeenAt = endpoint.lastSeenAt;
-      } else if (record.endpoints.length < MANAGED_PROCESS_LIMITS.endpointCount) {
-        record.endpoints.push(endpoint);
-        changed = true;
-      }
-    }
+    const hadEndpoint = record.endpoints.length > 0;
+    const changed = mergeManagedLoopbackEndpoints(record.endpoints, endpoints);
     if (
       changed &&
       record.readinessSpec.type === "loopback-url" &&
@@ -1108,6 +1101,9 @@ export class ManagedProcessService {
       record.readinessMatched = record.endpoints[0]?.url;
       record.state = "ready";
       this.emitChanged(record, "readiness");
+    }
+    if (!hadEndpoint && changed && record.kind === "server" && !terminalState(record.state)) {
+      this.emitChanged(record, "endpoint");
     }
   }
 
@@ -1287,6 +1283,9 @@ export class ManagedProcessService {
       runId: record.runId,
       reason,
       ...(reason === "created" && record.activateUi ? { activateUi: true } : {}),
+      ...(reason === "endpoint" && record.endpoints[0]
+        ? { preview: { ownerSessionId: record.ownerSessionId, endpointId: record.endpoints[0].id } }
+        : {}),
     };
     this.server.emit("processes.changed", record.processId, event);
     this.notifyMainCount();

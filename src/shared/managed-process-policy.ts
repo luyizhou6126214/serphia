@@ -198,8 +198,7 @@ function safeLoopbackUrl(raw: string): string | null {
     if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "[::1]" && hostname !== "::1") {
       return null;
     }
-    url.username = "";
-    url.password = "";
+    if (url.username || url.password) return null;
     url.hash = "";
     for (const key of [...url.searchParams.keys()]) {
       if (/token|key|secret|password|auth|signature/i.test(key)) url.searchParams.set(key, "[redacted]");
@@ -216,7 +215,7 @@ export function extractManagedLoopbackEndpoints(
   runId: string,
   now = Date.now(),
 ): ManagedLoopbackEndpoint[] {
-  const matches = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?(?:\/[^\s<>"']*)?/gi) ?? [];
+  const matches = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
   const unique = new Set<string>();
   const endpoints: ManagedLoopbackEndpoint[] = [];
   for (const match of matches) {
@@ -234,6 +233,22 @@ export function extractManagedLoopbackEndpoints(
     if (endpoints.length >= MANAGED_PROCESS_LIMITS.endpointCount) break;
   }
   return endpoints;
+}
+
+export function mergeManagedLoopbackEndpoints(
+  known: ManagedLoopbackEndpoint[],
+  incoming: ManagedLoopbackEndpoint[],
+): boolean {
+  const count = known.length;
+  for (const endpoint of incoming) {
+    const existing = known.find((candidate) => candidate.url === endpoint.url);
+    if (existing) {
+      existing.lastSeenAt = endpoint.lastSeenAt;
+    } else if (known.length < MANAGED_PROCESS_LIMITS.endpointCount) {
+      known.push(endpoint);
+    }
+  }
+  return known.length !== count;
 }
 
 export function managedProcessNetworkWarnings(command: string, outputText = ""): string[] {

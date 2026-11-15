@@ -44,7 +44,7 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     minWidth: 900,
     minHeight: 600,
     title: "Serphia",
-    icon: path.join(app.getAppPath(), "build", "icon.png"),
+    icon: path.join(app.getAppPath(), "build", process.platform === "win32" ? "icon.ico" : "icon.png"),
     backgroundColor: nativeTheme.shouldUseDarkColors ? DARK_BACKGROUND : LIGHT_BACKGROUND,
     show: false,
     ...(process.platform === "win32"

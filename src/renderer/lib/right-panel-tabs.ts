@@ -29,6 +29,7 @@ export interface RightPanelState {
 
 export type RightPanelAction =
   | { type: "open"; tab: RightPanelTab }
+  | { type: "register"; tab: RightPanelTab }
   | { type: "select"; tabId: string }
   | { type: "close"; tabId: string }
   | { type: "title"; tabId: string; title: string }
@@ -139,6 +140,10 @@ function select(state: RightPanelState, tabId: string): RightPanelState {
  */
 export function reduceRightPanelState(state: RightPanelState, action: RightPanelAction): RightPanelState {
   switch (action.type) {
+    case "register":
+      return state.tabs.some((tab) => tab.id === action.tab.id)
+        ? state
+        : { ...state, tabs: [...state.tabs, action.tab] };
     case "open": {
       const existing = state.tabs.find((tab) => tab.id === action.tab.id);
       if (existing === undefined) {

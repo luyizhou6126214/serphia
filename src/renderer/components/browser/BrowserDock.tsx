@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MousePointer2 } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { applyBrowserEvent } from "@/lib/browser-tabs";
 import { browserErrorMessage as messageOf } from "./browser-error-message";
 import { browserSurfaceBounds } from "./browser-surface-bounds";
-import type { BrowserDownloadInfo, BrowserPermissionRequest, BrowserRendererState } from "../../../contract/browser";
+import type {
+  BrowserDownloadInfo,
+  BrowserElementReference,
+  BrowserPermissionRequest,
+  BrowserRendererState,
+} from "@contract/browser";
+
+type ElementPick = { tabId: string; requestId: string };
 
 /**
  * The Browser panel. Bound to one Main-owned browser tab (`tabId`), it draws
@@ -12,20 +20,26 @@ import type { BrowserDownloadInfo, BrowserPermissionRequest, BrowserRendererStat
  */
 export function BrowserDock({
   visible,
+  suspendSurface = false,
   ownerSessionId,
   tabId = null,
   onNewTab,
+  onReference,
 }: {
   visible: boolean;
+  suspendSurface?: boolean;
   ownerSessionId: string | null;
   tabId?: string | null;
   onNewTab?: () => void;
+  onReference?: (element: BrowserElementReference) => void;
 }) {
   const { t } = useI18n();
   const [state, setState] = useState<BrowserRendererState | null>(null);
   const [address, setAddress] = useState("");
   const [profileId, setProfileId] = useState("temporary");
   const [error, setError] = useState("");
+  const [elementPick, setElementPick] = useState<ElementPick | null>(null);
+  const pickRef = useRef<ElementPick | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -35,13 +49,13 @@ export function BrowserDock({
       const next = await window.piBridge.browserGetState();
       if (!stateRef.current) setProfileId(next.settings.settings.panel.defaultProfileId);
       setState(next);
-      const active = next.tabs.find((tab) => tab.id === next.activeTabId);
+      const active = next.tabs.find((tab) => tab.id === (tabId ?? next.activeTabId));
       if (active) setAddress(active.url);
       setError("");
     } catch (cause) {
       setError(messageOf(cause));
     }
-  }, []);
+  }, [tabId]);
 
   const handleTabSyncError = useCallback(
     (cause: unknown) => {
@@ -59,19 +73,56 @@ export function BrowserDock({
     void refresh();
     return window.piBridge.onBrowserEvent((event) => {
       setState((current) => (current ? applyBrowserEvent(current, event) : current));
-      if (event.type === "active-tab-changed") {
+      if (event.type === "active-tab-changed" && tabId === null) {
         const tab = stateRef.current?.tabs.find((candidate) => candidate.id === event.tabId);
         if (tab) setAddress(tab.url);
-      } else if (event.type === "tab-updated" && event.tab.id === stateRef.current?.activeTabId) {
+      } else if (event.type === "tab-updated" && event.tab.id === (tabId ?? stateRef.current?.activeTabId)) {
+        const previous = stateRef.current?.tabs.find((tab) => tab.id === event.tab.id);
+        if (previous?.url === event.tab.url) return;
         setAddress(event.tab.url);
       }
     });
-  }, [refresh]);
+  }, [refresh, tabId]);
 
   const boundTab = tabId === null ? null : (state?.tabs.find((tab) => tab.id === tabId) ?? null);
   const activeTab = tabId === null ? (state?.tabs.find((tab) => tab.id === state.activeTabId) ?? null) : boundTab;
   const visibleTabs =
     state?.tabs.filter((tab) => tab.ownerSessionId === null || tab.ownerSessionId === ownerSessionId) ?? [];
+  const picking = visible && Boolean(elementPick && elementPick.tabId === activeTab?.id);
+
+  useEffect(
+    () => () => {
+      const pick = pickRef.current;
+      if (!pick) return;
+      pickRef.current = null;
+      void window.piBridge.browserCancelElementPick(pick.tabId, pick.requestId).catch(() => undefined);
+    },
+    [activeTab?.id, ownerSessionId, visible],
+  );
+
+  const toggleElementPick = async () => {
+    const pending = pickRef.current;
+    if (pending) {
+      pickRef.current = null;
+      setElementPick(null);
+      await window.piBridge.browserCancelElementPick(pending.tabId, pending.requestId).catch(handleTabSyncError);
+      return;
+    }
+    if (!activeTab || !onReference) return;
+    const pick = { tabId: activeTab.id, requestId: crypto.randomUUID() };
+    pickRef.current = pick;
+    setElementPick(pick);
+    setError("");
+    try {
+      const element = await window.piBridge.browserPickElement(pick.tabId, pick.requestId);
+      if (element && pickRef.current === pick) onReference(element);
+    } catch (cause) {
+      if (pickRef.current === pick) handleTabSyncError(cause);
+    } finally {
+      if (pickRef.current === pick) pickRef.current = null;
+      setElementPick((current) => (current === pick ? null : current));
+    }
+  };
 
   // A bound dock shows its own tab: Main's active tab follows the panel tab.
   useEffect(() => {
@@ -91,15 +142,18 @@ export function BrowserDock({
     else void window.piBridge.browserSetSurfaceVisible({ visible: false });
   }, [handleTabSyncError, ownerSessionId, state, tabId, visible]);
 
-  useEffect(() => {
+  // A native view can intercept mouse input before it reaches the separator's pointer capture.
+  // Keep observing its bounds so it reappears at the resized position.
+  const surfaceVisible = visible && !suspendSurface;
+  useLayoutEffect(() => {
     const tabId = activeTab?.id;
     void window.piBridge
-      .browserSetSurfaceVisible({ ...(tabId ? { tabId } : {}), visible: visible && Boolean(tabId) })
+      .browserSetSurfaceVisible({ ...(tabId ? { tabId } : {}), visible: surfaceVisible && Boolean(tabId) })
       .catch(handleTabSyncError);
     return () => {
       void window.piBridge.browserSetSurfaceVisible({ visible: false }).catch(() => undefined);
     };
-  }, [activeTab?.id, handleTabSyncError, visible]);
+  }, [activeTab?.id, handleTabSyncError, surfaceVisible]);
 
   useLayoutEffect(() => {
     const element = surfaceRef.current;
@@ -170,6 +224,10 @@ export function BrowserDock({
       setError(messageOf(cause));
     }
   };
+
+  const pickLabel = picking
+    ? t("browserCancelElementPick", "Cancel element selection")
+    : t("browserPickElement", "Select element for chat");
 
   if (!state) return <div style={emptyStyle}>{error || t("browserLoadingPanel", "Loading Browser…")}</div>;
   if (!state.settings.settings.enabled) {
@@ -329,6 +387,28 @@ export function BrowserDock({
             }}
           />
         </form>
+        <button
+          type="button"
+          style={
+            picking ? { ...iconButtonStyle, color: "var(--accent)", background: "var(--accent-soft)" } : iconButtonStyle
+          }
+          aria-label={pickLabel}
+          aria-pressed={picking}
+          title={pickLabel}
+          disabled={
+            !picking &&
+            (!visible ||
+              !onReference ||
+              !activeTab ||
+              activeTab.loading ||
+              activeTab.crashed ||
+              activeTab.control !== "user" ||
+              !/^https?:/.test(activeTab.url))
+          }
+          onClick={() => void toggleElementPick()}
+        >
+          <MousePointer2 size={15} aria-hidden="true" />
+        </button>
         <select
           aria-label={t("browserProfileForNewTabs", "Profile for new tabs")}
           value={profileId}
@@ -410,7 +490,7 @@ export function BrowserDock({
         <div
           ref={surfaceRef}
           data-browser-surface
-          style={{ flex: 1, minHeight: 1, position: "relative", background: "#fff" }}
+          style={{ flex: 1, minHeight: 1, position: "relative", background: suspendSurface ? "var(--bg)" : "#fff" }}
         />
       )}
 
@@ -428,10 +508,12 @@ export function BrowserDock({
             background: "var(--bg-panel)",
           }}
         >
-          <span>
-            {activeTab.control === "agent"
-              ? t("browserAgentControl", "Agent is controlling this tab — click or type to take over")
-              : t("browserUserControl", "User control")}
+          <span aria-live="polite">
+            {picking
+              ? t("browserElementPickHint", "Click an element to reference it · Esc to cancel")
+              : activeTab.control === "agent"
+                ? t("browserAgentControl", "Agent is controlling this tab — click or type to take over")
+                : t("browserUserControl", "User control")}
           </span>
           <span>·</span>
           <span>

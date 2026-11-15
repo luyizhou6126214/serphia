@@ -15,6 +15,9 @@ files:
   - package.json
   - LICENSE
   - build/icon.png
+  - build/icon.ico
+  - build/trayTemplate.png
+  - build/trayTemplate@2x.png
   - build/entitlements.mac.plist
   - "!**/*.map"
   - "!**/*.{md,markdown,ts,tsx}"
@@ -62,6 +65,7 @@ extraResources:
     to: herdr/runtime-catalog.json
 
 mac:
+  icon: build/icon.icns
   extraResources:
     - from: build/herdr/bin/${platform}-${arch}
       to: herdr/bin/${platform}-${arch}
@@ -82,6 +86,7 @@ mac:
   artifactName: serphia-${version}-${arch}.${ext}
 
 win:
+  icon: build/icon.ico
   extraResources:
     - from: out/native/windows-managed-process-helper
       to: managed-process/win32-x64
@@ -107,6 +112,7 @@ nsis:
   shortcutName: serphia
 
 linux:
+  icon: build/icons
   extraResources:
     - from: build/herdr/bin/${platform}-${arch}
       to: herdr/bin/${platform}-${arch}

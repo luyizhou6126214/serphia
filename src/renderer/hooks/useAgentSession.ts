@@ -10,7 +10,7 @@ export type { SlashCommandInfo } from "@contract/agent-commands";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { agentState, newAgent } from "@/lib/api-client";
-import { getPresetFromTools } from "@/lib/tool-presets";
+import { getPresetFromToolNames } from "@/lib/tool-presets";
 import type { ToolPreset } from "@shared/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { useSessionToolSelection } from "./useSessionToolSelection";
@@ -302,13 +302,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const applySessionSnapshot = useCallback(
     (d: SessionDetail, ticket = runtimeGate.capture()) => {
       setSessionStatsOverride(null);
-      if (d.toolNames !== undefined) {
-        setToolPresetState(
-          getPresetFromTools(
-            d.toolNames.map((name) => ({ name, description: "", active: true, executionAllowed: true })),
-          ),
-        );
-      }
+      if (d.toolNames !== undefined) setToolPresetState(getPresetFromToolNames(d.toolNames));
       setCurrentModelOverride(null);
       applyRuntimeSnapshot(d.agentState, ticket);
       if (

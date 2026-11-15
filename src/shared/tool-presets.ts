@@ -10,15 +10,15 @@ export interface ToolEntry {
   executionAllowed?: boolean;
 }
 
-export type ToolPreset = "none" | "default" | "full" | "custom";
-export type SelectableToolPreset = Exclude<ToolPreset, "custom">;
+export type ToolPreset = "none" | "default" | "full";
 
 export const PRESET_NONE: string[] = [];
 export const PRESET_DEFAULT: string[] = ["read", "bash", "edit", "write"];
 export const CODING_FULL_TOOLS = ["bash", "read", "edit", "write", "grep", "find", "ls"];
 export const PRESET_FULL: string[] = [...CODING_FULL_TOOLS, ...ORCHESTRATION_TOOL_NAMES];
 
-const BUILTIN_TOOL_NAMES = new Set([...CODING_FULL_TOOLS, "powershell"]);
+// Shell and search tools depend on the toolchain. A saved selection only records granted tools.
+const FULL_PRESET_REQUIRED = ["read", "edit", "write", "ls", ...ORCHESTRATION_TOOL_NAMES];
 
 export function codingToolAvailability(
   platform: string,
@@ -38,36 +38,9 @@ export function codingToolAvailability(
   }));
 }
 
-export function getPresetFromTools(tools: ToolEntry[]): ToolPreset {
-  const activeTools = getSelectedToolNames(tools);
-  if (activeTools.length === 0) return "none";
-
-  const active = activeTools
-    .filter((name) => BUILTIN_TOOL_NAMES.has(name))
-    .sort()
-    .join(",");
-
-  if (
-    active === [...PRESET_DEFAULT].sort().join(",") ||
-    active ===
-      PRESET_DEFAULT.map((name) => (name === "bash" ? "powershell" : name))
-        .sort()
-        .join(",")
-  )
-    return "default";
-  if (
-    active ===
-    getToolNamesForPreset("full", tools)
-      .filter((name) => BUILTIN_TOOL_NAMES.has(name))
-      .sort()
-      .join(",")
-  )
-    return ORCHESTRATION_TOOL_NAMES.every(
-      (name) => !tools.some((tool) => tool.name === name && !activeTools.includes(name)),
-    )
-      ? "full"
-      : "custom";
-  return "custom";
+export function getPresetFromToolNames(names: readonly string[]): ToolPreset {
+  if (!names.length) return "none";
+  return FULL_PRESET_REQUIRED.every((name) => names.includes(name)) ? "full" : "default";
 }
 
 /** Declarations alone must not become a new execution grant when another checkbox is edited. */

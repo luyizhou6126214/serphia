@@ -18,6 +18,7 @@ import { loadUiState, saveUiState, saveUiStateStrict } from "./window-state";
 import path from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   isToolchainActionRequest,
   type PublicToolchainState,
@@ -30,12 +31,14 @@ import { isTrustedDesktopIpcSender } from "./ipc-trust";
 import { createOpenInAppService } from "./open-in-app/host.ts";
 import { createDesktopTerminalService } from "./terminal/host.ts";
 import type { TerminalCreateInput } from "../contract/terminal";
+import type { ManagedProcessPublicInfo } from "../contract/processes";
 import { validateDesktopUiStatePatch } from "./ui-state-patch";
 import type {
   BrowserConfirmationKind,
   BrowserConfirmationProof,
   BrowserCreateProfileInput,
   BrowserCreateTabInput,
+  BrowserProcessPreviewInput,
   BrowserDataType,
   BrowserHeaderRule,
   BrowserHeaderRuleDirection,
@@ -458,6 +461,44 @@ export function installDesktopIpc(options: DesktopIpcOptions): void {
   browserHandler("desktop:browser:list-tabs", (browser, sessionId?: string) => browser.listTabs(sessionId));
   browserHandler("desktop:browser:create-user-tab", (browser, input: BrowserCreateTabInput) =>
     browser.createUserTab(input),
+  );
+  browserHandler("desktop:browser:open-process-preview", async (browser, input: BrowserProcessPreviewInput) => {
+    if (
+      !input ||
+      [input.processId, input.runId, input.endpointId].some((id) => typeof id !== "string" || !id || id.length > 128)
+    )
+      throw new BrowserError("INVALID_BROWSER_REQUEST", "Invalid process preview request");
+    const manager = getHostManager();
+    if (!manager) return null;
+    const openCurrentRun = async () => {
+      const process = await manager.call<ManagedProcessPublicInfo>("processes.get", { processId: input.processId });
+      const endpoint = process.endpoints.find((entry) => entry.id === input.endpointId && entry.runId === input.runId);
+      if (!endpoint || process.runId !== input.runId || !["starting", "running", "ready"].includes(process.state)) {
+        return null;
+      }
+      if (input.automatic && process.kind !== "server") return null;
+      return browser.openProcessPreview(process, endpoint.url, input.automatic === true);
+    };
+    try {
+      return await openCurrentRun();
+    } catch (error) {
+      if (
+        !input.automatic ||
+        !(error instanceof BrowserError) ||
+        error.details?.netError !== "ERR_CONNECTION_REFUSED"
+      ) {
+        throw error;
+      }
+      // Some dev servers report their URL just before they begin listening.
+      await delay(350);
+      return openCurrentRun();
+    }
+  });
+  browserHandler("desktop:browser:pick-element", (browser, tabId: string, requestId: string) =>
+    browser.pickElement(tabId, requestId),
+  );
+  browserHandler("desktop:browser:cancel-element-pick", (browser, tabId: string, requestId: string) =>
+    browser.cancelElementPick(tabId, requestId),
   );
   browserHandler("desktop:browser:activate-tab", (browser, tabId: string) => browser.activateTab(tabId));
   browserHandler("desktop:browser:navigate-user", (browser, tabId: string, url: string) =>

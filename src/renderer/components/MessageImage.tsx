@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/i18n";
 import type { ImageContent } from "@/lib/types";
-import { persistedImageSource } from "@/lib/persisted-image";
+import { messageAttachmentSource, persistedImageSource } from "@/lib/persisted-image";
 
-export function ReplyImage({
+export function MessageImage({
   image,
   onLoad,
+  attachment = false,
 }: {
   image: ImageContent;
   onLoad?: (entryId: string, blockIndex?: number) => Promise<void>;
+  attachment?: boolean;
 }) {
   const { t } = useI18n();
   const target = useRef<HTMLDivElement>(null);
@@ -16,7 +18,7 @@ export function ReplyImage({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const deferred = image.deferredContent;
-  const src = persistedImageSource(image);
+  const src = attachment ? messageAttachmentSource(image) : persistedImageSource(image);
   const entryId = deferred?.entryId;
   const blockIndex = deferred?.blockIndex;
 
@@ -51,41 +53,28 @@ export function ReplyImage({
     };
   }, [visible, entryId, blockIndex, onLoad, attempt]);
 
-  if (!src && !deferred) return null;
+  if (src) {
+    return (
+      <img
+        className={attachment ? "dsh-user-image" : "dsh-reply-image"}
+        src={src}
+        alt={attachment ? t("messageImageAttachment", "Image attachment") : t("replyImage", "Image in reply")}
+        loading="lazy"
+      />
+    );
+  }
+  if (!deferred) return null;
   return (
-    <div ref={target} style={{ minHeight: src ? undefined : 120 }}>
-      {src ? (
-        <img
-          src={src}
-          alt={t("replyImage", "Image in reply")}
-          loading="lazy"
-          style={{
-            display: "block",
-            maxWidth: "100%",
-            maxHeight: 640,
-            objectFit: "contain",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-          }}
-        />
-      ) : (
-        <div
-          role="status"
-          style={{ padding: 16, border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-muted)" }}
-        >
-          {failed
-            ? t("replyImageLoadError", "Could not load this image from history.")
-            : t("replyImageLoading", "Loading image…")}
-          {failed && (
-            <button
-              type="button"
-              onClick={() => setAttempt((value) => value + 1)}
-              style={{ marginLeft: 10, color: "var(--accent)", cursor: "pointer" }}
-            >
-              {t("replyImageRetry", "Retry loading image")}
-            </button>
-          )}
-        </div>
+    <div ref={target} className="dsh-message-image-status">
+      <span role="status">
+        {failed || !onLoad
+          ? t("replyImageLoadError", "Could not load this image from history.")
+          : t("replyImageLoading", "Loading image…")}
+      </span>
+      {failed && onLoad && (
+        <button type="button" onClick={() => setAttempt((value) => value + 1)}>
+          {t("replyImageRetry", "Retry loading image")}
+        </button>
       )}
     </div>
   );

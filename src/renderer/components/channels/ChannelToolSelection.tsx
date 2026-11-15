@@ -19,8 +19,7 @@ export function ChannelToolSelection({
     read: ["read", "grep", "find", "ls"],
     full: getToolNamesForPreset("full", codingTools).filter((name) => !isOrchestrationTool(name)),
   };
-  const key = [...toolNames].sort().join(",");
-  const preset = Object.entries(presets).find(([, names]) => [...names].sort().join(",") === key)?.[0] ?? "custom";
+  const preset = !toolNames.length ? "none" : toolNames.every((name) => presets.read.includes(name)) ? "read" : "full";
   return (
     <>
       <select
@@ -36,9 +35,6 @@ export function ChannelToolSelection({
         }}
         onChange={(event) => onChange([...presets[event.target.value as keyof typeof presets]])}
       >
-        <option value="custom" disabled>
-          {t("permissionCustom", "Custom")}
-        </option>
         <option value="none">{t("toolPresetNone", "No tools (recommended)")}</option>
         <option value="read">{t("toolPresetRead", "Read-only tools")}</option>
         <option value="full">{t("toolPresetFull", "Full coding tools")}</option>

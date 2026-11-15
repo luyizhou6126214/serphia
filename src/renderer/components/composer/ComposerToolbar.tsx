@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import type { ModelCatalogStatus } from "@contract/types";
 import { useI18n } from "@/i18n";
 import { scaledChatFont } from "@/lib/chat-appearance";
-import type { ToolPreset, SelectableToolPreset } from "@shared/tool-presets";
+import type { ToolPreset } from "@shared/tool-presets";
 import { thinkingMenuLevels, type ThinkingLevelOption } from "@shared/thinking-levels";
 
 interface ModelOption {
@@ -37,7 +37,7 @@ export interface ComposerToolbarOptions {
   onModelsRefresh?: () => Promise<void> | void;
   onModelsRefreshCancel?: () => void;
   toolPreset?: ToolPreset;
-  onToolPresetChange?: (preset: SelectableToolPreset) => void;
+  onToolPresetChange?: (preset: ToolPreset) => void;
   toolSelectionError?: string;
   thinkingLevel?: ThinkingLevelOption;
   onThinkingLevelChange?: (level: ThinkingLevelOption) => void;
@@ -45,12 +45,7 @@ export interface ComposerToolbarOptions {
   thinkingLevelMap?: Record<string, string | null> | null;
 }
 
-const TOOL_PRESETS = ["off", "default", "full"] as const;
-const TOOL_PRESET_MAP: Record<"off" | "default" | "full", "none" | "default" | "full"> = {
-  off: "none",
-  default: "default",
-  full: "full",
-};
+const TOOL_PRESETS = ["none", "default", "full"] as const;
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 function compareModelOptions(a: ModelOption, b: ModelOption): number {
@@ -172,16 +167,11 @@ function ComposerToolbarView({
       ? t("thinkingMappedDescription", "Provider value: {value}").replace("{value}", thinkingLevelMap[thinkingLevel]!)
       : thinkingDescriptions[thinkingLevel ?? "auto"];
 
-  const toolPresetKey =
-    toolPreset === "custom"
-      ? "custom"
-      : ((Object.entries(TOOL_PRESET_MAP).find(([, value]) => value === (toolPreset ?? "default"))?.[0] as
-          "off" | "default" | "full" | undefined) ?? "default");
-  const toolPresetLabels: Record<"off" | "default" | "full" | "custom", string> = {
-    off: t("permissionReadOnly", "Read only"),
+  const toolPresetKey = toolPreset ?? "default";
+  const toolPresetLabels: Record<ToolPreset, string> = {
+    none: t("permissionReadOnly", "Read only"),
     default: t("permissionStandard", "Standard"),
     full: t("permissionFull", "Full access"),
-    custom: t("permissionCustom", "Custom"),
   };
   const toolPresetLabel = toolPresetLabels[toolPresetKey];
   const closeControlDropdowns = useCallback(() => {
@@ -420,13 +410,12 @@ function ComposerToolbarView({
                   style={menuStyle}
                 >
                   <div className="composer-menu-heading">{t("permissionShort", "Access")}</div>
-                  {TOOL_PRESETS.map((lvl) => {
-                    const preset = TOOL_PRESET_MAP[lvl];
-                    const isActive = (toolPreset ?? "default") === preset;
+                  {TOOL_PRESETS.map((preset) => {
+                    const isActive = toolPresetKey === preset;
                     const desc =
-                      lvl === "off"
+                      preset === "none"
                         ? t("permissionReadOnlyDescription", "No tools, read-only")
-                        : lvl === "default"
+                        : preset === "default"
                           ? t("permissionStandardDescription", "4 built-in tools")
                           : t(
                               "permissionFullDescription",
@@ -434,7 +423,7 @@ function ComposerToolbarView({
                             );
                     return (
                       <button
-                        key={lvl}
+                        key={preset}
                         type="button"
                         role="menuitemradio"
                         aria-checked={isActive}
@@ -446,7 +435,7 @@ function ComposerToolbarView({
                         }}
                       >
                         <span className="composer-menu-copy">
-                          <span className="composer-menu-label">{toolPresetLabels[lvl]}</span>
+                          <span className="composer-menu-label">{toolPresetLabels[preset]}</span>
                           <span className="composer-menu-description">{desc}</span>
                         </span>
                         <Check size={15} strokeWidth={2} className="composer-menu-check" aria-hidden="true" />

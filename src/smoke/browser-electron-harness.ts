@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -384,6 +385,20 @@ async function startFixture(): Promise<{ origin: string; corsOrigin: string; sec
     });
     response.end(fixtureHtml());
   });
+  server.on("upgrade", (request, socket) => {
+    const key = request.headers["sec-websocket-key"];
+    if (request.url !== "/preview-hmr" || typeof key !== "string") {
+      socket.destroy();
+      return;
+    }
+    const accept = createHash("sha1")
+      .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+      .digest("base64");
+    socket.end(
+      "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+  });
   await new Promise<void>((resolve, reject) => {
     server!.once("error", reject);
     server!.listen(0, "127.0.0.1", resolve);
@@ -511,6 +526,76 @@ async function run(): Promise<void> {
       .lease,
     undefined,
   );
+
+  stage("process-preview-and-element-picker");
+  const process = { processId: "dev-server", runId: "first-run", ownerSessionId: "preview-session" };
+  await assert.rejects(
+    service.createUserTab({ url: fixture.origin, activate: false }),
+    hasBrowserCode("NAVIGATION_BLOCKED"),
+  );
+  const preview = await service.openProcessPreview(process, `${fixture.origin}/?token=keep-out-of-chat`, true);
+  assert.ok(preview?.processPreview);
+  assert.equal(preview.title, "Browser Fixture");
+  assert.equal(preview.ownerSessionId, process.ownerSessionId);
+  assert.equal((await service.openProcessPreview(process, fixture.origin, true))?.id, preview.id);
+  assert.equal(privateNetworkApprovals, 0, "a preview should only authorize its own tab and origin");
+  await assert.rejects(service.navigateUser(preview.id, fixture.corsOrigin), hasBrowserCode("NAVIGATION_BLOCKED"));
+  service.setBounds({ tabId: preview.id, rect: { x: 0, y: 0, width: 800, height: 600 } });
+  service.setSurfaceVisible({ tabId: preview.id, visible: true });
+  const previewContents = nativeViewFor(preview.id).webContents;
+  assert.equal(await previewContents.executeJavaScript("fetch('/api/replay?case=preview').then(r => r.ok)"), true);
+  assert.equal(
+    await previewContents.executeJavaScript(`new Promise(resolve => {
+    const ws = new WebSocket('ws://' + location.host + '/preview-hmr');
+    ws.onopen = () => resolve(true);
+    ws.onerror = () => resolve(false);
+  })`),
+    true,
+    "same-origin WebSocket upgrades support dev server hot reload",
+  );
+  const position = await previewContents.executeJavaScript(
+    "(() => { const {x,y,width,height}=document.querySelector('#action').getBoundingClientRect(); return {x:Math.round(x+width/2),y:Math.round(y+height/2)} })()",
+  );
+  const picked = service.pickElement(preview.id, "pick-action");
+  const untilPickerReady = async () => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (await previewContents.executeJavaScript('Boolean(document.querySelector("[popover]:popover-open"))')) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("Picker overlay did not open");
+  };
+  await untilPickerReady();
+  previewContents.debugger.attach("1.3");
+  await previewContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+  const sendInput = (type: string, extra: Record<string, unknown> = {}) =>
+    previewContents.debugger.sendCommand("Input.dispatchMouseEvent", { type, ...position, ...extra });
+  await sendInput("mouseMoved");
+  await sendInput("mousePressed", { button: "left", buttons: 1, clickCount: 1 });
+  await sendInput("mouseReleased", { button: "left", buttons: 0, clickCount: 1 });
+  assert.deepEqual(await picked, {
+    url: `${fixture.origin}/?token=%3Credacted%3E`,
+    selector: "#action",
+    tag: "button",
+    label: "Run action",
+  });
+  assert.equal(await previewContents.executeJavaScript("document.querySelector('#output').textContent"), "ready");
+  const cancelledPick = service.pickElement(preview.id, "cancel-pick");
+  await untilPickerReady();
+  await previewContents.debugger.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape" });
+  assert.equal(await cancelledPick, null);
+  const hiddenPick = service.pickElement(preview.id, "hidden-pick");
+  await untilPickerReady();
+  service.setSurfaceVisible({ visible: false });
+  assert.equal(await hiddenPick, null);
+  await previewContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: false });
+  previewContents.debugger.detach();
+  service.closeTab(preview.id);
+  service.updateSettings({ panel: { openOnAgentUse: false } });
+  assert.equal(await service.openProcessPreview(process, fixture.origin, true), null);
+  const manualPreview = await service.openProcessPreview(process, fixture.origin, false);
+  assert.ok(manualPreview);
+  service.closeTab(manualPreview.id);
+  service.updateSettings({ panel: { openOnAgentUse: true } });
 
   service.updateSettings({ navigation: { allowHttp: true } });
   const locallyApprovedTab = await service.createUserTab({ url: fixture.origin, activate: false });

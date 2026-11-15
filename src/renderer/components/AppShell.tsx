@@ -82,11 +82,16 @@ import type { ChatInputHandle } from "./ChatInput";
 import type { ChannelsSnapshot } from "@shared/channel-types";
 import type { ChatAppearancePreferences } from "@shared/chat-appearance";
 import { worktreePathsEqual } from "@shared/worktree-path";
-import type { BrowserAgentAuthorizationRequest, BrowserAgentAuthorizationDecision } from "../../contract/browser";
-import { browserTabLabel } from "@/lib/browser-tabs";
+import type {
+  BrowserAgentAuthorizationRequest,
+  BrowserAgentAuthorizationDecision,
+  BrowserElementReference,
+  BrowserTabInfo,
+} from "@contract/browser";
+import { browserTabLabel, formatBrowserElementReference } from "@/lib/browser-tabs";
 import { isManagedProcessActiveState } from "@contract/processes";
 import { QuickHerdrFleet } from "./herdr/QuickHerdrFleet";
-import { useBrowserPanelTabs } from "@/hooks/useBrowserPanelTabs";
+import { useAutomaticBrowserPreview, useBrowserPanelTabs } from "@/hooks/useBrowserPanelTabs";
 import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice } from "@/lib/terminal-shells";
 import type { TerminalShellInfo } from "@contract/terminal";
 
@@ -231,6 +236,9 @@ export function AppShell({
   const panelWidthKind = rightPanelWidthKind(activePanelTab);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
+  const rightPanelVisible = rightPanelOpen && !scheduledOpen;
+  const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && !scheduledOpen;
+  const canResizeRightPanel = showRightPanelContent && !isMobile && !rightPanelFullscreen;
   const [guideNotice, setGuideNotice] = useState<string | null>(null);
   const [rightPanelBounds, setRightPanelBounds] = useState(() =>
     getRightPanelWidthBounds(window.innerWidth, sidebarOpen),
@@ -304,16 +312,20 @@ export function AppShell({
 
   const handleRightPanelResizeStart = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (isMobile || event.button !== 0) return;
+      if (event.button !== 0 || !event.isPrimary) return;
       event.preventDefault();
       rightPanelResizeCleanupRef.current?.();
 
+      const handle = event.currentTarget;
+      const pointerId = event.pointerId;
       const startX = event.clientX;
       const startWidth = rightPanelWidth;
+      const { cursor, userSelect } = document.body.style;
       let finalWidth = startWidth;
       let didResize = false;
 
       const handleMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
         if (moveEvent.clientX !== startX) didResize = true;
         finalWidth = clampRightPanelWidth(
           startWidth + startX - moveEvent.clientX,
@@ -325,11 +337,13 @@ export function AppShell({
         setRightPanelWidth(finalWidth);
       };
       const cleanup = (commit: boolean) => {
-        window.removeEventListener("pointermove", handleMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerCancel);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
+        handle.removeEventListener("pointermove", handleMove);
+        handle.removeEventListener("pointerup", handlePointerUp);
+        handle.removeEventListener("lostpointercapture", handlePointerCancel);
+        window.removeEventListener("blur", handleBlur);
+        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+        document.body.style.cursor = cursor;
+        document.body.style.userSelect = userSelect;
         setRightPanelResizing(false);
         rightPanelResizeCleanupRef.current = null;
         if (commit && didResize && finalWidth >= RIGHT_PANEL_MIN_WIDTH) {
@@ -337,21 +351,30 @@ export function AppShell({
           persistRightPanelPreferredWidth(finalWidth, panelWidthKind === "browser");
         }
       };
-      const handlePointerUp = () => cleanup(true);
-      const handlePointerCancel = () => cleanup(false);
+      const handlePointerUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== pointerId) return;
+        handleMove(upEvent);
+        cleanup(true);
+      };
+      const handlePointerCancel = (cancelEvent: PointerEvent) => {
+        if (cancelEvent.pointerId === pointerId) cleanup(false);
+      };
+      const handleBlur = () => cleanup(true);
 
+      handle.setPointerCapture(pointerId);
       rightPanelResizeCleanupRef.current = () => cleanup(false);
       setRightPanelResizing(true);
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
-      window.addEventListener("pointermove", handleMove);
-      window.addEventListener("pointerup", handlePointerUp);
-      window.addEventListener("pointercancel", handlePointerCancel);
+      handle.addEventListener("pointermove", handleMove);
+      handle.addEventListener("pointerup", handlePointerUp);
+      handle.addEventListener("lostpointercapture", handlePointerCancel);
+      window.addEventListener("blur", handleBlur);
     },
-    [isMobile, panelWidthKind, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
+    [panelWidthKind, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
   );
 
-  useEffect(() => () => rightPanelResizeCleanupRef.current?.(), []);
+  useEffect(() => () => rightPanelResizeCleanupRef.current?.(), [activePanelTab.id, canResizeRightPanel]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -426,7 +449,7 @@ export function AppShell({
       const title = browserTabLabel(tab);
       if (!known.has(tab.id)) {
         dispatchRightPanel({
-          type: "open",
+          type: "register",
           tab: { id, kind: "browser", title, browserTabId: tab.id },
         });
       } else {
@@ -440,6 +463,23 @@ export function AppShell({
       }
     }
   }, [browserPanelTabs.tabs, rightPanel.tabs]);
+
+  const revealBrowserTab = useCallback(
+    (tab: BrowserTabInfo) => {
+      dispatchRightPanel({
+        type: "open",
+        tab: {
+          id: panelBrowserTabId(tab.id),
+          kind: "browser",
+          title: browserTabLabel(tab),
+          browserTabId: tab.id,
+        },
+      });
+      openRightPanel();
+    },
+    [openRightPanel],
+  );
+  useAutomaticBrowserPreview(sessionsOpen && !settingsOpen ? (selectedSession?.id ?? null) : null, revealBrowserTab);
 
   useEffect(() => {
     const openBrowserTab = (event: Event) => {
@@ -456,27 +496,6 @@ export function AppShell({
     window.addEventListener("pi-desktop:open-browser-tab", openBrowserTab);
     return () => window.removeEventListener("pi-desktop:open-browser-tab", openBrowserTab);
   }, [openRightPanel, t]);
-
-  useEffect(
-    () =>
-      window.piBridge.onBrowserEvent((event) => {
-        if (event.type !== "tab-created" || !event.tab.ownerSessionId) return;
-        void window.piBridge.browserGetSettings().then((settings) => {
-          if (!settings.settings.panel.openOnAgentUse) return;
-          dispatchRightPanel({
-            type: "open",
-            tab: {
-              id: panelBrowserTabId(event.tab.id),
-              kind: "browser",
-              title: browserTabLabel(event.tab),
-              browserTabId: event.tab.id,
-            },
-          });
-          openRightPanel();
-        });
-      }),
-    [openRightPanel],
-  );
 
   useEffect(
     () =>
@@ -953,6 +972,21 @@ export function AppShell({
     }
   }, [selectedSession, showRightPanelTab, t, workspaceCwd]);
 
+  const handleOpenProcessPreview = async (tab: BrowserTabInfo) => {
+    if (tab.ownerSessionId && tab.ownerSessionId !== selectedSession?.id) {
+      const session = await sessionList.findSession(tab.ownerSessionId);
+      if (!session) throw new Error(t("rightPanelNoWorkspace", "Select a project or Session first."));
+      handleSelectSession(session);
+    }
+    revealBrowserTab(tab);
+  };
+
+  const handleBrowserElement = (element: BrowserElementReference) => {
+    if (isMobile) setRightPanelOpen(false);
+    setRightPanelFullscreen(false);
+    chatInputRef.current?.insertText(formatBrowserElementReference(element));
+  };
+
   // The guide's keycaps and the panel's global bindings share one modifier label.
   const modifierKey = window.piBridge?.platform === "darwin" ? "⌘" : "Ctrl";
   const guideEntries: RightPanelGuideEntry[] = [
@@ -1120,8 +1154,6 @@ export function AppShell({
   const isWindows = window.piBridge?.platform === "win32";
   const isMac = window.piBridge?.platform === "darwin";
   const sidebarVisible = sidebarOpen && sessionsOpen;
-  const rightPanelVisible = rightPanelOpen && !scheduledOpen;
-  const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && !scheduledOpen;
   const sessionHeader = (
     <>
       <div
@@ -1397,6 +1429,27 @@ export function AppShell({
             </div>
           </div>
 
+          {canResizeRightPanel && (
+            <div className="right-panel-resize-edge">
+              <div
+                className="right-panel-resizer"
+                role="separator"
+                aria-label={t("resizeRightPanel", "Resize right panel")}
+                aria-orientation="vertical"
+                aria-valuemin={rightPanelBounds.minWidth}
+                aria-valuemax={rightPanelBounds.maxWidth}
+                aria-valuenow={Math.round(rightPanelWidth)}
+                aria-valuetext={t("rightPanelWidthPixels", "{width} pixels").replace(
+                  "{width}",
+                  formatNumber(Math.round(rightPanelWidth), language),
+                )}
+                tabIndex={0}
+                onPointerDown={handleRightPanelResizeStart}
+                onKeyDown={handleRightPanelResizeKeyDown}
+              />
+            </div>
+          )}
+
           {/* Right panel: the guide plus files, terminals, browser tabs, files, and managed processes */}
           <div
             className={`right-panel-container${rightPanelVisible ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
@@ -1411,22 +1464,6 @@ export function AppShell({
               } as CSSProperties
             }
           >
-            <div
-              className="right-panel-resizer"
-              role="separator"
-              aria-label={t("resizeRightPanel", "Resize right panel")}
-              aria-orientation="vertical"
-              aria-valuemin={rightPanelBounds.minWidth}
-              aria-valuemax={rightPanelBounds.maxWidth}
-              aria-valuenow={Math.round(rightPanelWidth)}
-              aria-valuetext={t("rightPanelWidthPixels", "{width} pixels").replace(
-                "{width}",
-                formatNumber(Math.round(rightPanelWidth), language),
-              )}
-              tabIndex={isMobile ? -1 : 0}
-              onPointerDown={handleRightPanelResizeStart}
-              onKeyDown={handleRightPanelResizeKeyDown}
-            />
             <RightPanelStrip
               tabs={rightPanel.tabs}
               activeTabId={rightPanel.activeTabId}
@@ -1479,20 +1516,18 @@ export function AppShell({
                 />
               ) : activePanelTab.kind === "browser" ? (
                 <BrowserDock
+                  key={activePanelTab.browserTabId}
                   visible={showRightPanelContent}
+                  suspendSurface={rightPanelResizing}
                   ownerSessionId={selectedSession?.id ?? null}
                   tabId={activePanelTab.browserTabId ?? null}
+                  onReference={showChat && sessionsOpen ? handleBrowserElement : undefined}
                   onNewTab={() => {
                     void startBrowserTab();
                   }}
                 />
               ) : activePanelTab.kind === "processes" ? (
-                <ProcessPanel
-                  onActiveCountChange={setManagedProcessCount}
-                  onOpenBrowser={() => {
-                    void startBrowserTab();
-                  }}
-                />
+                <ProcessPanel onActiveCountChange={setManagedProcessCount} onOpenBrowser={handleOpenProcessPreview} />
               ) : activePanelTab.filePath !== undefined ? (
                 <FileViewer
                   key={activePanelTab.id}

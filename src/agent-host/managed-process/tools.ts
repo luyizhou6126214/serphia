@@ -107,7 +107,7 @@ export function createManagedProcessToolDefinitions(
       name: "process_start",
       label: "start managed process",
       description:
-        "Start a long-running dev server, watcher, mock API, Storybook, or other persistent project command under serphia lifecycle control. Use Bash for short commands. Bind servers to 127.0.0.1. Never use &, nohup, disown, setsid, tmux, or external terminals. waitFor observes at most 10 seconds; for longer cold starts continue with process_wait and its returned nextCursor.",
+        "Start a long-running dev server, watcher, mock API, Storybook, or other persistent project command under serphia lifecycle control. When building a web UI, start its dev server with kind 'server' and waitFor.type 'loopback-url'. Serphia can automatically open the announced address in its built-in Browser for the current session. Bind servers to 127.0.0.1. Use Bash for short commands. Never use &, nohup, disown, setsid, tmux, or external terminals. waitFor observes at most 10 seconds; for longer cold starts continue with process_wait and its returned nextCursor.",
       promptSnippet: "process_start: managed long-running project command; keep runId and output nextCursor",
       parameters: Type.Object({
         command: Type.String({ minLength: 1, maxLength: MANAGED_PROCESS_LIMITS.commandBytes }),

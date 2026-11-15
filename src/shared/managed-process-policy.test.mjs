@@ -80,6 +80,14 @@ test("output is sanitized and loopback URLs are credential safe", () => {
   );
   assert.equal(endpoint.url, "http://localhost:5173/?token=%5Bredacted%5D");
   assert.equal(endpoint.firstSeenAt, 1);
+  assert.deepEqual(
+    extractManagedLoopbackEndpoints(
+      "http://localhost.example.test:5173/ https://localhost:5173@example.test/ https://user:pass@localhost:5173/",
+      "stdout",
+      "run-a",
+    ),
+    [],
+  );
 });
 
 test("label removes control characters and is bounded", () => {

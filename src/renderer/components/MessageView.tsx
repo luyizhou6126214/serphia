@@ -2,7 +2,7 @@ import { Check, ChevronDown, Copy, GitFork, History, LoaderCircle, Pencil, Box }
 import { formatTime } from "@/lib/message-metadata";
 import { memo, useState, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { MarkdownBody } from "./MarkdownBody";
-import { ReplyImage } from "./ReplyImage";
+import { MessageImage } from "./MessageImage";
 import { DeferredContentActions } from "./DeferredContentActions";
 import { AssistantOutcome } from "./AssistantOutcome";
 import { getToolResultDisplayText } from "@/lib/tool-result-display";
@@ -10,6 +10,7 @@ import { useCopyFeedback } from "@/hooks/useCopyFeedback";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { hasRenderableAssistantMessage, isEmptyTextBlock, isEmptyThinkingBlock } from "@/lib/message-display";
 import { getUserBubbleStyle } from "@/lib/channel-message-style";
+import { messageAttachmentSource } from "@/lib/persisted-image";
 import { CHANNEL_ATTACHMENT_PROMPT_PLACEHOLDER, channelAttachmentCopyText } from "@shared/channel-message";
 import { parseSkillInvocation, skillInvocationCommandText, type SkillInvocation } from "@shared/skill-invocation";
 import { useI18n } from "@/i18n";
@@ -199,19 +200,11 @@ function UserMessageView({
   const [hovered, setHovered] = useState(false);
   const { copied, copy } = useCopyFeedback();
 
-  const content =
-    typeof message.content === "string"
-      ? message.content
-      : message.content
-          .filter((b): b is TextContent => b.type === "text")
-          .map((b) => b.text)
-          .join("\n");
+  const content = getMessageText(message.content);
   const skillInvocation = useMemo(() => parseSkillInvocation(content), [content]);
-
-  const imageBlocks: ImageContent[] =
-    typeof message.content === "string"
-      ? []
-      : message.content.filter((b): b is ImageContent => b.type === "image" && !b.deferredContent);
+  const blocks = typeof message.content === "string" ? [] : message.content;
+  const imageBlocks = blocks.filter((block): block is ImageContent => block.type === "image");
+  const deferredText = blocks.filter((block) => block.type !== "image" && block.deferredContent);
 
   const isChannelAttachmentPlaceholder = !!message.channelSource && content === CHANNEL_ATTACHMENT_PROMPT_PLACEHOLDER;
   const attachmentCopyContent = isChannelAttachmentPlaceholder
@@ -245,45 +238,37 @@ function UserMessageView({
       <div className="dsh-user-stack">
         {imageBlocks.length > 0 && (
           <div className="dsh-user-attachments">
-            {imageBlocks.map((img, i) => {
-              // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
-              // pi-ai on-disk format uses flat {data, mimeType} — handle both
-              const flat = img as unknown as { data?: string; mimeType?: string };
-              const src = img.source
-                ? img.source.type === "base64"
-                  ? `data:${img.source.media_type};base64,${img.source.data}`
-                  : (img.source.url ?? "")
-                : flat.data
-                  ? `data:${flat.mimeType};base64,${flat.data}`
-                  : "";
-              return <img key={i} className="dsh-user-image" src={src} alt="" />;
-            })}
+            {imageBlocks.map((image, index) => (
+              <MessageImage key={index} image={image} attachment onLoad={onLoadDeferredContent} />
+            ))}
           </div>
         )}
-        <div
-          className="dsh-user-bubble"
-          data-message-source={messageSource}
-          style={
-            messageSource === "local"
-              ? undefined
-              : { background: bubbleStyle.background, color: bubbleStyle.foreground }
-          }
-        >
-          {skillInvocation && (
-            <SkillInvocationView
-              invocation={skillInvocation}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              followedByContent={imageBlocks.length > 0 || Boolean(visibleContent)}
-            />
-          )}
-          {visibleContent && (
-            <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile} renderReferences>
-              {visibleContent}
-            </MarkdownBody>
-          )}
-          <DeferredContentActions content={message.content} onLoad={onLoadDeferredContent} />
-        </div>
+        {(skillInvocation || visibleContent || deferredText.length > 0) && (
+          <div
+            className="dsh-user-bubble"
+            data-message-source={messageSource}
+            style={
+              messageSource === "local"
+                ? undefined
+                : { background: bubbleStyle.background, color: bubbleStyle.foreground }
+            }
+          >
+            {skillInvocation && (
+              <SkillInvocationView
+                invocation={skillInvocation}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
+                followedByContent={imageBlocks.length > 0 || Boolean(visibleContent)}
+              />
+            )}
+            {visibleContent && (
+              <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile} renderReferences>
+                {visibleContent}
+              </MarkdownBody>
+            )}
+            <DeferredContentActions content={deferredText} onLoad={onLoadDeferredContent} />
+          </div>
+        )}
       </div>
 
       {/* Action row: MessageIconActions parity — copy, branch actions, clock. */}
@@ -575,7 +560,7 @@ function BlockView({
   if (block.type === "image") {
     return (
       <div className="dsh-assistant-image" data-flow-part="response">
-        <ReplyImage image={block} onLoad={onLoadDeferredContent} />
+        <MessageImage image={block} onLoad={onLoadDeferredContent} />
       </div>
     );
   }
@@ -839,7 +824,7 @@ function CustomMessageView({
             {images.length > 0 && (
               <div className="dsh-user-attachments">
                 {images.map((img, i) => {
-                  const src = imageSource(img);
+                  const src = messageAttachmentSource(img);
                   if (!src) return null;
                   return <img key={i} className="dsh-user-image" src={src} alt="" />;
                 })}
@@ -887,16 +872,6 @@ function getMessageText(content: CustomMessage["content"] | UserMessage["content
 function getMessageImages(content: CustomMessage["content"] | UserMessage["content"]): ImageContent[] {
   if (typeof content === "string") return [];
   return content.filter((b): b is ImageContent => b.type === "image" && !b.deferredContent);
-}
-
-function imageSource(img: ImageContent): string {
-  const flat = img as unknown as { data?: string; mimeType?: string };
-  if (img.source) {
-    return img.source.type === "base64"
-      ? `data:${img.source.media_type};base64,${img.source.data}`
-      : (img.source.url ?? "");
-  }
-  return flat.data ? `data:${flat.mimeType};base64,${flat.data}` : "";
 }
 
 function safeJson(value: unknown): string {

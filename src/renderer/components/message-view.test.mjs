@@ -108,6 +108,36 @@ test("keeps the user copy action without timestamp or branch actions", () => {
   assert.match(html, /data-tooltip="Copy message"/);
 });
 
+test("user messages render deferred images as attachments and keep the manual action for deferred text", () => {
+  const onLoadDeferredContent = async () => {};
+  const image = {
+    type: "image",
+    source: { type: "url", url: "" },
+    deferredContent: { entryId: "user-entry", blockIndex: 1, originalBytes: 180000, contentType: "image" },
+  };
+  function render(content) {
+    return renderToStaticMarkup(
+      createElement(MessageView, { message: { role: "user", content }, onLoadDeferredContent }),
+    );
+  }
+  const waiting = render([
+    {
+      type: "text",
+      text: "Message preview",
+      deferredContent: { entryId: "user-entry", blockIndex: 0, originalBytes: 200000, contentType: "text" },
+    },
+    image,
+  ]);
+  assert.match(waiting, /dsh-user-attachments.*Loading image/);
+  assert.match(waiting, /Message preview/);
+  assert.equal(waiting.match(/Load full content/g)?.length, 1);
+  assert.doesNotMatch(render([image]), /Load full content|dsh-user-bubble/);
+
+  const loaded = render([{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }]);
+  assert.match(loaded, /<img[^>]+class="dsh-user-image"[^>]+src="data:image\/png;base64,aGVsbG8="/);
+  assert.doesNotMatch(loaded, /Loading image/);
+});
+
 test("channel attachment placeholders expose meaningful copy text", () => {
   const html = renderToStaticMarkup(
     createElement(MessageView, {

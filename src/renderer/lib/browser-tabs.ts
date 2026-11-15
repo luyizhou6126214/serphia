@@ -1,6 +1,10 @@
 /** Pure browser-tab bookkeeping shared by the Browser panel and the panel strip. */
 
-import type { BrowserEvent, BrowserRendererState, BrowserTabInfo } from "@contract/browser";
+import type { BrowserElementReference, BrowserEvent, BrowserRendererState, BrowserTabInfo } from "@contract/browser";
+
+export function formatBrowserElementReference(element: BrowserElementReference): string {
+  return "\n\nBrowser element\n\n```json\n" + JSON.stringify(element, null, 2) + "\n```\n\n";
+}
 
 /**
  * Apply one Main-published browser event to the renderer's snapshot.

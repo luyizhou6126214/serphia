@@ -13,8 +13,9 @@ let managedProcessCount = 0;
 let stopAllManagedProcesses: (() => void) | null = null;
 
 function iconPath(): string {
-  // Prefer build/icon.png; fall back to empty template
-  return path.join(app.getAppPath(), "build", "icon.png");
+  const filename =
+    process.platform === "darwin" ? "trayTemplate.png" : process.platform === "win32" ? "icon.ico" : "icon.png";
+  return path.join(app.getAppPath(), "build", filename);
 }
 
 export function createTray(
@@ -25,17 +26,19 @@ export function createTray(
   if (tray) return tray;
   try {
     let image = nativeImage.createFromPath(iconPath());
-    if (image.isEmpty()) {
-      // 16x16 orange-ish template so tray still appears
-      image = nativeImage.createEmpty();
+    const hasPlatformIcon = !image.isEmpty();
+    if (!hasPlatformIcon) {
+      image = nativeImage.createFromPath(path.join(app.getAppPath(), "build", "icon.png"));
     }
     if (process.platform === "darwin") {
-      image = image.resize({ width: 18, height: 18 });
-    } else {
+      if (hasPlatformIcon) image.setTemplateImage(true);
+      else image = image.resize({ width: 18, height: 18 });
+    } else if (process.platform !== "win32") {
       image = image.resize({ width: 16, height: 16 });
     }
 
-    tray = new Tray(image);
+    // Let Windows select the correct ICO frame for the display's DPI.
+    tray = new Tray(process.platform === "win32" && hasPlatformIcon ? iconPath() : image);
     tray.setToolTip("serphia");
     updateTrayMenu(getMainWindow);
 

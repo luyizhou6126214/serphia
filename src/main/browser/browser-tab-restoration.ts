@@ -2,7 +2,7 @@ import type { BrowserRestoreTabRecord, BrowserTabInfo } from "../../contract/bro
 
 export function toBrowserRestoreRecords(tabs: readonly BrowserTabInfo[]): BrowserRestoreTabRecord[] {
   return tabs
-    .filter((tab) => !tab.advancedProfile)
+    .filter((tab) => !tab.advancedProfile && !tab.processPreview)
     .map((tab, order) => ({ profileId: tab.profileId, url: tab.url, ownerSessionId: tab.ownerSessionId, order }));
 }
 

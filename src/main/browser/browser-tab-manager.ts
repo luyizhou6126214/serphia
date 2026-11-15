@@ -75,6 +75,7 @@ import { BrowserCdpCoordinator } from "./browser-cdp-coordinator.ts";
 import { BrowserConsoleBuffer } from "./browser-console-buffer.ts";
 import { isBrowserDevToolsShortcut } from "./browser-devtools-shortcut.ts";
 import { BrowserError } from "./browser-error.ts";
+import { navigationFailureError, normalizeAddress, popupLoadOptions } from "./browser-navigation.ts";
 import { BrowserIdentityManager } from "./browser-identity-manager.ts";
 import { BrowserInspectionStore } from "./browser-inspection-store.ts";
 import { BrowserNetworkRecorder } from "./browser-network-recorder.ts";
@@ -82,6 +83,9 @@ import { BrowserNetworkPolicy, createSessionNetworkPolicyOptions } from "./brows
 import { redactBrowserUrl } from "./browser-redaction.ts";
 import type { BrowserProfileManager } from "./browser-profile-manager.ts";
 import { canResumeSensitiveAgentControl } from "./browser-sensitive-control.ts";
+import { previewRequestUrl } from "./browser-preview-origin.ts";
+import { pickBrowserElement } from "./browser-element-picker.ts";
+import type { BrowserElementReference } from "../../contract/browser.ts";
 const MAX_INSPECTION_SCREENSHOT_BYTES = 1_500_000;
 const MAX_INSPECTION_NODE_CHARS = 40_000;
 const DEFAULT_INSPECTION_MAX_NODES = 100;
@@ -108,6 +112,8 @@ type TabRecord = {
   lastLoadFailure?: BrowserLoadFailure;
   activeClickCapture?: { observation?: ClickNavigationObservation };
   pendingFileUpload?: { snapshotId: string; ref: string; generation: number };
+  previewOrigin?: string;
+  elementPick?: { id: string; controller: AbortController };
 };
 
 type ClickNavigationObservation =
@@ -177,13 +183,21 @@ export class BrowserTabManager {
     return this.surfaceVisible;
   }
 
-  getTabForWebContents(webContentsId: number): { tabId: string; visible: boolean; sessionId?: string } | undefined {
+  getTabForWebContents(webContentsId: number):
+    | {
+        tabId: string;
+        visible: boolean;
+        sessionId?: string;
+        previewOrigin?: string;
+      }
+    | undefined {
     for (const record of this.tabs.values()) {
       const contents = record.view.webContents as WebContents | undefined;
       if (!contents || contents.id !== webContentsId) continue;
       return {
         tabId: record.info.id,
         visible: record.info.visible,
+        previewOrigin: record.previewOrigin,
         ...(record.info.ownerSessionId ? { sessionId: record.info.ownerSessionId } : {}),
       };
     }
@@ -221,6 +235,7 @@ export class BrowserTabManager {
   async create(
     input: BrowserCreateTabInput = {},
     navigationOptions?: Electron.LoadURLOptions,
+    previewOrigin?: string,
   ): Promise<BrowserTabInfo> {
     this.assertAvailable();
     const settings = this.options.getSettings();
@@ -259,6 +274,7 @@ export class BrowserTabManager {
       session,
       info: {
         id,
+        ...(previewOrigin ? { processPreview: true } : {}),
         ownerSessionId: input.ownerSessionId ?? null,
         profileId: profile.id,
         url: "about:blank",
@@ -282,6 +298,7 @@ export class BrowserTabManager {
       advancedReady: Promise.resolve(),
       nativeUserAgent,
       externalProtocolToken: randomUUID(),
+      previewOrigin,
     };
     const win = this.options.getWindow();
     if (!win || win.isDestroyed()) {
@@ -306,7 +323,8 @@ export class BrowserTabManager {
       if (input.activate !== false) this.activate(id);
       const url = input.url ?? settings.navigation.homepage;
       if (url !== "about:blank") {
-        await this.navigate(id, url, input.ownerSessionId ?? undefined, !input.ownerSessionId, navigationOptions);
+        const sessionId = previewOrigin ? undefined : (input.ownerSessionId ?? undefined);
+        await this.navigate(id, url, sessionId, !sessionId, navigationOptions);
       }
       return structuredClone(record.info);
     } catch (error) {
@@ -323,6 +341,7 @@ export class BrowserTabManager {
     record.info.lastActiveAt = this.options.now?.() ?? Date.now();
     for (const candidate of this.tabs.values()) {
       const visible = this.surfaceVisible && candidate === record;
+      if (!visible) candidate.elementPick?.controller.abort();
       candidate.info.visible = visible;
       candidate.view.setVisible(visible);
       if (visible && candidate.bounds) candidate.view.setBounds(candidate.bounds);
@@ -354,6 +373,7 @@ export class BrowserTabManager {
     this.surfaceRequestedVisible = false;
     this.surfaceVisible = false;
     for (const record of this.tabs.values()) {
+      record.elementPick?.controller.abort();
       record.info.visible = false;
       try {
         record.view.setVisible(false);
@@ -367,6 +387,7 @@ export class BrowserTabManager {
     this.surfaceVisible = this.surfaceRequestedVisible && this.windowVisible;
     for (const record of this.tabs.values()) {
       const visible = this.surfaceVisible && record.info.id === this.activeTabId;
+      if (!visible) record.elementPick?.controller.abort();
       record.info.visible = visible;
       if (visible) {
         if (record.bounds) record.view.setBounds(record.bounds);
@@ -406,13 +427,15 @@ export class BrowserTabManager {
   ): Promise<BrowserTabInfo> {
     const record = this.requireOwnedTab(tabId, sessionId);
     const url = normalizeAddress(rawUrl);
+    const isPreview = previewRequestUrl(url, record.previewOrigin) !== null;
     const policy = this.getNetworkPolicy(record);
     const checked = await policy.check(url, {
       settings: this.options.getSettings().navigation,
       allowAboutBlank: true,
-      userApprovedPrivateNetwork: userInitiated,
+      userApprovedPrivateNetwork: userInitiated || isPreview,
+      userApprovedHttp: isPreview,
     });
-    if (checked.privateNetwork && !this.options.getSettings().navigation.allowPrivateNetwork) {
+    if (checked.privateNetwork && !isPreview && !this.options.getSettings().navigation.allowPrivateNetwork) {
       if (!userInitiated) {
         throw new BrowserError("PRIVATE_NETWORK_BLOCKED", "Agent navigation to a private network target is blocked");
       }
@@ -1149,6 +1172,28 @@ export class BrowserTabManager {
     }
   }
 
+  async pickElement(tabId: string, requestId: string): Promise<BrowserElementReference | null> {
+    const record = this.requireTab(tabId);
+    if (typeof requestId !== "string" || requestId.length > 128 || !requestId) {
+      throw new BrowserError("INVALID_BROWSER_REQUEST", "Invalid browser element pick request");
+    }
+    if (!record.info.visible || record.info.loading || !/^https?:/i.test(record.info.url)) return null;
+    if (record.info.control !== "user" || record.pendingActions.size || record.elementPick) return null;
+    const controller = new AbortController();
+    record.elementPick = { id: requestId, controller };
+    try {
+      const element = await pickBrowserElement(record.view.webContents, controller.signal, requestId);
+      return element && !controller.signal.aborted ? { ...element, url: redactBrowserUrl(record.info.url) } : null;
+    } finally {
+      record.elementPick = undefined;
+    }
+  }
+
+  cancelElementPick(tabId: string, requestId: string): void {
+    const pick = this.tabs.get(tabId)?.elementPick;
+    if (pick && pick.id === requestId) pick.controller.abort();
+  }
+
   close(tabId: string, sessionId?: string): void {
     const record = this.tabs.get(tabId);
     if (!record) throw new BrowserError("TAB_NOT_FOUND", "Browser tab was not found");
@@ -1156,6 +1201,7 @@ export class BrowserTabManager {
       throw new BrowserError("TAB_NOT_OWNED", "Browser tab belongs to another session");
     }
     this.tabs.delete(tabId);
+    record.elementPick?.controller.abort();
     this.cancelAgentActions(record, "TAB_NOT_FOUND", "Browser tab was closed");
     const win = this.options.getWindow();
     if (win && !win.isDestroyed()) {
@@ -1290,6 +1336,7 @@ export class BrowserTabManager {
     });
     wc.on("did-start-navigation", (details) => {
       if (!details.isMainFrame) return;
+      record.elementPick?.controller.abort();
       record.networkRecorder?.armBodyCapture();
       record.lastLoadFailure = undefined;
       record.pendingFileUpload = undefined;
@@ -1299,7 +1346,7 @@ export class BrowserTabManager {
       this.emitUpdate(record);
     });
     wc.on("did-navigate", (_event, url) => {
-      record.info.url = redactUrlCredentials(url);
+      record.info.url = redactBrowserUrl(url);
       record.info.generation += 1;
       record.info.crashed = false;
       record.snapshot = undefined;
@@ -1310,7 +1357,7 @@ export class BrowserTabManager {
     wc.on("did-navigate-in-page", (_event, url, isMainFrame) => {
       if (!isMainFrame) return;
       this.captureClickNavigation(record, { kind: "same-tab" });
-      record.info.url = redactUrlCredentials(url);
+      record.info.url = redactBrowserUrl(url);
       record.info.generation += 1;
       record.snapshot = undefined;
       this.inspections.clearTab(record.info.id);
@@ -1350,7 +1397,7 @@ export class BrowserTabManager {
       record.lastLoadFailure = {
         errorCode,
         errorDescription,
-        url: redactUrlCredentials(validatedUrl || record.info.url),
+        url: redactBrowserUrl(validatedUrl || record.info.url),
       };
       record.info.loading = false;
       if (!record.info.title || record.info.title === "New tab") {
@@ -1359,6 +1406,7 @@ export class BrowserTabManager {
       this.emitUpdate(record);
     });
     wc.on("render-process-gone", (_event, details) => {
+      record.elementPick?.controller.abort();
       record.info.crashed = true;
       record.info.loading = false;
       this.cancelAgentActions(record, "TAB_CRASHED", "Browser tab renderer crashed");
@@ -1408,7 +1456,7 @@ export class BrowserTabManager {
     opener: TabRecord,
     details: Electron.HandlerDetails,
   ): Promise<BrowserClickNavigationResult> {
-    const requestedUrl = redactUrlCredentials(details.url);
+    const requestedUrl = redactBrowserUrl(details.url);
     try {
       const tab = await this.create(
         {
@@ -1637,6 +1685,7 @@ export class BrowserTabManager {
   ): Promise<T> {
     void permission;
     if (!sessionId) {
+      record.elementPick?.controller.abort();
       if (record.pendingActions.size > 0) {
         this.setUserControl(record);
         record.info.generation += 1;
@@ -1645,6 +1694,9 @@ export class BrowserTabManager {
         this.emitUpdate(record);
       }
       return task(new AbortController().signal);
+    }
+    if (record.elementPick) {
+      throw new BrowserError("USER_TOOK_CONTROL", "The user is selecting an element in the Browser");
     }
     let resolveResult!: (value: T) => void;
     let rejectResult!: (reason: unknown) => void;
@@ -1770,71 +1822,9 @@ export function createSecureView(
   });
 }
 
-function normalizeAddress(value: string): string {
-  if (typeof value !== "string") throw new BrowserError("INVALID_BROWSER_REQUEST", "Browser address is invalid");
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 8_192 || /[\0\r\n]/.test(trimmed)) {
-    throw new BrowserError("INVALID_BROWSER_REQUEST", "Browser address is invalid");
-  }
-  if (trimmed === "about:blank" || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
-
-function navigationFailureError(error: unknown): BrowserError {
-  if (error instanceof BrowserError && error.code === "NAVIGATION_FAILED") return error;
-  const failure =
-    error && typeof error === "object" && "errorDescription" in error ? (error as BrowserLoadFailure) : undefined;
-  const source = error as { code?: unknown; errno?: unknown; message?: unknown };
-  const netError =
-    failure?.errorDescription ||
-    (typeof source?.code === "string" ? source.code : "") ||
-    (typeof source?.message === "string" ? source.message : "Navigation failed");
-  const netErrorCode =
-    failure?.errorCode ??
-    (typeof source?.errno === "number" ? source.errno : typeof source?.code === "number" ? source.code : undefined);
-  const permanentTls = /CERT_|SSL_|BLOCKED_BY_CLIENT|DISALLOWED_URL_SCHEME/i.test(netError);
-  return new BrowserError("NAVIGATION_FAILED", "Browser navigation failed", {
-    retryable: !permanentTls,
-    recovery: permanentTls
-      ? { reason: "unsupported", remediation: "ask-user" }
-      : {
-          reason: "transient-network",
-          remediation: "wait-and-retry-once",
-          retryAfterMs: 250,
-        },
-    details: {
-      netError: netError.slice(0, 256),
-      ...(netErrorCode === undefined ? {} : { netErrorCode }),
-    },
-    cause: error,
-  });
-}
-
-function popupLoadOptions(details: Electron.HandlerDetails): Electron.LoadURLOptions {
-  const options: Electron.LoadURLOptions = {};
-  if (details.referrer?.url) options.httpReferrer = details.referrer;
-  if (details.postBody?.data?.length) {
-    options.postData = details.postBody.data;
-    const rawContentType = details.postBody.contentType;
-    if (rawContentType && !/[\r\n]/.test(rawContentType)) {
-      const boundary = details.postBody.boundary;
-      const contentType =
-        boundary && !/boundary=/i.test(rawContentType) && !/[\r\n]/.test(boundary)
-          ? `${rawContentType}; boundary=${boundary}`
-          : rawContentType;
-      options.extraHeaders = `Content-Type: ${contentType}`;
-    }
-  }
-  return options;
-}
-
 function isSensitiveNode(node: BrowserSnapshotNode): boolean {
   const text = `${node.role} ${node.name}`.toLowerCase();
   return /\b(?:buy|purchase|pay|checkout|delete|remove|send|submit|authorize|approve|confirm|download|upload|sign[ -]?in|log[ -]?in)\b/.test(
     text,
   );
-}
-
-function redactUrlCredentials(value: string): string {
-  return redactBrowserUrl(value);
 }

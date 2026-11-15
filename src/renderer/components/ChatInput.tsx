@@ -12,6 +12,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { ComposerToolbar, type ComposerToolbarOptions } from "./composer/ComposerToolbar";
+import { ComposerAttachments } from "./composer/ComposerAttachments";
 import { ComposerFocusSurface } from "./composer/ComposerFocusSurface";
 import { ComposerStats } from "./composer/ComposerStats";
 import { ReferenceText, referenceCursorDestination, referenceDeletionRange } from "./composer/ReferenceText";
@@ -48,7 +49,6 @@ import { useFileSuggestions } from "@/hooks/useFileSuggestions";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/i18n";
-import { localFilePathKey } from "@/lib/file-url";
 import type { ContextUsage, SessionStatsInfo } from "@shared/pi-types";
 
 export type { AttachedImage } from "@/hooks/useComposerDraft";
@@ -121,7 +121,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   ref,
 ) {
   const isMobile = useIsMobile();
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashCursor, setSlashCursor] = useState<number | null>(null);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
@@ -1270,175 +1270,15 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                 </div>
               );
             })()}
-          {/* Image previews */}
-          {attachedImages.length > 0 && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-              {attachedImages.map((img, i) => (
-                <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                  <img
-                    src={img.previewUrl}
-                    alt=""
-                    style={{
-                      width: 56,
-                      height: 56,
-                      objectFit: "cover",
-                      borderRadius: 6,
-                      border: "1px solid var(--border)",
-                      display: "block",
-                    }}
-                  />
-                  <button
-                    onClick={() => removeImage(i)}
-                    style={{
-                      position: "absolute",
-                      top: -4,
-                      right: -4,
-                      width: 16,
-                      height: 16,
-                      borderRadius: "50%",
-                      background: "var(--bg-panel)",
-                      border: "1px solid var(--border)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                      padding: 0,
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    <svg
-                      width="8"
-                      height="8"
-                      viewBox="0 0 8 8"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    >
-                      <line x1="1" y1="1" x2="7" y2="7" />
-                      <line x1="7" y1="1" x2="1" y2="7" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* File attachment chips */}
-          {attachedFiles.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {attachedFiles.map((file, i) => (
-                  <div
-                    key={`${file.path}-${i}`}
-                    title={`${file.path}${
-                      fileInspectionByPath.get(localFilePathKey(file.path))?.insideCwd === false
-                        ? ` — ${t("outsideProject", "Outside project")}`
-                        : ""
-                    }`}
-                    onClick={() => void window.piBridge?.showItemInFolder?.(file.path)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      const request = window.piBridge.showFileContextMenu({
-                        href: file.path,
-                        cwd: cwd ?? undefined,
-                        source: "local-file-reference",
-                        language,
-                      });
-                      void request
-                        .then((result) => {
-                          if (!result.shown) {
-                            setSubmissionNotice(t("fileContextMenuUnavailable", "The file menu could not be opened."));
-                          }
-                        })
-                        .catch(() => {
-                          setSubmissionNotice(t("fileContextMenuUnavailable", "The file menu could not be opened."));
-                        });
-                    }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      maxWidth: 260,
-                      padding: "4px 6px 4px 8px",
-                      borderRadius: 6,
-                      border: `1px solid ${
-                        fileInspectionByPath.get(localFilePathKey(file.path))?.exists === false
-                          ? "var(--danger)"
-                          : "var(--border)"
-                      }`,
-                      background: "var(--bg-panel)",
-                      cursor: "pointer",
-                      fontSize: scaledChatFont(12),
-                    }}
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ flexShrink: 0, color: "var(--text-muted)" }}
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                    </svg>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {file.name}
-                    </span>
-                    {fileInspectionByPath.get(localFilePathKey(file.path))?.insideCwd === false && (
-                      <span style={{ color: "var(--warning)", fontSize: scaledChatFont(10), whiteSpace: "nowrap" }}>
-                        {t("outsideProject", "Outside project")}
-                      </span>
-                    )}
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        removeFile(i);
-                      }}
-                      title={t("remove", "Remove")}
-                      style={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: "50%",
-                        background: "transparent",
-                        border: "none",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        padding: 0,
-                        color: "var(--text-muted)",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <svg
-                        width="8"
-                        height="8"
-                        viewBox="0 0 8 8"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      >
-                        <line x1="1" y1="1" x2="7" y2="7" />
-                        <line x1="7" y1="1" x2="1" y2="7" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: 4, fontSize: scaledChatFont(10.5), color: "var(--text-dim)" }}>
-                {t(
-                  "localFileDraftPrivacy",
-                  "Local file paths stay on this device and are saved with this session draft until it is sent or removed.",
-                )}
-              </div>
-            </div>
-          )}
+          <ComposerAttachments
+            images={attachedImages}
+            files={attachedFiles}
+            fileInspectionByPath={fileInspectionByPath}
+            cwd={cwd}
+            onRemoveImage={removeImage}
+            onRemoveFile={removeFile}
+            onFileMenuError={setSubmissionNotice}
+          />
 
           {/* Main input */}
           <div style={{ position: "relative" }}>

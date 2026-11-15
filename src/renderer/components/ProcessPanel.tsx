@@ -4,10 +4,11 @@ import { isManagedProcessActiveState } from "@contract/processes";
 import { call, subscribe } from "@/lib/api-client";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/i18n";
+import type { BrowserTabInfo } from "@contract/browser";
 
 type Props = {
   onActiveCountChange?: (count: number) => void;
-  onOpenBrowser?: () => void;
+  onOpenBrowser?: (tab: BrowserTabInfo) => Promise<void>;
 };
 
 function messageOf(error: unknown): string {
@@ -188,16 +189,17 @@ export function ProcessPanel({ onActiveCountChange, onOpenBrowser }: Props) {
     }
   };
 
-  const openEndpoint = async (process: ManagedProcessPublicInfo, url: string) => {
+  const openEndpoint = async (process: ManagedProcessPublicInfo, endpointId: string) => {
     setBusy(true);
+    setError(null);
     try {
-      const tab = await window.piBridge.browserCreateUserTab({
-        url,
-        ownerSessionId: process.ownerSessionId,
-        activate: true,
+      const tab = await window.piBridge.browserOpenProcessPreview({
+        processId: process.processId,
+        runId: process.runId,
+        endpointId,
       });
-      window.dispatchEvent(new CustomEvent("pi-desktop:open-browser-tab", { detail: { tabId: tab.id } }));
-      onOpenBrowser?.();
+      if (!tab) throw new Error(t("browserPreviewUnavailable", "This server preview is no longer available."));
+      await onOpenBrowser?.(tab);
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -367,8 +369,8 @@ export function ProcessPanel({ onActiveCountChange, onOpenBrowser }: Props) {
                 <button
                   key={endpoint.id}
                   type="button"
-                  disabled={busy}
-                  onClick={() => void openEndpoint(selected, endpoint.url)}
+                  disabled={busy || !isManagedProcessActiveState(selected.state)}
+                  onClick={() => void openEndpoint(selected, endpoint.id)}
                   style={{ ...buttonStyle, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis" }}
                 >
                   {t("openInBrowser", "Open in Browser")}: {endpoint.url}

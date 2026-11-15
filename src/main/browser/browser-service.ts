@@ -1,6 +1,6 @@
 import { getNativeLanguage } from "../native-language";
 import path from "node:path";
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { app, dialog, safeStorage, session, shell, type BrowserWindow, type Session } from "electron";
 import type {
   BrowserCapabilitySnapshot,
@@ -36,6 +36,7 @@ import { BrowserConfirmationManager } from "./browser-confirmation.ts";
 import { BrowserAuthorizationCoordinator } from "./browser-authorization-coordinator.ts";
 import { BrowserDownloadManager } from "./browser-download-manager.ts";
 import { BrowserError, asBrowserError } from "./browser-error.ts";
+import { auditBrowserHostRequest, requiredPermission } from "./browser-host-requests.ts";
 import { BrowserHeaderRuleStore } from "./browser-header-rule-store.ts";
 import { validateHeaderRules } from "./browser-header-rules.ts";
 import { BrowserAgentHeaderRuleRegistry } from "./browser-agent-header-rule-registry.ts";
@@ -51,6 +52,8 @@ import { BrowserTabManager } from "./browser-tab-manager.ts";
 import { BrowserTabRestoreStore } from "./browser-tab-restore-store.ts";
 import { appendMainLog } from "../logger.ts";
 import { countAdvancedProfileTabs, toBrowserRestoreRecords } from "./browser-tab-restoration.ts";
+import { loopbackPreviewOrigin } from "./browser-preview-origin.ts";
+import type { ManagedProcessPublicInfo } from "../../contract/processes.ts";
 
 const RESTORE_DEBOUNCE_MS = 500;
 const RUNTIME_GRANT_TTL_MS = 8 * 60 * 60 * 1_000;
@@ -91,6 +94,8 @@ export class BrowserService {
   private restoreTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly pendingExternalProtocols = new Map<string, Promise<void>>();
   private readonly recentExternalProtocols = new Map<string, number>();
+  private readonly processPreviews = new Map<string, { tabId: string; runId: string; origin: string }>();
+  private readonly openingProcessPreviews = new Map<string, Promise<BrowserTabInfo>>();
   private restored = false;
   private disposed = false;
   private readonly auditKey = randomBytes(32);
@@ -266,6 +271,56 @@ export class BrowserService {
 
   createUserTab(input: BrowserCreateTabInput): Promise<BrowserTabInfo> {
     return this.tabs.create(input);
+  }
+
+  async openProcessPreview(
+    process: Pick<ManagedProcessPublicInfo, "processId" | "runId" | "ownerSessionId">,
+    url: string,
+    automatic: boolean,
+  ): Promise<BrowserTabInfo | null> {
+    const { processId, runId, ownerSessionId } = process;
+    while (this.openingProcessPreviews.has(processId)) {
+      await this.openingProcessPreviews.get(processId)?.catch(() => undefined);
+    }
+    const settings = this.policy.getSettings();
+    if (automatic && (!settings.enabled || !settings.panel.openOnAgentUse)) return null;
+    const origin = loopbackPreviewOrigin(url);
+    if (!origin) throw new BrowserError("INVALID_BROWSER_REQUEST", "Process preview requires a loopback URL");
+
+    const opening = (async () => {
+      const previous = this.processPreviews.get(processId);
+      const existing = previous && this.tabs.list(ownerSessionId).find((tab) => tab.id === previous.tabId);
+      if (existing && !existing.crashed && previous.origin === origin) {
+        if (previous.runId === runId && (automatic || existing.url === url)) return existing;
+        const tab = await this.tabs.navigate(existing.id, url);
+        this.processPreviews.set(processId, { tabId: tab.id, runId, origin });
+        return tab;
+      }
+      const tab = await this.tabs.create(
+        { url, ownerSessionId, profileId: DEFAULT_BROWSER_PROFILE_ID, activate: false },
+        undefined,
+        origin,
+      );
+      if (existing && this.tabs.list(ownerSessionId).some((candidate) => candidate.id === existing.id)) {
+        this.tabs.close(existing.id);
+      }
+      this.processPreviews.set(processId, { tabId: tab.id, runId, origin });
+      return tab;
+    })();
+    this.openingProcessPreviews.set(processId, opening);
+    try {
+      return await opening;
+    } finally {
+      this.openingProcessPreviews.delete(processId);
+    }
+  }
+
+  pickElement(tabId: string, requestId: string) {
+    return this.tabs.pickElement(tabId, requestId);
+  }
+
+  cancelElementPick(tabId: string, requestId: string): void {
+    this.tabs.cancelElementPick(tabId, requestId);
   }
 
   activateTab(tabId: string): void {
@@ -567,11 +622,11 @@ export class BrowserService {
     if (!isBrowserHostMethod(method)) throw new BrowserError("INVALID_BROWSER_REQUEST", "Unknown Browser Host method");
     try {
       const result = await this.dispatchHostRequest(method, params as never);
-      if (method !== "browser.capabilities") this.auditHostRequest(method, params, "OK");
+      if (method !== "browser.capabilities") auditBrowserHostRequest(this.auditKey, method, params, "OK");
       return result;
     } catch (error) {
       const browserError = asBrowserError(error);
-      if (method !== "browser.capabilities") this.auditHostRequest(method, params, browserError.code);
+      if (method !== "browser.capabilities") auditBrowserHostRequest(this.auditKey, method, params, browserError.code);
       throw browserError;
     }
   }
@@ -1128,30 +1183,15 @@ export class BrowserService {
   }
 
   private emit(event: BrowserEvent): void {
+    if (event.type === "tab-closed") {
+      for (const [processId, preview] of this.processPreviews) {
+        if (preview.tabId === event.tabId) this.processPreviews.delete(processId);
+      }
+    }
     this.options.emit?.(event);
     if (event.type === "tab-created" || event.type === "tab-updated" || event.type === "tab-closed") {
       this.scheduleRestorePersistence();
     }
-  }
-
-  private auditHostRequest(method: BrowserHostMethod, params: unknown, outcome: string): void {
-    const body = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
-    const session = opaqueAuditId(this.auditKey, body.sessionId);
-    const tab = opaqueAuditId(this.auditKey, body.tabId);
-    let origin = "none";
-    if (typeof body.url === "string") {
-      try {
-        const parsed = new URL(body.url);
-        if (parsed.protocol === "http:" || parsed.protocol === "https:") origin = parsed.origin.slice(0, 512);
-      } catch {
-        // Invalid URLs are represented by the result code without logging input.
-      }
-    }
-    const revision = Number.isSafeInteger(body.policyRevision) ? String(body.policyRevision) : "none";
-    const digest = createHmac("sha256", this.auditKey).update(redactedAuditShape(params)).digest("hex").slice(0, 16);
-    appendMainLog(
-      `[browser] method=${method} session=${session} tab=${tab} origin=${origin} outcome=${outcome} revision=${revision} input=${digest}`,
-    );
   }
 
   private async defaultConfirmRouteBypass(origin: string): Promise<boolean> {
@@ -1372,38 +1412,6 @@ function confirmationCopy(language: BrowserConfirmationLanguage) {
   };
 }
 
-function requiredPermission(method: BrowserHostMethod): "read" | "interact" | "advanced" {
-  if (
-    method === "browser.click" ||
-    method === "browser.clickAt" ||
-    method === "browser.type" ||
-    method === "browser.press" ||
-    method === "browser.scroll"
-  ) {
-    return "interact";
-  }
-  if (
-    method === "browser.executeJavaScript" ||
-    method === "browser.getCookies" ||
-    method === "browser.setCookies" ||
-    method === "browser.setRequestHeaderRules" ||
-    method === "browser.setResponseHeaderRules" ||
-    method === "browser.sendCdpCommand" ||
-    method === "browser.networkList" ||
-    method === "browser.networkWait" ||
-    method === "browser.networkBody" ||
-    method === "browser.networkReplay" ||
-    method === "browser.networkSummary" ||
-    method === "browser.consoleList" ||
-    method === "browser.consoleWait" ||
-    method === "browser.pageCodeList" ||
-    method === "browser.pageCodeGet"
-  ) {
-    return "advanced";
-  }
-  return "read";
-}
-
 function previewSnippetResult(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   try {
@@ -1434,30 +1442,4 @@ function validateCredentialPart(value: unknown, maxLength: number, label: string
     throw new BrowserError("INVALID_BROWSER_REQUEST", `Proxy ${label} is invalid`);
   }
   return value;
-}
-
-function opaqueAuditId(key: Buffer, value: unknown): string {
-  if (typeof value !== "string" || !value) return "none";
-  return createHmac("sha256", key).update(value).digest("hex").slice(0, 12);
-}
-
-function redactedAuditShape(value: unknown): string {
-  const seen = new WeakSet<object>();
-  try {
-    return (
-      JSON.stringify(value, (field, entry: unknown) => {
-        if (field === "sessionId" || field === "tabId" || field === "capabilityLeaseId" || field === "requestId") {
-          return `<${field}>`;
-        }
-        if (typeof entry === "bigint") return `<bigint:${entry.toString().length}>`;
-        if (entry && typeof entry === "object") {
-          if (seen.has(entry)) return "<circular>";
-          seen.add(entry);
-        }
-        return entry;
-      }) ?? "undefined"
-    );
-  } catch {
-    return "unserializable";
-  }
 }

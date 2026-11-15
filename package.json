@@ -16,6 +16,7 @@
   },
   "main": "out/main/main.js",
   "scripts": {
+    "build:icons": "node scripts/generate-icons.mjs",
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
     "build:main": "node scripts/build-main.mjs",
@@ -117,6 +118,7 @@
     "@electron/asar": "3.4.1",
     "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",
     "@eslint/js": "^10.0.1",
+    "@resvg/resvg-js": "2.6.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "22.19.0",
     "@types/proper-lockfile": "4.1.4",
