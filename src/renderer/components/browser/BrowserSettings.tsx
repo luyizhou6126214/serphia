@@ -86,19 +86,6 @@ export function BrowserSettings({ sessionId }: { sessionId: string | null }) {
   const runtime = state.settings.runtime;
   const advancedDisabled = !runtime.advancedBrowserModeEnabled;
 
-  const setAutomationEnabled = async (enabled: boolean) => {
-    setBusy(true);
-    setError("");
-    try {
-      await window.piBridge.browserUpdateSettings({ automation: { enabled } });
-      await refresh();
-    } catch (cause) {
-      setError(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <>
       <div className="settings-panel-scroll">
@@ -116,31 +103,6 @@ export function BrowserSettings({ sessionId }: { sessionId: string | null }) {
               checked={settings.panel.restoreTabs}
               onChange={(restoreTabs) => void update({ panel: { restoreTabs } })}
             />
-            <Toggle
-              label={t("browserOpenPanelOnUse", "Open Browser panel for Agent browsing and local previews")}
-              checked={settings.panel.openOnAgentUse}
-              onChange={(openOnAgentUse) => void update({ panel: { openOnAgentUse } })}
-            />
-            <Toggle
-              label={t("browserUsePersistentProfiles", "Use persistent Profiles by default when creating a Profile")}
-              checked={settings.panel.saveLoginState}
-              onChange={(saveLoginState) => void update({ panel: { saveLoginState } })}
-            />
-            <Field label={t("browserDefaultProfile", "Default Profile for new tabs")}>
-              <select
-                style={inputStyle}
-                value={settings.panel.defaultProfileId}
-                onChange={(event) => void update({ panel: { defaultProfileId: event.target.value } })}
-              >
-                {state.profiles
-                  .filter((profile) => profile.mode !== "unsafe")
-                  .map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name} ({profileModeLabel(t, profile.mode)})
-                    </option>
-                  ))}
-              </select>
-            </Field>
             <Field label={t("browserHomepage", "Homepage")}>
               <input
                 style={inputStyle}
@@ -149,580 +111,572 @@ export function BrowserSettings({ sessionId }: { sessionId: string | null }) {
                 onBlur={(event) => void update({ navigation: { homepage: event.target.value } })}
               />
             </Field>
-            <div style={gridStyle}>
-              <NumberField
-                label={t("browserMaximumTabs", "Maximum tabs")}
-                value={settings.navigation.maxTabs}
-                min={1}
-                max={50}
-                onCommit={(maxTabs) => void update({ navigation: { maxTabs } })}
-              />
-              <NumberField
-                label={t("browserTabsPerAgent", "Tabs per Agent session")}
-                value={settings.navigation.maxTabsPerSession}
-                min={1}
-                max={20}
-                onCommit={(maxTabsPerSession) => void update({ navigation: { maxTabsPerSession } })}
-              />
-            </div>
-            <div style={gridStyle}>
-              <NumberField
-                label={t("browserNavigationTimeout", "Navigation timeout (ms)")}
-                value={settings.navigation.navigationTimeoutMs}
-                min={1000}
-                max={300000}
-                onCommit={(navigationTimeoutMs) => void update({ navigation: { navigationTimeoutMs } })}
-              />
-              <NumberField
-                label={t("browserActionTimeout", "Action timeout (ms)")}
-                value={settings.navigation.actionTimeoutMs}
-                min={250}
-                max={120000}
-                onCommit={(actionTimeoutMs) => void update({ navigation: { actionTimeoutMs } })}
-              />
-            </div>
-            <Toggle
-              label={t("browserAllowHttp", "Allow plain HTTP")}
-              checked={settings.navigation.allowHttp}
-              onChange={(allowHttp) => void update({ navigation: { allowHttp } })}
-              warning
-            />
-            <Toggle
-              label={t("browserAllowPrivateNetwork", "Allow private network and localhost")}
-              checked={settings.navigation.allowPrivateNetwork}
-              onChange={(allowPrivateNetwork) => void update({ navigation: { allowPrivateNetwork } })}
-              warning
-            />
-            <Field label={t("browserNetworkIsolation", "Network isolation")}>
-              <select
-                style={inputStyle}
-                value={settings.navigation.networkIsolation}
-                onChange={(event) =>
-                  void update({
-                    navigation: { networkIsolation: event.target.value as "best-effort" | "strict" },
-                  })
-                }
-              >
-                <option value="best-effort">{t("browserNetworkBestEffort", "Best effort")}</option>
-                <option value="strict">
-                  {t("browserNetworkStrict", "Strict (unavailable without enforcing network sandbox)")}
-                </option>
-              </select>
-            </Field>
-            <div style={noticeStyle}>
-              {settings.navigation.networkIsolation === "strict"
-                ? t(
-                    "browserNetworkSummaryStrict",
-                    "Unavailable: strict mode requires an enforcing proxy or network sandbox.",
-                  )
-                : t(
-                    "browserNetworkSummaryBestEffort",
-                    "Best effort: URL checks, DNS preflight, redirects, and subresources; DNS TOCTOU cannot be fully eliminated.",
-                  )}
-            </div>
           </Section>
 
           <Section title={t("browserAgentAccess", "Agent access")}>
             <Toggle
               label={t("browserEnableAgentTools", "Enable Browser tools for Agent")}
               checked={settings.automation.enabled}
-              onChange={(enabled) => void setAutomationEnabled(enabled)}
+              onChange={(enabled) => void update({ automation: { enabled } })}
             />
-            <Field label={t("browserDefaultPermanentPermission", "Default permanent permission")}>
-              <select
-                style={inputStyle}
-                value={settings.automation.defaultPermission}
-                onChange={(event) =>
-                  void update({
-                    automation: {
-                      defaultPermission: event.target.value as "ask" | "deny" | "read" | "interact",
-                    },
-                  })
-                }
-              >
-                <option value="ask">{t("browserPermissionAsk", "Ask for each session")}</option>
-                <option value="deny">{t("browserPermissionDeny", "Always deny")}</option>
-                <option value="read">{t("browserPermissionReadOnly", "Read only")}</option>
-                <option value="interact">{t("browserPermissionAllowInteractions", "Allow interactions")}</option>
-              </select>
-            </Field>
-            <Toggle
-              label={t("browserAllowApprovedChannels", "Allow specifically approved channel sessions")}
-              checked={settings.automation.allowChannelSessions}
-              onChange={(allowChannelSessions) => void update({ automation: { allowChannelSessions } })}
-            />
-            <Field label={t("browserSensitiveActions", "Sensitive Agent actions")}>
-              <select
-                style={inputStyle}
-                value={settings.automation.sensitiveActions}
-                onChange={(event) =>
-                  void update({
-                    automation: { sensitiveActions: event.target.value as "always-ask" | "deny" },
-                  })
-                }
-              >
-                <option value="always-ask">{t("browserAskEveryTime", "Ask every time")}</option>
-                <option value="deny">{t("browserDeny", "Deny")}</option>
-              </select>
-            </Field>
-            <Field label={t("browserUserTakeover", "When the user acts while the Agent is working")}>
-              <select
-                style={inputStyle}
-                value={settings.automation.userTakeover}
-                onChange={(event) =>
-                  void update({
-                    automation: {
-                      userTakeover: event.target.value as "cancel-agent-action" | "wait",
-                    },
-                  })
-                }
-              >
-                <option value="cancel-agent-action">
-                  {t("browserCancelAgentAction", "Cancel current Agent action")}
-                </option>
-                <option value="wait">{t("browserWaitForAgent", "Wait for Agent action")}</option>
-              </select>
-            </Field>
-            <Toggle
-              label={t("browserHighlightTarget", "Highlight the Agent's target before clicking")}
-              checked={settings.automation.showActionHighlight}
-              onChange={(showActionHighlight) => void update({ automation: { showActionHighlight } })}
-            />
-            {sessionId ? (
-              <>
-                <Field label={t("browserSessionPermanentPermission", "Permanent Browser permission for this session")}>
-                  <select
-                    style={inputStyle}
-                    value={state.persistentSessionPermissions[sessionId] ?? "inherit"}
-                    onChange={(event) =>
-                      void window.piBridge
-                        .browserSetPersistentSessionPermission(
-                          sessionId,
-                          event.target.value as BrowserPersistentSessionPermission,
-                        )
-                        .then(refresh)
-                        .catch((cause) => setError(messageOf(cause)))
-                    }
+            {settings.automation.enabled &&
+              (sessionId ? (
+                <>
+                  <Field
+                    label={t("browserSessionPermanentPermission", "Permanent Browser permission for this session")}
                   >
-                    <option value="inherit">{t("browserPermissionInherit", "Use global default")}</option>
-                    <option value="ask">{t("browserPermissionAskSession", "Ask for this session")}</option>
-                    <option value="deny">{t("browserPermissionDeny", "Always deny")}</option>
-                    <option value="read">{t("browserPermissionRead", "Read")}</option>
-                    <option value="interact">{t("browserPermissionInteract", "Interact")}</option>
-                    <option value="advanced">{t("browserPermissionAdvanced", "Advanced Browser Mode")}</option>
-                  </select>
-                </Field>
-                <Field label={t("browserCurrentTemporaryPermission", "Current temporary permission")}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={noticeStyle}>
-                      {permissionLabel(
-                        t,
-                        state.runtimeSessionGrants[sessionId]?.permission ??
-                          state.capabilities.sessionPermissions[sessionId] ??
-                          "none",
-                      )}
-                    </span>
-                    {state.runtimeSessionGrants[sessionId] && (
-                      <button
-                        type="button"
-                        style={buttonStyle}
-                        onClick={() =>
-                          void window.piBridge
-                            .browserRevokeTemporarySessionPermission(sessionId)
-                            .then(refresh)
-                            .catch((cause) => setError(messageOf(cause)))
-                        }
-                      >
-                        {t("browserRevokeTemporaryPermission", "Revoke temporary permission")}
-                      </button>
-                    )}
-                  </div>
-                </Field>
-              </>
-            ) : (
-              <div style={noticeStyle}>
-                {t("browserOpenSavedSession", "Open a saved session to manage its Browser permission.")}
-              </div>
-            )}
-          </Section>
-
-          <Section title={t("browserDownloadsProxy", "Downloads and proxy")}>
-            <Field label={t("browserDownloadPolicy", "Download policy")}>
-              <select
-                style={inputStyle}
-                value={settings.downloads.mode}
-                onChange={(event) => {
-                  const mode = event.target.value as "ask" | "deny" | "allow-to-directory";
-                  if (mode !== "allow-to-directory") {
-                    void update({ downloads: { mode } });
-                    return;
-                  }
-                  void window.piBridge.selectDirectory().then((directory) => {
-                    if (directory) void update({ downloads: { mode, directory } });
-                  });
-                }}
-              >
-                <option value="ask">{t("browserAskEveryTime", "Ask every time")}</option>
-                <option value="deny">{t("browserDeny", "Deny")}</option>
-                <option value="allow-to-directory">
-                  {t("browserAllowApprovedDirectory", "Allow to approved directory")}
-                </option>
-              </select>
-            </Field>
-            {settings.downloads.mode === "allow-to-directory" && (
-              <Field label={t("browserApprovedDirectory", "Approved directory")}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input style={{ ...inputStyle, flex: 1 }} readOnly value={settings.downloads.directory ?? ""} />
-                  <button
-                    style={buttonStyle}
-                    onClick={() =>
-                      void window.piBridge.selectDirectory().then((directory) => {
-                        if (directory) void update({ downloads: { directory } });
-                      })
-                    }
-                  >
-                    {t("browserChoose", "Choose…")}
-                  </button>
-                </div>
-              </Field>
-            )}
-            <Field label={t("browserProxyMode", "Proxy mode")}>
-              <select
-                style={inputStyle}
-                value={settings.proxy.mode}
-                onChange={(event) => {
-                  const mode = event.target.value as "system" | "direct" | "custom";
-                  void update({
-                    proxy: {
-                      mode,
-                      ...(mode === "custom" && !settings.proxy.proxyRules
-                        ? { proxyRules: "http://127.0.0.1:8080" }
-                        : {}),
-                    },
-                  });
-                }}
-              >
-                <option value="system">{t("browserProxySystem", "System")}</option>
-                <option value="direct">{t("browserProxyDirect", "Direct")}</option>
-                <option value="custom">{t("browserProxyCustom", "Custom")}</option>
-              </select>
-            </Field>
-            {settings.proxy.mode === "custom" && (
-              <>
-                <Field label={t("browserProxyRules", "Proxy rules")}>
-                  <input
-                    style={inputStyle}
-                    value={settings.proxy.proxyRules ?? ""}
-                    onChange={(event) => setState(withProxy(state, { proxyRules: event.target.value }))}
-                    onBlur={(event) => void update({ proxy: { proxyRules: event.target.value } })}
-                  />
-                </Field>
-                <Field label={t("browserBypassRules", "Bypass rules")}>
-                  <input
-                    style={inputStyle}
-                    value={settings.proxy.proxyBypassRules ?? ""}
-                    onChange={(event) => setState(withProxy(state, { proxyBypassRules: event.target.value }))}
-                    onBlur={(event) => void update({ proxy: { proxyBypassRules: event.target.value } })}
-                  />
-                </Field>
-                <div style={gridStyle}>
-                  <Field label={t("browserProxyUsername", "Proxy username")}>
-                    <input
+                    <select
                       style={inputStyle}
-                      autoComplete="off"
-                      value={proxyUsername}
-                      onChange={(event) => setProxyUsername(event.target.value)}
-                    />
-                  </Field>
-                  <Field label={t("browserProxyPassword", "Proxy password")}>
-                    <input
-                      style={inputStyle}
-                      type="password"
-                      autoComplete="new-password"
-                      value={proxyPassword}
-                      onChange={(event) => setProxyPassword(event.target.value)}
-                    />
-                  </Field>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <button
-                    style={buttonStyle}
-                    disabled={!proxyUsername || !proxyPassword}
-                    onClick={() =>
-                      void window.piBridge
-                        .browserSetProxyCredentials({ username: proxyUsername, password: proxyPassword })
-                        .then(() => {
-                          setProxyUsername("");
-                          setProxyPassword("");
-                          return refresh();
-                        })
-                        .catch((cause) => setError(messageOf(cause)))
-                    }
-                  >
-                    {t("browserStoreCredentials", "Store credentials securely")}
-                  </button>
-                  {settings.proxy.credentialSecretRef && (
-                    <button
-                      style={buttonStyle}
-                      onClick={() =>
+                      value={state.persistentSessionPermissions[sessionId] ?? "inherit"}
+                      onChange={(event) =>
                         void window.piBridge
-                          .browserSetProxyCredentials(null)
+                          .browserSetPersistentSessionPermission(
+                            sessionId,
+                            event.target.value as BrowserPersistentSessionPermission,
+                          )
                           .then(refresh)
                           .catch((cause) => setError(messageOf(cause)))
                       }
                     >
-                      {t("browserRemoveCredentials", "Remove stored credentials")}
-                    </button>
+                      <option value="inherit">{t("browserPermissionInherit", "Use global default")}</option>
+                      <option value="ask">{t("browserPermissionAskSession", "Ask for this session")}</option>
+                      <option value="deny">{t("browserPermissionDeny", "Always deny")}</option>
+                      <option value="read">{t("browserPermissionRead", "Read")}</option>
+                      <option value="interact">{t("browserPermissionInteract", "Interact")}</option>
+                      <option value="advanced">{t("browserPermissionAdvanced", "Advanced Browser Mode")}</option>
+                    </select>
+                  </Field>
+                  <Field label={t("browserCurrentTemporaryPermission", "Current temporary permission")}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={noticeStyle}>
+                        {permissionLabel(
+                          t,
+                          state.runtimeSessionGrants[sessionId]?.permission ??
+                            state.capabilities.sessionPermissions[sessionId] ??
+                            "none",
+                        )}
+                      </span>
+                      {state.runtimeSessionGrants[sessionId] && (
+                        <button
+                          type="button"
+                          style={buttonStyle}
+                          onClick={() =>
+                            void window.piBridge
+                              .browserRevokeTemporarySessionPermission(sessionId)
+                              .then(refresh)
+                              .catch((cause) => setError(messageOf(cause)))
+                          }
+                        >
+                          {t("browserRevokeTemporaryPermission", "Revoke temporary permission")}
+                        </button>
+                      )}
+                    </div>
+                  </Field>
+                </>
+              ) : (
+                <div style={noticeStyle}>
+                  {t("browserOpenSavedSession", "Open a saved session to manage its Browser permission.")}
+                </div>
+              ))}
+          </Section>
+
+          <details>
+            <summary style={disclosureStyle}>{t("browserMoreSettings", "More browser settings")}</summary>
+            <div style={{ display: "grid", gap: 18, paddingTop: 12 }}>
+              <Section title={t("browserPreferences", "Browser preferences")}>
+                <Toggle
+                  label={t("browserOpenPanelOnUse", "Open Browser panel for Agent browsing and local previews")}
+                  checked={settings.panel.openOnAgentUse}
+                  onChange={(openOnAgentUse) => void update({ panel: { openOnAgentUse } })}
+                />
+                <Toggle
+                  label={t(
+                    "browserUsePersistentProfiles",
+                    "Use persistent Profiles by default when creating a Profile",
                   )}
-                  <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
-                    {settings.proxy.credentialSecretRef
-                      ? t("browserCredentialsStored", "Credentials are stored with Electron safeStorage.")
-                      : t("browserNoCredentials", "No credentials stored.")}
+                  checked={settings.panel.saveLoginState}
+                  onChange={(saveLoginState) => void update({ panel: { saveLoginState } })}
+                />
+                <Field label={t("browserDefaultProfile", "Default Profile for new tabs")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.panel.defaultProfileId}
+                    onChange={(event) => void update({ panel: { defaultProfileId: event.target.value } })}
+                  >
+                    {state.profiles
+                      .filter((profile) => profile.mode !== "unsafe")
+                      .map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name} ({profileModeLabel(t, profile.mode)})
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+              </Section>
+
+              <Section title={t("browserAgentPolicy", "Agent access policy")}>
+                <Field label={t("browserDefaultPermanentPermission", "Default permanent permission")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.automation.defaultPermission}
+                    onChange={(event) =>
+                      void update({
+                        automation: {
+                          defaultPermission: event.target.value as "ask" | "deny" | "read" | "interact",
+                        },
+                      })
+                    }
+                  >
+                    <option value="ask">{t("browserPermissionAsk", "Ask for each session")}</option>
+                    <option value="deny">{t("browserPermissionDeny", "Always deny")}</option>
+                    <option value="read">{t("browserPermissionReadOnly", "Read only")}</option>
+                    <option value="interact">{t("browserPermissionAllowInteractions", "Allow interactions")}</option>
+                  </select>
+                </Field>
+                <Toggle
+                  label={t("browserAllowApprovedChannels", "Allow specifically approved channel sessions")}
+                  checked={settings.automation.allowChannelSessions}
+                  onChange={(allowChannelSessions) => void update({ automation: { allowChannelSessions } })}
+                />
+                <Field label={t("browserSensitiveActions", "Sensitive Agent actions")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.automation.sensitiveActions}
+                    onChange={(event) =>
+                      void update({
+                        automation: { sensitiveActions: event.target.value as "always-ask" | "deny" },
+                      })
+                    }
+                  >
+                    <option value="always-ask">{t("browserAskEveryTime", "Ask every time")}</option>
+                    <option value="deny">{t("browserDeny", "Deny")}</option>
+                  </select>
+                </Field>
+                <Field label={t("browserUserTakeover", "When the user acts while the Agent is working")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.automation.userTakeover}
+                    onChange={(event) =>
+                      void update({
+                        automation: {
+                          userTakeover: event.target.value as "cancel-agent-action" | "wait",
+                        },
+                      })
+                    }
+                  >
+                    <option value="cancel-agent-action">
+                      {t("browserCancelAgentAction", "Cancel current Agent action")}
+                    </option>
+                    <option value="wait">{t("browserWaitForAgent", "Wait for Agent action")}</option>
+                  </select>
+                </Field>
+                <Toggle
+                  label={t("browserHighlightTarget", "Highlight the Agent's target before clicking")}
+                  checked={settings.automation.showActionHighlight}
+                  onChange={(showActionHighlight) => void update({ automation: { showActionHighlight } })}
+                />
+              </Section>
+
+              <Section title={t("browserNetworkAccess", "Network access")}>
+                <Toggle
+                  label={t("browserAllowHttp", "Allow HTTP in all tabs")}
+                  checked={settings.navigation.allowHttp}
+                  onChange={(allowHttp) => void update({ navigation: { allowHttp } })}
+                  warning
+                />
+                <Toggle
+                  label={t("browserAllowPrivateNetwork", "Allow private network and localhost")}
+                  checked={settings.navigation.allowPrivateNetwork}
+                  onChange={(allowPrivateNetwork) => void update({ navigation: { allowPrivateNetwork } })}
+                  warning
+                />
+                <Field label={t("browserNetworkIsolation", "Network isolation")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.navigation.networkIsolation}
+                    onChange={(event) =>
+                      void update({
+                        navigation: { networkIsolation: event.target.value as "best-effort" | "strict" },
+                      })
+                    }
+                  >
+                    <option value="best-effort">{t("browserNetworkBestEffort", "Best effort")}</option>
+                    <option value="strict">
+                      {t("browserNetworkStrict", "Strict (unavailable without enforcing network sandbox)")}
+                    </option>
+                  </select>
+                </Field>
+                <div style={noticeStyle}>
+                  {settings.navigation.networkIsolation === "strict"
+                    ? t(
+                        "browserNetworkSummaryStrict",
+                        "Unavailable: strict mode requires an enforcing proxy or network sandbox.",
+                      )
+                    : t(
+                        "browserNetworkSummaryBestEffort",
+                        "Best effort: URL checks, DNS preflight, redirects, and subresources; DNS TOCTOU cannot be fully eliminated.",
+                      )}
+                </div>
+              </Section>
+
+              <Section title={t("browserDownloadsProxy", "Downloads and proxy")}>
+                <Field label={t("browserDownloadPolicy", "Download policy")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.downloads.mode}
+                    onChange={(event) => {
+                      const mode = event.target.value as "ask" | "deny" | "allow-to-directory";
+                      if (mode !== "allow-to-directory") {
+                        void update({ downloads: { mode } });
+                        return;
+                      }
+                      void window.piBridge.selectDirectory().then((directory) => {
+                        if (directory) void update({ downloads: { mode, directory } });
+                      });
+                    }}
+                  >
+                    <option value="ask">{t("browserAskEveryTime", "Ask every time")}</option>
+                    <option value="deny">{t("browserDeny", "Deny")}</option>
+                    <option value="allow-to-directory">
+                      {t("browserAllowApprovedDirectory", "Allow to approved directory")}
+                    </option>
+                  </select>
+                </Field>
+                {settings.downloads.mode === "allow-to-directory" && (
+                  <Field label={t("browserApprovedDirectory", "Approved directory")}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input style={{ ...inputStyle, flex: 1 }} readOnly value={settings.downloads.directory ?? ""} />
+                      <button
+                        style={buttonStyle}
+                        onClick={() =>
+                          void window.piBridge.selectDirectory().then((directory) => {
+                            if (directory) void update({ downloads: { directory } });
+                          })
+                        }
+                      >
+                        {t("browserChoose", "Choose…")}
+                      </button>
+                    </div>
+                  </Field>
+                )}
+                <Field label={t("browserProxyMode", "Proxy mode")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.proxy.mode}
+                    onChange={(event) => {
+                      const mode = event.target.value as "system" | "direct" | "custom";
+                      void update({
+                        proxy: {
+                          mode,
+                          ...(mode === "custom" && !settings.proxy.proxyRules
+                            ? { proxyRules: "http://127.0.0.1:8080" }
+                            : {}),
+                        },
+                      });
+                    }}
+                  >
+                    <option value="system">{t("browserProxySystem", "System")}</option>
+                    <option value="direct">{t("browserProxyDirect", "Direct")}</option>
+                    <option value="custom">{t("browserProxyCustom", "Custom")}</option>
+                  </select>
+                </Field>
+                {settings.proxy.mode === "custom" && (
+                  <>
+                    <Field label={t("browserProxyRules", "Proxy rules")}>
+                      <input
+                        style={inputStyle}
+                        value={settings.proxy.proxyRules ?? ""}
+                        onChange={(event) => setState(withProxy(state, { proxyRules: event.target.value }))}
+                        onBlur={(event) => void update({ proxy: { proxyRules: event.target.value } })}
+                      />
+                    </Field>
+                    <Field label={t("browserBypassRules", "Bypass rules")}>
+                      <input
+                        style={inputStyle}
+                        value={settings.proxy.proxyBypassRules ?? ""}
+                        onChange={(event) => setState(withProxy(state, { proxyBypassRules: event.target.value }))}
+                        onBlur={(event) => void update({ proxy: { proxyBypassRules: event.target.value } })}
+                      />
+                    </Field>
+                    <div style={gridStyle}>
+                      <Field label={t("browserProxyUsername", "Proxy username")}>
+                        <input
+                          style={inputStyle}
+                          autoComplete="off"
+                          value={proxyUsername}
+                          onChange={(event) => setProxyUsername(event.target.value)}
+                        />
+                      </Field>
+                      <Field label={t("browserProxyPassword", "Proxy password")}>
+                        <input
+                          style={inputStyle}
+                          type="password"
+                          autoComplete="new-password"
+                          value={proxyPassword}
+                          onChange={(event) => setProxyPassword(event.target.value)}
+                        />
+                      </Field>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <button
+                        style={buttonStyle}
+                        disabled={!proxyUsername || !proxyPassword}
+                        onClick={() =>
+                          void window.piBridge
+                            .browserSetProxyCredentials({ username: proxyUsername, password: proxyPassword })
+                            .then(() => {
+                              setProxyUsername("");
+                              setProxyPassword("");
+                              return refresh();
+                            })
+                            .catch((cause) => setError(messageOf(cause)))
+                        }
+                      >
+                        {t("browserStoreCredentials", "Store credentials securely")}
+                      </button>
+                      {settings.proxy.credentialSecretRef && (
+                        <button
+                          style={buttonStyle}
+                          onClick={() =>
+                            void window.piBridge
+                              .browserSetProxyCredentials(null)
+                              .then(refresh)
+                              .catch((cause) => setError(messageOf(cause)))
+                          }
+                        >
+                          {t("browserRemoveCredentials", "Remove stored credentials")}
+                        </button>
+                      )}
+                      <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+                        {settings.proxy.credentialSecretRef
+                          ? t("browserCredentialsStored", "Credentials are stored with Electron safeStorage.")
+                          : t("browserNoCredentials", "No credentials stored.")}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </Section>
+
+              <Section title={t("browserAdvancedMode", "Advanced Browser Mode")}>
+                <div style={dangerStyle}>
+                  {t(
+                    "browserAdvancedModeWarning",
+                    "One launch-only switch enables JavaScript, three-layer browser identity, trusted humanized input, full CDP network capture, confirmed write replay, the JavaScript experience library, security-header removal, advanced Profiles, certificate bypass, and unrestricted CDP. Full Cookie values remain blocked by Gate A.",
+                  )}
+                </div>
+                <Toggle
+                  label={t("browserEnableAdvancedForLaunch", "Enable Advanced Browser Mode for this launch")}
+                  checked={runtime.advancedBrowserModeEnabled}
+                  onChange={(enabled) => void update({ advancedBrowserMode: { enabled } })}
+                  danger
+                />
+                <div style={noticeStyle}>
+                  {t(
+                    "browserAdvancedRuntimeConfirmations",
+                    "POST/PUT/PATCH/DELETE replay and existing sensitive actions still require one local confirmation per action; these are action confirmations, not extra settings.",
+                  )}
+                </div>
+                <Field label={t("browserIdentityMode", "Browser identity")}>
+                  <select
+                    style={inputStyle}
+                    value={settings.advancedBrowserMode.identityMode}
+                    onChange={(event) =>
+                      void update({
+                        advancedBrowserMode: {
+                          identityMode: event.target.value as "native" | "chrome-compatible" | "custom",
+                        },
+                      })
+                    }
+                  >
+                    <option value="chrome-compatible">
+                      {t("browserIdentityChromeCompatible", "Chromium-compatible (recommended)")}
+                    </option>
+                    <option value="native">{t("browserIdentityNative", "Electron native")}</option>
+                    <option value="custom">{t("browserIdentityCustom", "Custom consistent identity")}</option>
+                  </select>
+                </Field>
+                {settings.advancedBrowserMode.identityMode === "custom" && (
+                  <>
+                    <Field label={t("browserCustomUserAgent", "Custom User-Agent")}>
+                      <input
+                        style={inputStyle}
+                        value={settings.advancedBrowserMode.customUserAgentValue}
+                        onChange={(event) =>
+                          setState(withAdvancedMode(state, { customUserAgentValue: event.target.value }))
+                        }
+                        onBlur={(event) =>
+                          void update({ advancedBrowserMode: { customUserAgentValue: event.target.value } })
+                        }
+                        placeholder="Mozilla/5.0 … Chrome/142.0.0.0 …"
+                      />
+                    </Field>
+                    <Field label={t("browserClientHintsPlatform", "Client Hints platform")}>
+                      <input
+                        style={inputStyle}
+                        value={settings.advancedBrowserMode.customUserAgentPlatform}
+                        onChange={(event) =>
+                          setState(withAdvancedMode(state, { customUserAgentPlatform: event.target.value }))
+                        }
+                        onBlur={(event) =>
+                          void update({ advancedBrowserMode: { customUserAgentPlatform: event.target.value } })
+                        }
+                        placeholder="macOS, Windows, Linux…"
+                      />
+                    </Field>
+                    <Field label={t("browserChromiumFullVersion", "Chromium full version")}>
+                      <input
+                        style={inputStyle}
+                        value={settings.advancedBrowserMode.customUserAgentFullVersion}
+                        onChange={(event) =>
+                          setState(withAdvancedMode(state, { customUserAgentFullVersion: event.target.value }))
+                        }
+                        onBlur={(event) =>
+                          void update({ advancedBrowserMode: { customUserAgentFullVersion: event.target.value } })
+                        }
+                        placeholder="142.0.0.0"
+                      />
+                    </Field>
+                  </>
+                )}
+                <Field label={t("browserCertificateDomains", "Certificate bypass domains (comma separated)")}>
+                  <input
+                    style={inputStyle}
+                    value={settings.advancedBrowserMode.certificateBypassDomains.join(", ")}
+                    onChange={(event) =>
+                      setState(
+                        withAdvancedMode(state, {
+                          certificateBypassDomains: event.target.value.split(",").map((value) => value.trim()),
+                        }),
+                      )
+                    }
+                    onBlur={(event) =>
+                      void update({
+                        advancedBrowserMode: {
+                          certificateBypassDomains: event.target.value
+                            .split(",")
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+              </Section>
+
+              <HeaderRulesSection
+                profiles={state.profiles.filter(
+                  (profile) => profile.mode !== "unsafe" || runtime.advancedBrowserModeEnabled,
+                )}
+                disabled={advancedDisabled}
+                requestEnabled={runtime.advancedBrowserModeEnabled}
+                responseEnabled={runtime.advancedBrowserModeEnabled}
+                setError={setError}
+              />
+
+              <SnippetSection snippets={snippets} refresh={refresh} setError={setError} />
+
+              <ProfileSection
+                profiles={state.profiles}
+                advancedModeEnabled={runtime.advancedBrowserModeEnabled}
+                saveLoginState={settings.panel.saveLoginState}
+                refresh={refresh}
+                setError={setError}
+              />
+
+              <Section title={t("browserDiagnosticsReset", "Diagnostics and reset")}>
+                <div style={{ ...gridStyle, fontSize: 12, color: "var(--text-muted)" }}>
+                  <span>Electron {state.diagnostics.electronVersion}</span>
+                  <span>Chromium {state.diagnostics.chromiumVersion}</span>
+                  <span>
+                    {formatMessage(t("browserTabsCount", "{count} tabs"), { count: state.diagnostics.activeTabCount })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserCdpConnections", "{count} CDP connections"), {
+                      count: state.diagnostics.attachedDebuggerCount,
+                    })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserCrashedTabs", "{count} crashed tabs"), {
+                      count: state.diagnostics.crashedTabCount,
+                    })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserAdvancedTabs", "{count} advanced tabs"), {
+                      count: state.diagnostics.advancedTabCount,
+                    })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserCapturedRequests", "{count} captured requests"), {
+                      count: state.diagnostics.capturedRequestCount,
+                    })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserJavascriptExperiences", "{count} JavaScript experiences"), {
+                      count: state.diagnostics.snippetCount,
+                    })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserRendererProcesses", "{count} renderer processes"), {
+                      count: state.diagnostics.rendererProcessCount,
+                    })}
+                  </span>
+                  <span>
+                    {formatMessage(t("browserRendererWorkingSet", "Renderer working set {size}"), {
+                      size: formatBytes(state.diagnostics.rendererWorkingSetBytes),
+                    })}
                   </span>
                 </div>
-              </>
-            )}
-          </Section>
-
-          <Section title={t("browserAdvancedMode", "Advanced Browser Mode")}>
-            <div style={dangerStyle}>
-              {t(
-                "browserAdvancedModeWarning",
-                "One launch-only switch enables JavaScript, three-layer browser identity, trusted humanized input, full CDP network capture, confirmed write replay, the JavaScript experience library, security-header removal, advanced Profiles, certificate bypass, and unrestricted CDP. Full Cookie values remain blocked by Gate A.",
-              )}
-            </div>
-            <Toggle
-              label={t("browserEnableAdvancedForLaunch", "Enable Advanced Browser Mode for this launch")}
-              checked={runtime.advancedBrowserModeEnabled}
-              onChange={(enabled) => void update({ advancedBrowserMode: { enabled } })}
-              danger
-            />
-            <div style={noticeStyle}>
-              {t(
-                "browserAdvancedRuntimeConfirmations",
-                "POST/PUT/PATCH/DELETE replay and existing sensitive actions still require one local confirmation per action; these are action confirmations, not extra settings.",
-              )}
-            </div>
-            <Field label={t("browserIdentityMode", "Browser identity")}>
-              <select
-                style={inputStyle}
-                value={settings.advancedBrowserMode.identityMode}
-                onChange={(event) =>
-                  void update({
-                    advancedBrowserMode: {
-                      identityMode: event.target.value as "native" | "chrome-compatible" | "custom",
-                    },
-                  })
-                }
-              >
-                <option value="chrome-compatible">
-                  {t("browserIdentityChromeCompatible", "Chromium-compatible (recommended)")}
-                </option>
-                <option value="native">{t("browserIdentityNative", "Electron native")}</option>
-                <option value="custom">{t("browserIdentityCustom", "Custom consistent identity")}</option>
-              </select>
-            </Field>
-            {settings.advancedBrowserMode.identityMode === "custom" && (
-              <>
-                <Field label={t("browserCustomUserAgent", "Custom User-Agent")}>
-                  <input
-                    style={inputStyle}
-                    value={settings.advancedBrowserMode.customUserAgentValue}
-                    onChange={(event) =>
-                      setState(withAdvancedMode(state, { customUserAgentValue: event.target.value }))
+                <div style={noticeStyle}>
+                  {state.diagnostics.profilePartitions
+                    .map((profile) => `${profileModeLabel(t, profile.mode)}: ${profile.partition}`)
+                    .join(" · ")}
+                </div>
+                <div style={noticeStyle}>
+                  {t(
+                    "browserWorkflowGuardScope",
+                    "Workflow guard blocks obvious Browser route bypasses; it is not an OS network sandbox.",
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    style={buttonStyle}
+                    onClick={() =>
+                      void Promise.all(
+                        state.profiles.map((profile) => window.piBridge.browserClearProfileData(profile.id, "all")),
+                      )
+                        .then(refresh)
+                        .catch((cause) => setError(messageOf(cause)))
                     }
-                    onBlur={(event) =>
-                      void update({ advancedBrowserMode: { customUserAgentValue: event.target.value } })
-                    }
-                    placeholder="Mozilla/5.0 … Chrome/142.0.0.0 …"
-                  />
-                </Field>
-                <Field label={t("browserClientHintsPlatform", "Client Hints platform")}>
-                  <input
-                    style={inputStyle}
-                    value={settings.advancedBrowserMode.customUserAgentPlatform}
-                    onChange={(event) =>
-                      setState(withAdvancedMode(state, { customUserAgentPlatform: event.target.value }))
-                    }
-                    onBlur={(event) =>
-                      void update({ advancedBrowserMode: { customUserAgentPlatform: event.target.value } })
-                    }
-                    placeholder="macOS, Windows, Linux…"
-                  />
-                </Field>
-                <Field label={t("browserChromiumFullVersion", "Chromium full version")}>
-                  <input
-                    style={inputStyle}
-                    value={settings.advancedBrowserMode.customUserAgentFullVersion}
-                    onChange={(event) =>
-                      setState(withAdvancedMode(state, { customUserAgentFullVersion: event.target.value }))
-                    }
-                    onBlur={(event) =>
-                      void update({ advancedBrowserMode: { customUserAgentFullVersion: event.target.value } })
-                    }
-                    placeholder="142.0.0.0"
-                  />
-                </Field>
-              </>
-            )}
-            <Field label={t("browserCertificateDomains", "Certificate bypass domains (comma separated)")}>
-              <input
-                style={inputStyle}
-                value={settings.advancedBrowserMode.certificateBypassDomains.join(", ")}
-                onChange={(event) =>
-                  setState(
-                    withAdvancedMode(state, {
-                      certificateBypassDomains: event.target.value.split(",").map((value) => value.trim()),
-                    }),
-                  )
-                }
-                onBlur={(event) =>
-                  void update({
-                    advancedBrowserMode: {
-                      certificateBypassDomains: event.target.value
-                        .split(",")
-                        .map((value) => value.trim())
-                        .filter(Boolean),
-                    },
-                  })
-                }
-              />
-            </Field>
-            <NumberField
-              label={t("browserNetworkRequestCapacity", "Captured requests per tab")}
-              value={settings.advancedBrowserMode.maxRequestsPerTab}
-              min={50}
-              max={5000}
-              onCommit={(maxRequestsPerTab) => void update({ advancedBrowserMode: { maxRequestsPerTab } })}
-            />
-            <NumberField
-              label={t("browserNetworkBodyCapacity", "Captured body capacity per tab (MiB)")}
-              value={Math.round(settings.advancedBrowserMode.maxBodyBytesPerTab / (1024 * 1024))}
-              min={1}
-              max={256}
-              onCommit={(value) => void update({ advancedBrowserMode: { maxBodyBytesPerTab: value * 1024 * 1024 } })}
-            />
-            <NumberField
-              label={t("browserSnippetCapacity", "JavaScript experiences per host")}
-              value={settings.advancedBrowserMode.maxPerHost}
-              min={5}
-              max={200}
-              onCommit={(maxPerHost) => void update({ advancedBrowserMode: { maxPerHost } })}
-            />
-          </Section>
-
-          <HeaderRulesSection
-            profiles={state.profiles.filter(
-              (profile) => profile.mode !== "unsafe" || runtime.advancedBrowserModeEnabled,
-            )}
-            disabled={advancedDisabled}
-            requestEnabled={runtime.advancedBrowserModeEnabled}
-            responseEnabled={runtime.advancedBrowserModeEnabled}
-            setError={setError}
-          />
-
-          <SnippetSection snippets={snippets} refresh={refresh} setError={setError} />
-
-          <ProfileSection
-            profiles={state.profiles}
-            advancedModeEnabled={runtime.advancedBrowserModeEnabled}
-            saveLoginState={settings.panel.saveLoginState}
-            refresh={refresh}
-            setError={setError}
-          />
-
-          <Section title={t("browserDiagnosticsReset", "Diagnostics and reset")}>
-            <div style={{ ...gridStyle, fontSize: 12, color: "var(--text-muted)" }}>
-              <span>Electron {state.diagnostics.electronVersion}</span>
-              <span>Chromium {state.diagnostics.chromiumVersion}</span>
-              <span>
-                {formatMessage(t("browserTabsCount", "{count} tabs"), { count: state.diagnostics.activeTabCount })}
-              </span>
-              <span>
-                {formatMessage(t("browserCdpConnections", "{count} CDP connections"), {
-                  count: state.diagnostics.attachedDebuggerCount,
-                })}
-              </span>
-              <span>
-                {formatMessage(t("browserCrashedTabs", "{count} crashed tabs"), {
-                  count: state.diagnostics.crashedTabCount,
-                })}
-              </span>
-              <span>
-                {formatMessage(t("browserAdvancedTabs", "{count} advanced tabs"), {
-                  count: state.diagnostics.advancedTabCount,
-                })}
-              </span>
-              <span>
-                {formatMessage(t("browserCapturedRequests", "{count} captured requests"), {
-                  count: state.diagnostics.capturedRequestCount,
-                })}
-              </span>
-              <span>
-                {formatMessage(t("browserJavascriptExperiences", "{count} JavaScript experiences"), {
-                  count: state.diagnostics.snippetCount,
-                })}
-              </span>
-              <span>
-                {formatMessage(t("browserRendererProcesses", "{count} renderer processes"), {
-                  count: state.diagnostics.rendererProcessCount,
-                })}
-              </span>
-              <span>
-                {formatMessage(t("browserRendererWorkingSet", "Renderer working set {size}"), {
-                  size: formatBytes(state.diagnostics.rendererWorkingSetBytes),
-                })}
-              </span>
+                  >
+                    {t("browserClearAllData", "Clear all browser data")}
+                  </button>
+                  <button style={buttonStyle} onClick={() => void window.piBridge.exportDiagnostics()}>
+                    {t("browserExportDiagnostics", "Export redacted diagnostics")}
+                  </button>
+                  <button style={buttonStyle} onClick={() => void window.piBridge.browserCloseAllTabs().then(refresh)}>
+                    {t("browserCloseAllTabs", "Close all tabs")}
+                  </button>
+                  <button
+                    style={{ ...buttonStyle, color: "#c43" }}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          t("browserResetConfirm", "Reset Browser settings and revoke all Browser capabilities?"),
+                        )
+                      ) {
+                        void window.piBridge
+                          .browserReset()
+                          .then(setState)
+                          .catch((cause) => setError(messageOf(cause)));
+                      }
+                    }}
+                  >
+                    {t("browserReset", "Reset Browser")}
+                  </button>
+                </div>
+              </Section>
             </div>
-            <div style={noticeStyle}>
-              {state.diagnostics.profilePartitions
-                .map((profile) => `${profileModeLabel(t, profile.mode)}: ${profile.partition}`)
-                .join(" · ")}
-            </div>
-            <div style={noticeStyle}>
-              {t(
-                "browserWorkflowGuardScope",
-                "Workflow guard blocks obvious Browser route bypasses; it is not an OS network sandbox.",
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                style={buttonStyle}
-                onClick={() =>
-                  void Promise.all(
-                    state.profiles.map((profile) => window.piBridge.browserClearProfileData(profile.id, "all")),
-                  )
-                    .then(refresh)
-                    .catch((cause) => setError(messageOf(cause)))
-                }
-              >
-                {t("browserClearAllData", "Clear all browser data")}
-              </button>
-              <button style={buttonStyle} onClick={() => void window.piBridge.exportDiagnostics()}>
-                {t("browserExportDiagnostics", "Export redacted diagnostics")}
-              </button>
-              <button style={buttonStyle} onClick={() => void window.piBridge.browserCloseAllTabs().then(refresh)}>
-                {t("browserCloseAllTabs", "Close all tabs")}
-              </button>
-              <button
-                style={{ ...buttonStyle, color: "#c43" }}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      t("browserResetConfirm", "Reset Browser settings and revoke all Browser capabilities?"),
-                    )
-                  ) {
-                    void window.piBridge
-                      .browserReset()
-                      .then(setState)
-                      .catch((cause) => setError(messageOf(cause)));
-                  }
-                }}
-              >
-                {t("browserReset", "Reset Browser")}
-              </button>
-            </div>
-          </Section>
+          </details>
         </div>
       </div>
       {prompt && <TextPromptDialog prompt={prompt} cancelLabel={t("cancel", "Cancel")} onRespond={respondToPrompt} />}
@@ -1429,33 +1383,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onCommit: (value: number) => void;
-}) {
-  return (
-    <Field label={label}>
-      <input
-        style={inputStyle}
-        type="number"
-        min={min}
-        max={max}
-        defaultValue={value}
-        onBlur={(event) => onCommit(Number(event.target.value))}
-      />
-    </Field>
-  );
-}
-
 function withNavigation(
   state: BrowserRendererState,
   patch: Partial<BrowserRendererState["settings"]["settings"]["navigation"]>,
@@ -1503,6 +1430,17 @@ function formatBytes(value: number): string {
   if (value < 1_024 * 1_024) return `${Math.round(value / 1_024)} KiB`;
   return `${(value / (1_024 * 1_024)).toFixed(1)} MiB`;
 }
+
+const disclosureStyle = {
+  cursor: "pointer",
+  color: "var(--text)",
+  fontSize: 13,
+  fontWeight: 650,
+  padding: "12px 16px",
+  border: "1px solid var(--border)",
+  borderRadius: 9,
+  background: "var(--bg-panel)",
+};
 
 const emptyStyle = { margin: "auto", color: "var(--text-muted)", fontSize: 12 };
 const inputStyle = {

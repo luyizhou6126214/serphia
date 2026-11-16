@@ -79,7 +79,6 @@ let service: BrowserService | null = null;
 let proxyAuthenticatedRequests = 0;
 let sensitiveApprovalRequests = 0;
 let externalProtocolRequests = 0;
-let privateNetworkApprovals = 0;
 let permissionRequests = 0;
 let permissionResolutions = 0;
 let allowSensitiveApproval = true;
@@ -502,10 +501,6 @@ async function run(): Promise<void> {
       externalProtocolRequests += 1;
       return false;
     },
-    confirmPrivateNetwork: async () => {
-      privateNetworkApprovals += 1;
-      return true;
-    },
     chooseSavePath: async (filename) => path.join(downloads, filename),
     chooseUploadPaths: async () => [uploadFile],
     secretCodec: fixtureSecretCodec,
@@ -529,16 +524,11 @@ async function run(): Promise<void> {
 
   stage("process-preview-and-element-picker");
   const process = { processId: "dev-server", runId: "first-run", ownerSessionId: "preview-session" };
-  await assert.rejects(
-    service.createUserTab({ url: fixture.origin, activate: false }),
-    hasBrowserCode("NAVIGATION_BLOCKED"),
-  );
   const preview = await service.openProcessPreview(process, `${fixture.origin}/?token=keep-out-of-chat`, true);
   assert.ok(preview?.processPreview);
   assert.equal(preview.title, "Browser Fixture");
   assert.equal(preview.ownerSessionId, process.ownerSessionId);
   assert.equal((await service.openProcessPreview(process, fixture.origin, true))?.id, preview.id);
-  assert.equal(privateNetworkApprovals, 0, "a preview should only authorize its own tab and origin");
   await assert.rejects(service.navigateUser(preview.id, fixture.corsOrigin), hasBrowserCode("NAVIGATION_BLOCKED"));
   service.setBounds({ tabId: preview.id, rect: { x: 0, y: 0, width: 800, height: 600 } });
   service.setSurfaceVisible({ tabId: preview.id, visible: true });
@@ -597,31 +587,46 @@ async function run(): Promise<void> {
   service.closeTab(manualPreview.id);
   service.updateSettings({ panel: { openOnAgentUse: true } });
 
-  service.updateSettings({ navigation: { allowHttp: true } });
-  const locallyApprovedTab = await service.createUserTab({ url: fixture.origin, activate: false });
-  service.closeTab(locallyApprovedTab.id);
-  assert.doesNotThrow(() => service!.setSurfaceVisible({ tabId: locallyApprovedTab.id, visible: true }));
-  assert.doesNotThrow(() =>
-    service!.setBounds({ tabId: locallyApprovedTab.id, rect: { x: 0, y: 0, width: 800, height: 600 } }),
-  );
-  const reusedPrivateApprovalTab = await service.createUserTab({ url: fixture.origin, activate: false });
-  service.closeTab(reusedPrivateApprovalTab.id);
-  assert.equal(privateNetworkApprovals, 1, "private-network approval should be remembered for this launch");
+  stage("manual-private-navigation");
+  const manualTab = await service.createUserTab({ ownerSessionId: "fixture-session", activate: false });
+  await service.navigateUser(manualTab.id, new URL(fixture.origin).host);
+  const manualContents = nativeViewFor(manualTab.id).webContents;
+  assert.equal(manualContents.getTitle(), "Browser Fixture");
+  assert.equal(await manualContents.executeJavaScript("fetch('/api/replay?case=manual').then(r => r.ok)"), true);
+  assert.equal(service.getSettings().settings.navigation.allowHttp, false);
+  assert.equal(service.getSettings().settings.navigation.allowPrivateNetwork, false);
+  service.closeTab(manualTab.id);
+  assert.doesNotThrow(() => service!.setSurfaceVisible({ tabId: manualTab.id, visible: true }));
+  assert.doesNotThrow(() => service!.setBounds({ tabId: manualTab.id, rect: { x: 0, y: 0, width: 800, height: 600 } }));
+  const secondManualTab = await service.createUserTab({ url: fixture.origin, activate: false });
+  assert.equal(secondManualTab.title, "Browser Fixture");
+  service.closeTab(secondManualTab.id);
   service.updateSettings({ automation: { enabled: true } });
   service.grantSession({ sessionId: "fixture-session", permission: "read", source: "local" });
-  const privateCaps = (await service.handleHostRequest("browser.capabilities", {
-    sessionId: "fixture-session",
-  })) as { snapshot: { revision: number }; lease: { id: string } };
-  await assert.rejects(
-    service.handleHostRequest("browser.open", {
-      url: fixture.origin,
+  for (const [allowHttp, code] of [
+    [false, "NAVIGATION_BLOCKED"],
+    [true, "PRIVATE_NETWORK_BLOCKED"],
+  ] as const) {
+    if (allowHttp) service.updateSettings({ navigation: { allowHttp } });
+    const privateCaps = (await service.handleHostRequest("browser.capabilities", {
       sessionId: "fixture-session",
-      capabilityLeaseId: privateCaps.lease.id,
-      policyRevision: privateCaps.snapshot.revision,
-      requestId: "private-network-agent-denied",
-    }),
-    hasBrowserCode("PRIVATE_NETWORK_BLOCKED"),
-  );
+    })) as { snapshot: { revision: number }; lease: { id: string } };
+    await assert.rejects(
+      service.handleHostRequest("browser.open", {
+        url: fixture.origin,
+        sessionId: "fixture-session",
+        capabilityLeaseId: privateCaps.lease.id,
+        policyRevision: privateCaps.snapshot.revision,
+        requestId: `private-network-agent-denied-${allowHttp}`,
+      }),
+      hasBrowserCode(code),
+    );
+  }
+
+  // The global HTTP policy is open now, and a different tab must still block the private origin.
+  const unrelatedTab = await service.createUserTab({ activate: false });
+  await assert.rejects(nativeViewFor(unrelatedTab.id).webContents.loadURL(fixture.origin), /ERR_BLOCKED_BY_CLIENT/);
+  service.closeTab(unrelatedTab.id);
 
   service.updateSettings({
     navigation: { allowHttp: true, allowPrivateNetwork: true },
@@ -1748,7 +1753,6 @@ async function run(): Promise<void> {
     confirm: async () => true,
     confirmSensitiveAction: async () => true,
     confirmExternalProtocol: async () => false,
-    confirmPrivateNetwork: async () => true,
     chooseSavePath: async (filename) => path.join(downloads, filename),
     chooseUploadPaths: async () => [uploadFile],
     secretCodec: fixtureSecretCodec,

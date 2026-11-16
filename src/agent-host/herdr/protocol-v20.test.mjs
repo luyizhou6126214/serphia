@@ -23,6 +23,7 @@ test("protocol 20 pins the reviewed semantic allowlist and official schema finge
     "tab.create",
     "tab.focus",
     "tab.rename",
+    "tab.close",
     "pane.split",
     "pane.read",
     "pane.process_info",

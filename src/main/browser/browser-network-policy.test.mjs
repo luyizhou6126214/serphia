@@ -125,6 +125,51 @@ test("URL policy blocks unsafe protocols, credentials, HTTP, literal private tar
   assert.deepEqual(allowed.resolvedAddresses, ["203.0.113.8"]);
 });
 
+test("manual navigation can let Chromium resolve a name through the proxy", async () => {
+  const settings = createDefaultBrowserSettings().navigation;
+  const policy = new BrowserNetworkPolicy({
+    resolveHost: async () => {
+      throw new Error("hostname is only available through the proxy");
+    },
+  });
+  const url = "https://proxy-only.example/";
+  assert.equal((await policy.check(url, { settings, deferDnsToBrowser: true })).url, url);
+  await assert.rejects(policy.check(url, { settings }), (error) => error.code === "NAVIGATION_BLOCKED");
+});
+
+test("manual browsing accepts virtual DNS without PTR only when the route requires a proxy", async () => {
+  const settings = createDefaultBrowserSettings().navigation;
+  const url = "https://cdn.example.com/";
+  const virtualAddress = "198.18.0.55";
+  const addresses = [{ address: virtualAddress }];
+  let route = "PROXY 127.0.0.1:7890";
+  const policy = new BrowserNetworkPolicy({
+    resolveHost: async () => addresses,
+    getDnsServers: () => ["127.0.0.1"],
+    resolveProxy: async () => route,
+    reverseHost: async () => [],
+  });
+  assert.deepEqual((await policy.check(url, { settings, allowProxyVirtualDns: true })).virtualDnsAddresses, [
+    virtualAddress,
+  ]);
+  await assert.rejects(policy.check(url, { settings }), (error) => error.code === "PRIVATE_NETWORK_BLOCKED");
+  await assert.rejects(
+    policy.check("https://198.18.0.55/", { settings, allowProxyVirtualDns: true }),
+    (error) => error.code === "PRIVATE_NETWORK_BLOCKED",
+  );
+  addresses.push({ address: "127.0.0.1" });
+  await assert.rejects(
+    policy.check(url, { settings, allowProxyVirtualDns: true }),
+    (error) => error.code === "PRIVATE_NETWORK_BLOCKED",
+  );
+  addresses.pop();
+  route += "; DIRECT";
+  await assert.rejects(
+    policy.check(url, { settings, allowProxyVirtualDns: true }),
+    (error) => error.code === "PRIVATE_NETWORK_BLOCKED",
+  );
+});
+
 test("explicit local approval is scoped to a request and strict mode fails without an enforcing sandbox", async () => {
   const settings = createDefaultBrowserSettings().navigation;
   const policy = new BrowserNetworkPolicy({ resolveHost: async () => [{ address: "127.0.0.1" }] });

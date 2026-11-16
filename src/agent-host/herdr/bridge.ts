@@ -643,14 +643,7 @@ export class HerdrBridge {
 
   async closeWorkspace(workspaceId: string): Promise<{ workspaceId: string; closed: true }> {
     const workspace = this.requireWorkspace(workspaceId);
-    const result = await this.requireReady().request<JsonRecord>({
-      method: HERDR_V20_METHODS.workspaceClose,
-      params: { workspace_id: workspace.id },
-    });
-    if (result.type !== "ok") {
-      throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr workspace close response is invalid.");
-    }
-    await this.refreshSnapshot();
+    await this.closeTarget("workspace", workspace.id);
     return { workspaceId: workspace.id, closed: true };
   }
 
@@ -738,6 +731,12 @@ export class HerdrBridge {
     const responseName = stringField(result.tab, "label", 256);
     await this.refreshSnapshot();
     return { workspaceId: tab.workspaceId, tabId: tab.id, name: responseName };
+  }
+
+  async closeTab(tabId: string): Promise<{ workspaceId: string; tabId: string; closed: true }> {
+    const tab = this.requireTab(tabId);
+    await this.closeTarget("tab", tab.id);
+    return { workspaceId: tab.workspaceId, tabId: tab.id, closed: true };
   }
 
   async splitPane(paneId: string, direction: "horizontal" | "vertical", cwd?: string): Promise<{ paneId: string }> {
@@ -951,14 +950,7 @@ export class HerdrBridge {
 
   async closePane(paneId: string): Promise<{ paneId: string; workspaceId: string; tabId: string; closed: true }> {
     const pane = this.requirePane(paneId);
-    const result = await this.requireReady().request<JsonRecord>({
-      method: HERDR_V20_METHODS.paneClose,
-      params: { pane_id: pane.id },
-    });
-    if (result.type !== "ok") {
-      throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr pane close response is invalid.");
-    }
-    await this.refreshSnapshot();
+    await this.closeTarget("pane", pane.id);
     return { paneId: pane.id, workspaceId: pane.workspaceId, tabId: pane.tabId, closed: true };
   }
 
@@ -1137,20 +1129,12 @@ export class HerdrBridge {
   }> {
     const pane = this.requirePane(paneId);
     if (!pane.agent) throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "No Agent is detected in this pane.");
-    const agentKind = pane.agent.kind;
-    const result = await this.requireReady().request<JsonRecord>({
-      method: HERDR_V20_METHODS.paneClose,
-      params: { pane_id: pane.id },
-    });
-    if (result.type !== "ok") {
-      throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr Agent pane close response is invalid.");
-    }
-    await this.refreshSnapshot();
+    await this.closeTarget("pane", pane.id);
     return {
       paneId: pane.id,
       workspaceId: pane.workspaceId,
       tabId: pane.tabId,
-      agentKind,
+      agentKind: pane.agent.kind,
       paneClosed: true,
     };
   }
@@ -1407,6 +1391,19 @@ export class HerdrBridge {
       throw new HerdrBridgeError("HERDR_ENDPOINT_UNAVAILABLE", "Herdr is not connected.", true);
     }
     return this.client;
+  }
+
+  private async closeTarget(kind: "workspace" | "tab" | "pane", id: string): Promise<void> {
+    const method = {
+      workspace: HERDR_V20_METHODS.workspaceClose,
+      tab: HERDR_V20_METHODS.tabClose,
+      pane: HERDR_V20_METHODS.paneClose,
+    }[kind];
+    const result = await this.requireReady().request<JsonRecord>({ method, params: { [`${kind}_id`]: id } });
+    if (result.type !== "ok") {
+      throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", `Herdr ${kind} close response is invalid.`);
+    }
+    await this.refreshSnapshot();
   }
 
   private async assertCwdAllowed(cwd: string): Promise<void> {

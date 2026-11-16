@@ -186,7 +186,7 @@ export function SettingsConfig({
       icon: GlobalOutlined,
       description: t(
         "browserSettingsDescription",
-        "Websites run in Main-owned, sandboxed Electron WebContentsView instances. Agent access is a separate, default-off permission.",
+        "Set your homepage and startup behavior, and choose whether Agents can use the browser.",
       ),
     },
     {

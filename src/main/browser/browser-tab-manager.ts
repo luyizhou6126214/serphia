@@ -113,6 +113,7 @@ type TabRecord = {
   activeClickCapture?: { observation?: ClickNavigationObservation };
   pendingFileUpload?: { snapshotId: string; ref: string; generation: number };
   previewOrigin?: string;
+  manualNetworkOrigins?: Set<string>;
   elementPick?: { id: string; controller: AbortController };
 };
 
@@ -130,8 +131,6 @@ export interface BrowserTabManagerOptions {
   emit: (event: BrowserEvent) => void;
   confirmSensitiveAction?: (description: string) => Promise<boolean>;
   openExternal?: (url: string) => Promise<void>;
-  confirmPrivateNetwork?: (url: string) => Promise<boolean>;
-  approvePrivateOrigin?: (profileId: string, origin: string) => void;
   createView?: (
     profile: BrowserProfileInfo,
     session: Session,
@@ -149,7 +148,6 @@ export class BrowserTabManager {
   private surfaceVisible = false;
   private surfaceRequestedVisible = false;
   private windowVisible = true;
-  private readonly locallyApprovedPrivateOrigins = new Set<string>();
   private readonly cdp = new BrowserCdpCoordinator();
   private readonly identity = new BrowserIdentityManager(this.cdp);
   private readonly inspections = new BrowserInspectionStore();
@@ -189,6 +187,7 @@ export class BrowserTabManager {
         visible: boolean;
         sessionId?: string;
         previewOrigin?: string;
+        manualNetworkOrigins?: ReadonlySet<string>;
       }
     | undefined {
     for (const record of this.tabs.values()) {
@@ -198,6 +197,7 @@ export class BrowserTabManager {
         tabId: record.info.id,
         visible: record.info.visible,
         previewOrigin: record.previewOrigin,
+        manualNetworkOrigins: record.info.control === "user" ? record.manualNetworkOrigins : undefined,
         ...(record.info.ownerSessionId ? { sessionId: record.info.ownerSessionId } : {}),
       };
     }
@@ -234,9 +234,9 @@ export class BrowserTabManager {
 
   async create(
     input: BrowserCreateTabInput = {},
-    navigationOptions?: Electron.LoadURLOptions,
-    previewOrigin?: string,
+    options: { load?: Electron.LoadURLOptions; previewOrigin?: string; userInitiated?: boolean } = {},
   ): Promise<BrowserTabInfo> {
+    const { previewOrigin } = options;
     this.assertAvailable();
     const settings = this.options.getSettings();
     if (!settings.enabled) throw new BrowserError("BROWSER_DISABLED", "Built-in Browser is disabled");
@@ -323,8 +323,8 @@ export class BrowserTabManager {
       if (input.activate !== false) this.activate(id);
       const url = input.url ?? settings.navigation.homepage;
       if (url !== "about:blank") {
-        const sessionId = previewOrigin ? undefined : (input.ownerSessionId ?? undefined);
-        await this.navigate(id, url, sessionId, !sessionId, navigationOptions);
+        const sessionId = previewOrigin || options.userInitiated ? undefined : (input.ownerSessionId ?? undefined);
+        await this.navigate(id, url, sessionId, options.userInitiated, options.load);
       }
       return structuredClone(record.info);
     } catch (error) {
@@ -426,32 +426,24 @@ export class BrowserTabManager {
     navigationOptions?: Electron.LoadURLOptions,
   ): Promise<BrowserTabInfo> {
     const record = this.requireOwnedTab(tabId, sessionId);
-    const url = normalizeAddress(rawUrl);
+    const manualNavigation = userInitiated && !record.previewOrigin;
+    const url = normalizeAddress(rawUrl, manualNavigation);
     const isPreview = previewRequestUrl(url, record.previewOrigin) !== null;
     const policy = this.getNetworkPolicy(record);
     const checked = await policy.check(url, {
       settings: this.options.getSettings().navigation,
       allowAboutBlank: true,
-      userApprovedPrivateNetwork: userInitiated || isPreview,
-      userApprovedHttp: isPreview,
+      userApprovedPrivateNetwork: manualNavigation || isPreview,
+      userApprovedHttp: manualNavigation || isPreview,
+      deferDnsToBrowser: manualNavigation,
     });
-    if (checked.privateNetwork && !isPreview && !this.options.getSettings().navigation.allowPrivateNetwork) {
-      if (!userInitiated) {
-        throw new BrowserError("PRIVATE_NETWORK_BLOCKED", "Agent navigation to a private network target is blocked");
-      }
-      const origin = new URL(checked.url).origin;
-      const approvalKey = `${record.info.profileId}\0${origin}`;
-      if (!this.locallyApprovedPrivateOrigins.has(approvalKey)) {
-        const approved = await (this.options.confirmPrivateNetwork?.(checked.url) ?? Promise.resolve(false));
-        if (!approved) throw new BrowserError("PRIVATE_NETWORK_BLOCKED", "Private network navigation was not approved");
-        this.locallyApprovedPrivateOrigins.add(approvalKey);
-      }
-      this.options.approvePrivateOrigin?.(record.info.profileId, origin);
-    }
     await record.advancedReady;
     record.networkRecorder?.armBodyCapture();
     try {
       await this.runAction(record, sessionId, "read", async (signal) => {
+        if (manualNavigation && checked.protocol !== "about:") {
+          (record.manualNetworkOrigins ??= new Set()).add(new URL(checked.url).origin);
+        }
         await withTimeout(
           record.view.webContents.loadURL(checked.url, navigationOptions),
           this.options.getSettings().navigation.navigationTimeoutMs,
@@ -1465,7 +1457,7 @@ export class BrowserTabManager {
           url: details.url,
           activate: details.disposition !== "background-tab",
         },
-        popupLoadOptions(details),
+        { load: popupLoadOptions(details) },
       );
       const record = this.tabs.get(tab.id);
       const failure = record?.lastLoadFailure ? structuredClone(record.lastLoadFailure) : undefined;

@@ -31,9 +31,14 @@ export interface BrowserNetworkInterceptorOptions {
   profileId: string;
   getNavigationSettings: () => BrowserNavigationSettings;
   getAdvancedRuntimePolicy: () => BrowserAdvancedRuntimePolicy;
-  getTabForWebContents: (
-    webContentsId: number,
-  ) => { tabId: string; visible: boolean; previewOrigin?: string } | undefined;
+  getTabForWebContents: (webContentsId: number) =>
+    | {
+        tabId: string;
+        visible: boolean;
+        previewOrigin?: string;
+        manualNetworkOrigins?: ReadonlySet<string>;
+      }
+    | undefined;
   getIdentityForWebContents: (webContentsId: number) => BrowserIdentityProfile | undefined;
   resolveSecret: (ref: string) => string | undefined;
   emit: (event: BrowserEvent) => void;
@@ -46,7 +51,6 @@ export class BrowserNetworkInterceptor {
   private requestRules: BrowserHeaderRule[] = [];
   private responseRules: BrowserHeaderRule[] = [];
   private readonly permissionGrants = new BrowserPermissionGrantStore();
-  private readonly locallyApprovedPrivateOrigins = new Set<string>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private disposed = false;
 
@@ -87,12 +91,6 @@ export class BrowserNetworkInterceptor {
     return [...this.pendingPermissions.values()].map((entry) => structuredClone(entry.request));
   }
 
-  approvePrivateOrigin(origin: string): void {
-    const normalized = safeOrigin(origin);
-    if (!normalized) throw new BrowserError("INVALID_BROWSER_REQUEST", "Private network origin is invalid");
-    this.locallyApprovedPrivateOrigins.add(normalized);
-  }
-
   clearAdvancedRules(): void {
     this.requestRules = [];
     this.responseRules = [];
@@ -108,7 +106,6 @@ export class BrowserNetworkInterceptor {
     }
     this.pendingPermissions.clear();
     this.permissionGrants.clear();
-    this.locallyApprovedPrivateOrigins.clear();
     this.options.session.setPermissionCheckHandler(null);
     this.options.session.setPermissionRequestHandler(null);
     this.options.session.webRequest.onBeforeRequest(null);
@@ -155,22 +152,30 @@ export class BrowserNetworkInterceptor {
 
     session.webRequest.onBeforeRequest((details, callback) => {
       if (this.disposed || details.url === "about:blank") return callback({ cancel: false });
-      const previewOrigin =
+      const tab =
         typeof details.webContentsId === "number"
-          ? this.options.getTabForWebContents(details.webContentsId)?.previewOrigin
+          ? this.options.getTabForWebContents(details.webContentsId)
           : undefined;
+      const origin = safeOrigin(details.url);
+      const topOrigin = safeOrigin(details.frame?.top?.url ?? "");
+      const previewOrigin = tab?.previewOrigin;
       const previewUrl =
-        previewOrigin &&
-        (details.resourceType === "mainFrame" || safeOrigin(details.frame?.top?.url ?? "") === previewOrigin)
+        previewOrigin && (details.resourceType === "mainFrame" || topOrigin === previewOrigin)
           ? previewRequestUrl(details.url, previewOrigin)
           : null;
+      // A manually opened origin applies to the tab and its same-origin resources.
+      const manualOrigin =
+        origin !== undefined &&
+        (details.resourceType === "mainFrame" || topOrigin === origin) &&
+        tab?.manualNetworkOrigins?.has(origin) === true;
       void this.policy
         .check(previewUrl ?? details.url, {
           settings: this.options.getNavigationSettings(),
           allowAboutBlank: true,
-          userApprovedHttp: previewUrl !== null,
-          userApprovedPrivateNetwork:
-            previewUrl !== null || this.locallyApprovedPrivateOrigins.has(safeOrigin(details.url) ?? ""),
+          userApprovedHttp: previewUrl !== null || manualOrigin,
+          userApprovedPrivateNetwork: previewUrl !== null || manualOrigin,
+          deferDnsToBrowser: manualOrigin,
+          allowProxyVirtualDns: Boolean(tab?.manualNetworkOrigins?.size),
         })
         .then(() => callback({ cancel: false }))
         .catch((error: unknown) => {

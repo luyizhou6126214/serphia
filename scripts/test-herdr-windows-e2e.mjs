@@ -186,6 +186,49 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.equal(agentOutputVisible, true, "pane.read must expose Agent output for Windows text observation");
+
+    const { HerdrBridge, __test } = await importTestBundle("scripts/herdr-windows-tab-e2e", {
+      packages: "external",
+      absWorkingDir: root,
+      entryPoints: ["src/agent-host/herdr/bridge.ts"],
+    });
+    const bridge = new HerdrBridge({ emit() {} });
+    try {
+      __test.applyRuntimeDescriptor({ ...descriptor, autoConnect: false });
+      const runtime = await bridge.connect();
+      assert.equal(runtime.status, "ready", runtime.error?.code);
+      const workspaceId = created.workspace.workspace_id;
+      const tab = await bridge.createTab(workspaceId, directory, "Close test");
+      const removedPane = await bridge.splitPane(tab.rootPaneId, "horizontal");
+      const siblingPane = await bridge.splitPane(tab.rootPaneId, "vertical");
+      await bridge.focusTab(tab.tabId);
+      await bridge.focusPane(removedPane.paneId);
+      assert.equal((await bridge.refreshSnapshot()).focusedPaneId, removedPane.paneId);
+
+      await bridge.closePane(removedPane.paneId);
+      const afterPaneClose = await bridge.refreshSnapshot();
+      assert.equal(
+        afterPaneClose.panes.some(({ id }) => id === removedPane.paneId),
+        false,
+      );
+      assert.equal(
+        afterPaneClose.panes.some(({ id }) => id === siblingPane.paneId),
+        true,
+      );
+
+      await bridge.closeTab(tab.tabId);
+      const afterTabClose = await bridge.refreshSnapshot();
+      assert.equal(
+        afterTabClose.workspaces[0].tabs.some(({ id }) => id === tab.tabId),
+        false,
+      );
+      assert.deepEqual(
+        afterTabClose.panes.map(({ id }) => id),
+        [created.root_pane.pane_id],
+      );
+    } finally {
+      await bridge.shutdown();
+    }
   } finally {
     const closed = await client.request({
       method: "workspace.close",

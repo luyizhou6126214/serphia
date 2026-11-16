@@ -20,6 +20,7 @@ export interface BrowserResolvedEndpoint {
 
 export interface BrowserUrlPolicyOptions {
   resolveHost?: (hostname: string) => Promise<BrowserResolvedEndpoint[]>;
+  resolveProxy?: (url: string) => Promise<string>;
   reverseHost?: (address: string) => Promise<string[]>;
   getDnsServers?: () => string[];
   strictNetworkAvailable?: boolean;
@@ -30,6 +31,8 @@ export interface BrowserUrlCheckInput {
   settings: BrowserNavigationSettings;
   userApprovedPrivateNetwork?: boolean;
   userApprovedHttp?: boolean;
+  deferDnsToBrowser?: boolean;
+  allowProxyVirtualDns?: boolean;
   allowAboutBlank?: boolean;
 }
 
@@ -45,6 +48,7 @@ export interface BrowserUrlCheckResult {
 
 export class BrowserNetworkPolicy {
   private readonly resolveHost?: BrowserUrlPolicyOptions["resolveHost"];
+  private readonly resolveProxy?: BrowserUrlPolicyOptions["resolveProxy"];
   private readonly reverseHost?: BrowserUrlPolicyOptions["reverseHost"];
   private readonly getDnsServers?: BrowserUrlPolicyOptions["getDnsServers"];
   private readonly strictNetworkAvailable: boolean;
@@ -54,6 +58,7 @@ export class BrowserNetworkPolicy {
 
   constructor(options: BrowserUrlPolicyOptions = {}) {
     this.resolveHost = options.resolveHost;
+    this.resolveProxy = options.resolveProxy;
     this.reverseHost = options.reverseHost;
     this.getDnsServers = options.getDnsServers;
     this.strictNetworkAvailable = options.strictNetworkAvailable ?? false;
@@ -101,11 +106,19 @@ export class BrowserNetworkPolicy {
     }
 
     const hostname = normalizeHostname(url.hostname);
+    const literalIp = net.isIP(hostname) !== 0;
     const literalPrivate = isPrivateHostname(hostname) || isPrivateIpAddress(hostname);
-    const resolvedAddresses = net.isIP(hostname) ? [hostname] : await this.resolve(hostname);
-    const virtualDnsAddresses = net.isIP(hostname)
+    // For an address chosen by the user, Chromium can resolve through its configured proxy.
+    const bestEffort = input.settings.networkIsolation === "best-effort";
+    const deferDns = bestEffort && input.deferDnsToBrowser;
+    const resolvedAddresses = literalIp ? [hostname] : deferDns ? [] : await this.resolve(hostname);
+    const virtualDnsAddresses = literalIp
       ? []
-      : await this.confirmVirtualDnsAddresses(hostname, resolvedAddresses);
+      : await this.confirmVirtualDnsAddresses(
+          url,
+          resolvedAddresses,
+          bestEffort && !literalPrivate && input.allowProxyVirtualDns === true,
+        );
     const virtualDnsSet = new Set(virtualDnsAddresses);
     const resolvedPrivate = resolvedAddresses.some(
       (address) => isPrivateIpAddress(address) && !virtualDnsSet.has(address),
@@ -148,12 +161,13 @@ export class BrowserNetworkPolicy {
     return [...new Set(endpoints.map((endpoint) => normalizeHostname(endpoint.address)))];
   }
 
-  private async confirmVirtualDnsAddresses(hostname: string, addresses: string[]): Promise<string[]> {
-    // Surge/Clash-style virtual DNS uses 198.18/15 for public hostnames. The
-    // address range alone is never enough to bypass private-network blocking:
-    // require both a resolver in the same virtual range and an exact PTR back
-    // to the requested hostname. Literal 198.18/15 URLs never enter this path.
-    if (!this.reverseHost || !this.getDnsServers || !addresses.some(isBenchmarkingIpAddress)) return [];
+  private async confirmVirtualDnsAddresses(url: URL, addresses: string[], allowProxy: boolean): Promise<string[]> {
+    const candidates = addresses.filter(isBenchmarkingIpAddress);
+    if (candidates.length === 0) return [];
+    // Chromium's proxy can resolve virtual hostnames itself. Node's DNS
+    // settings may differ from Chromium's and do not describe this route.
+    if (allowProxy && (await this.isProxiedWithoutDirectFallback(url.href))) return candidates;
+    if (!this.getDnsServers || !this.reverseHost) return [];
     let dnsServers: string[];
     try {
       dnsServers = this.getDnsServers();
@@ -161,7 +175,7 @@ export class BrowserNetworkPolicy {
       return [];
     }
     if (!dnsServers.some(isBenchmarkingIpAddress)) return [];
-    const candidates = addresses.filter(isBenchmarkingIpAddress);
+    const hostname = normalizeHostname(url.hostname);
     const checks = await Promise.all(
       candidates.map(async (address) => ({
         address,
@@ -169,6 +183,20 @@ export class BrowserNetworkPolicy {
       })),
     );
     return checks.filter(({ confirmed }) => confirmed).map(({ address }) => address);
+  }
+
+  private async isProxiedWithoutDirectFallback(url: string): Promise<boolean> {
+    try {
+      const route = await this.resolveProxy?.(url);
+      const alternatives =
+        route
+          ?.split(";")
+          .map((entry) => entry.trim())
+          .filter(Boolean) ?? [];
+      return alternatives.length > 0 && alternatives.every((entry) => /^(?:PROXY|HTTPS|SOCKS5)\s/i.test(entry));
+    } catch {
+      return false;
+    }
   }
 
   private async confirmVirtualDnsAddress(hostname: string, address: string): Promise<boolean> {
@@ -206,7 +234,7 @@ export class BrowserNetworkPolicy {
 }
 
 export function createSessionNetworkPolicyOptions(
-  browserSession: Pick<Session, "resolveHost">,
+  browserSession: Pick<Session, "resolveHost" | "resolveProxy">,
   options: Pick<BrowserUrlPolicyOptions, "strictNetworkAvailable" | "now"> = {},
 ): BrowserUrlPolicyOptions {
   return {
@@ -215,6 +243,7 @@ export function createSessionNetworkPolicyOptions(
       const result = await browserSession.resolveHost(hostname);
       return result.endpoints.map((endpoint) => ({ address: endpoint.address, family: endpoint.family }));
     },
+    resolveProxy: (url) => browserSession.resolveProxy(url),
     reverseHost: (address) => reverse(address),
     getDnsServers: () => dns.getServers(),
   };

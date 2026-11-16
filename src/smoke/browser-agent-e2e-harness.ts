@@ -185,7 +185,6 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => server.clos
     confirm: async () => true,
     confirmSensitiveAction: async () => true,
     confirmExternalProtocol: async () => false,
-    confirmPrivateNetwork: async () => true,
     confirmRouteBypass: async () => {
       routeBypassRequests += 1;
       return false;

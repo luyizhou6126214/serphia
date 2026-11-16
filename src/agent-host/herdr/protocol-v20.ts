@@ -12,6 +12,7 @@ export const HERDR_V20_METHODS = {
   tabCreate: "tab.create",
   tabFocus: "tab.focus",
   tabRename: "tab.rename",
+  tabClose: "tab.close",
   paneSplit: "pane.split",
   paneRead: "pane.read",
   paneProcessInfo: "pane.process_info",

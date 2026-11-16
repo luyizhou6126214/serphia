@@ -29,6 +29,10 @@ type HerdrHandlers = {
   workspaceCreate: NonNullable<ApiHandler["herdr.workspace.create"]>;
   paneSplit: NonNullable<ApiHandler["herdr.pane.split"]>;
   paneRead: NonNullable<ApiHandler["herdr.pane.read"]>;
+  tabFocus: NonNullable<ApiHandler["herdr.tab.focus"]>;
+  tabClose: NonNullable<ApiHandler["herdr.tab.close"]>;
+  paneFocus: NonNullable<ApiHandler["herdr.pane.focus"]>;
+  paneClose: NonNullable<ApiHandler["herdr.pane.close"]>;
   agentStart: NonNullable<ApiHandler["herdr.agent.start"]>;
   agentPrompt: NonNullable<ApiHandler["herdr.agent.prompt"]>;
   agentSendKeys: NonNullable<ApiHandler["herdr.agent.sendKeys"]>;
@@ -54,6 +58,10 @@ export function createHerdrHandlers(
     | "createWorkspace"
     | "splitPane"
     | "readPane"
+    | "focusTab"
+    | "closeTab"
+    | "focusPane"
+    | "closePane"
     | "startAgent"
     | "promptAgent"
     | "sendAgentKeys"
@@ -161,6 +169,30 @@ export function createHerdrHandlers(
         return herdr.readPane(body.paneId!, body.maxBytes);
       });
     },
+
+    tabFocus: (params) =>
+      herdrCall(() => {
+        const { tabId } = assertHerdrParamKeys(params, ["tabId"]) as { tabId: string };
+        return herdr.focusTab(tabId);
+      }),
+
+    tabClose: (params) =>
+      herdrCall(() => {
+        const { tabId } = assertHerdrParamKeys(params, ["tabId"]) as { tabId: string };
+        return herdr.closeTab(tabId);
+      }),
+
+    paneFocus: (params) =>
+      herdrCall(() => {
+        const { paneId } = assertHerdrParamKeys(params, ["paneId"]) as { paneId: string };
+        return herdr.focusPane(paneId);
+      }),
+
+    paneClose: (params) =>
+      herdrCall(() => {
+        const { paneId } = assertHerdrParamKeys(params, ["paneId"]) as { paneId: string };
+        return herdr.closePane(paneId);
+      }),
 
     agentStart: (params) => {
       return herdrCall(() => {

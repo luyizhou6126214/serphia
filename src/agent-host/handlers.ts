@@ -227,6 +227,10 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     "herdr.pane.split": guard(herdrHandlers.paneSplit),
 
     "herdr.pane.read": guard(herdrHandlers.paneRead),
+    "herdr.tab.focus": guard(herdrHandlers.tabFocus),
+    "herdr.tab.close": guard(herdrHandlers.tabClose),
+    "herdr.pane.focus": guard(herdrHandlers.paneFocus),
+    "herdr.pane.close": guard(herdrHandlers.paneClose),
 
     "herdr.agent.start": guard(herdrHandlers.agentStart),
 

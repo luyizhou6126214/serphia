@@ -68,7 +68,6 @@ export interface BrowserServiceOptions {
   confirmSensitiveAction?: (description: string) => Promise<boolean>;
   confirmRouteBypass?: (origin: string, ruleId: string) => Promise<boolean>;
   confirmExternalProtocol?: (url: string) => Promise<boolean>;
-  confirmPrivateNetwork?: (url: string) => Promise<boolean>;
   chooseSavePath?: (filename: string) => Promise<string | null>;
   chooseUploadPaths?: () => Promise<string[]>;
   secretCodec?: BrowserSecretCodec;
@@ -167,9 +166,6 @@ export class BrowserService {
       confirmSensitiveAction: (description) =>
         options.confirmSensitiveAction?.(description) ?? this.defaultSensitiveActionConfirmation(description),
       openExternal: (url) => this.openExternalWithConfirmation(url),
-      confirmPrivateNetwork: (url) =>
-        options.confirmPrivateNetwork?.(url) ?? this.defaultPrivateNetworkConfirmation(url),
-      approvePrivateOrigin: (profileId, origin) => this.interceptors.get(profileId)?.approvePrivateOrigin(origin),
     });
     this.policy.subscribe((snapshot) => {
       options.onCapabilitySnapshot?.(snapshot);
@@ -270,7 +266,7 @@ export class BrowserService {
   }
 
   createUserTab(input: BrowserCreateTabInput): Promise<BrowserTabInfo> {
-    return this.tabs.create(input);
+    return this.tabs.create(input, { userInitiated: true });
   }
 
   async openProcessPreview(
@@ -298,8 +294,7 @@ export class BrowserService {
       }
       const tab = await this.tabs.create(
         { url, ownerSessionId, profileId: DEFAULT_BROWSER_PROFILE_ID, activate: false },
-        undefined,
-        origin,
+        { previewOrigin: origin },
       );
       if (existing && this.tabs.list(ownerSessionId).some((candidate) => candidate.id === existing.id)) {
         this.tabs.close(existing.id);
@@ -596,12 +591,15 @@ export class BrowserService {
     for (const record of this.restoreStore.read().sort((left, right) => left.order - right.order)) {
       if (!profileIds.has(record.profileId)) continue;
       try {
-        await this.tabs.create({
-          profileId: record.profileId,
-          url: record.url,
-          ownerSessionId: record.ownerSessionId,
-          activate: false,
-        });
+        await this.tabs.create(
+          {
+            profileId: record.profileId,
+            url: record.url,
+            ownerSessionId: record.ownerSessionId,
+            activate: false,
+          },
+          { userInitiated: record.ownerSessionId === null },
+        );
       } catch {
         // One unavailable URL/Profile must not prevent restoring other tabs.
       }
@@ -1351,20 +1349,6 @@ export class BrowserService {
         })
       ).response === 1;
     if (approved) await shell.openExternal(url);
-  }
-
-  private async defaultPrivateNetworkConfirmation(url: string): Promise<boolean> {
-    const result = await dialog.showMessageBox(this.options.getWindow() ?? undefined!, {
-      type: "warning",
-      title: "Open private network website?",
-      message: "This address points to localhost or a private network.",
-      detail: `${new URL(url).origin}\n\nOnly continue if you trust this service. Agent navigation remains blocked unless separately enabled in Browser settings.`,
-      buttons: ["Cancel", "Open for this launch"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    return result.response === 1;
   }
 
   private async defaultChooseSavePath(filename: string): Promise<string | null> {

@@ -1,11 +1,14 @@
 import type { BrowserLoadFailure } from "../../contract/browser.ts";
 import { BrowserError } from "./browser-error.ts";
 
-export function normalizeAddress(value: string): string {
+export function normalizeAddress(value: string, allowLocalShorthand = false): string {
   if (typeof value !== "string") throw new BrowserError("INVALID_BROWSER_REQUEST", "Browser address is invalid");
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 8_192 || /[\0\r\n]/.test(trimmed)) {
     throw new BrowserError("INVALID_BROWSER_REQUEST", "Browser address is invalid");
+  }
+  if (allowLocalShorthand && /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(trimmed)) {
+    return `http://${trimmed}`;
   }
   if (trimmed === "about:blank" || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
   return `https://${trimmed}`;

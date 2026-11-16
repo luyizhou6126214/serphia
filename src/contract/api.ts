@@ -229,6 +229,13 @@ export interface Api {
     params: { paneId: string; maxBytes?: number };
     result: { text: string; truncated: boolean };
   };
+  "herdr.tab.focus": { params: { tabId: string }; result: { workspaceId: string; tabId: string } };
+  "herdr.tab.close": { params: { tabId: string }; result: { workspaceId: string; tabId: string; closed: true } };
+  "herdr.pane.focus": { params: { paneId: string }; result: { paneId: string; workspaceId: string; tabId: string } };
+  "herdr.pane.close": {
+    params: { paneId: string };
+    result: { paneId: string; workspaceId: string; tabId: string; closed: true };
+  };
   "herdr.agent.start": {
     params: { paneId: string; kind: HerdrAgentKind };
     result: { paneId: string; state: HerdrAgentState };
