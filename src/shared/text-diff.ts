@@ -1,3 +1,4 @@
+// Shared by the file viewer and SuperAgent's local directory comparisons.
 export const MAX_DIFF_INPUT_BYTES = 384 * 1024;
 export const MAX_DIFF_LINES_PER_SIDE = 12_000;
 export const MAX_DIFF_COMBINED_LINES = 16_000;

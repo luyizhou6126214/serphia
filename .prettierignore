@@ -4,6 +4,9 @@ dist/
 node_modules/
 out/
 package-lock.json
+# Preserve imported agent skills as shipped.
+.agents/skills/
+.claude/skills/
 # Local planning notes and generated artifacts are not application sources.
 docs/
 output/

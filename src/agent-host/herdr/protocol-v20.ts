@@ -15,6 +15,7 @@ export const HERDR_V20_METHODS = {
   tabClose: "tab.close",
   paneSplit: "pane.split",
   paneRead: "pane.read",
+  paneSendInput: "pane.send_input",
   paneProcessInfo: "pane.process_info",
   paneWaitForOutput: "pane.wait_for_output",
   paneFocus: "pane.focus",
@@ -84,4 +85,22 @@ export function numberField(value: JsonRecord, name: string): number {
     throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", `Herdr field ${name} is invalid.`);
   }
   return Number(field);
+}
+
+export function isId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 256 &&
+    !value.startsWith("-") &&
+    !/[\0\r\n]/.test(value)
+  );
+}
+
+export function idField(value: JsonRecord, name: string): string {
+  const id = stringField(value, name, 256);
+  if (!isId(id)) {
+    throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", `Herdr field ${name} is not a safe identifier.`);
+  }
+  return id;
 }

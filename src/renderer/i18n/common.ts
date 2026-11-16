@@ -1,5 +1,6 @@
 // Translation entries owned by the common domain.
 export const enUS: Record<string, string> = {
+  superAgent: "SuperAgent",
   agentRunning: "Agent is running…",
   fileContextMenuUnavailable: "The file menu could not be opened.",
   browser: "Browser",
@@ -41,6 +42,7 @@ export const enUS: Record<string, string> = {
 };
 
 export const zhCN: Record<string, string> = {
+  superAgent: "SuperAgent",
   agentRunning: "Agent 正在运行…",
   fileContextMenuUnavailable: "无法打开文件菜单。",
   browser: "浏览器",
@@ -82,6 +84,7 @@ export const zhCN: Record<string, string> = {
 };
 
 export const zhTW: Record<string, string> = {
+  superAgent: "SuperAgent",
   agentRunning: "Agent 正在執行…",
   fileContextMenuUnavailable: "無法開啟檔案選單。",
   browser: "瀏覽器",

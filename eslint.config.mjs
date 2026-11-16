@@ -7,6 +7,8 @@ import tseslint from "typescript-eslint";
 const sourceFiles = ["src/**/*.{ts,tsx}"];
 
 export default tseslint.config(
+  // Imported agent skills are maintained outside the application.
+  { ignores: [".agents/skills/**", ".claude/skills/**"] },
   {
     ignores: ["**/.artifacts/**", "**/build/**", "**/dist/**", "**/node_modules/**", "**/out/**"],
     linterOptions: {

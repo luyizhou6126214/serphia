@@ -20,6 +20,8 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const executionRecovery = process.argv.includes("--execution-recovery");
 const codeReview = process.argv.includes("--code-review");
+const superagent = process.argv.includes("--superagent");
+const superagentTasks = process.argv.includes("--superagent-tasks");
 const main = path.join(root, ".artifacts", "smoke", "main.js");
 
 const tsupCli = resolvePackageFile(root, "tsup", "dist/cli-default.js");
@@ -54,6 +56,8 @@ const child = spawn(electronBin, [main], {
     PI_CODING_AGENT_DIR: smokeAgentDir,
     PI_DESKTOP_RUNTIME_PROBE_NODE: process.execPath,
     PI_DESKTOP_CODE_REVIEW_SMOKE: codeReview ? "1" : undefined,
+    PI_DESKTOP_SUPERAGENT_SMOKE: superagent ? "1" : undefined,
+    PI_DESKTOP_SUPERAGENT_TASKS_SMOKE: superagentTasks ? "1" : undefined,
     PI_DESKTOP_EXECUTION_RECOVERY: executionRecovery ? "1" : undefined,
   },
   stdio: "inherit",
@@ -69,7 +73,7 @@ const timer = setTimeout(
   },
   // The MCP presentation matrix covers 12 language/theme/width combinations;
   // hidden-window animation frames on Windows alone can take over 45 seconds.
-  executionRecovery ? 150_000 : 120_000,
+  superagent ? 210_000 : executionRecovery ? 150_000 : 120_000,
 );
 
 child.on("error", (error) => {

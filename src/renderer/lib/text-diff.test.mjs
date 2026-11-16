@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { createBoundedTextDiff, MAX_DIFF_INPUT_BYTES } from "./text-diff.ts";
+import { createBoundedTextDiff, MAX_DIFF_INPUT_BYTES } from "../../shared/text-diff.ts";
 
 test("bounded diff preserves ordinary line edits", () => {
   const result = createBoundedTextDiff("one\ntwo\nthree", "one\nchanged\nthree");

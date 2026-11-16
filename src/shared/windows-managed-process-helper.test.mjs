@@ -8,6 +8,7 @@ import test from "node:test";
 import { clearInterval, setInterval } from "node:timers";
 import {
   resolveWindowsManagedProcessHelper,
+  resolveWindowsManagedProcessHelperWithRetry,
   verifyWindowsManagedProcessHelperReplaceable,
 } from "./windows-managed-process-helper.ts";
 
@@ -79,6 +80,37 @@ test("Windows helper resolution fails closed on manifest drift and byte tamperin
     }),
     { ok: false, errorCode: "HELPER_INTEGRITY" },
   );
+});
+
+test("startup retries a failed probe while preserving hash and version verification", async () => {
+  const { root, directory, manifest } = await fixture();
+  const options = { isPackaged: false, resourcesPath: root, projectRoot: root };
+  const { arch, buildId, protocolVersion, provenance } = manifest;
+  const version = JSON.stringify({ arch, buildId, protocolVersion, provenance });
+  let attempts = 0;
+  const result = await resolveWindowsManagedProcessHelperWithRetry(options, async () => {
+    if (++attempts === 1) throw new Error("timed out");
+    return version;
+  });
+  assert.equal(result.ok, true);
+  assert.equal(attempts, 2);
+
+  attempts = 0;
+  const mismatch = await resolveWindowsManagedProcessHelperWithRetry(options, async () => {
+    attempts++;
+    return JSON.stringify({ ...JSON.parse(version), buildId: "unexpected" });
+  });
+  assert.deepEqual(mismatch, { ok: false, errorCode: "HELPER_INTEGRITY" });
+  assert.equal(attempts, 1);
+
+  attempts = 0;
+  const changed = await resolveWindowsManagedProcessHelperWithRetry(options, async () => {
+    attempts++;
+    await writeFile(path.join(directory, manifest.file), "changed during the failed launch");
+    throw new Error("timed out");
+  });
+  assert.deepEqual(changed, { ok: false, errorCode: "HELPER_INTEGRITY" });
+  assert.equal(attempts, 1);
 });
 
 test("Windows update gate proves the fixed helper can be atomically moved and restored", async () => {

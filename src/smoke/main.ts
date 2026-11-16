@@ -9,6 +9,7 @@ import { createMainWindow } from "../main/window";
 import { runCodeReviewChecks } from "./code-review-checks";
 import { resolveOcrRuntime } from "../main/ocr-runtime";
 import { runSmokeHostChecks } from "./host-checks";
+import { prepareSuperAgentTaskCli } from "./superagent-task-checks";
 import { createCredentialRequestHandler, CredentialVault } from "../main/credential-vault";
 import { createProductionUpdateAdapter } from "../main/update-adapter";
 import { createUpdateManager, type UpdateManager } from "../main/update-manager";
@@ -17,13 +18,17 @@ import { resolveRuntimeCatalogPath } from "../main/toolchains/catalog";
 import { resolveBundledCorePaths } from "../main/toolchains/bundled-core";
 import { isExecutionIntent } from "../shared/toolchains/types";
 import os from "node:os";
+import { DEFAULT_HERDR_SETTINGS } from "../contract/herdr";
+import { discoverHerdrAgentClis, discoverSuperAgentCliPaths } from "../main/herdr/agent-cli-discovery";
+import { resolveBundledHerdrRoot, resolveHerdrCatalogPath } from "../main/herdr/catalog";
+import { HerdrRuntimeManager } from "../main/herdr/runtime-manager";
 import { ManagedProcessReaper, secureWindowsReaperDirectory } from "../main/managed-process/reaper";
 import {
   projectManagedProcessCapability,
   projectProcessContainmentCapability,
 } from "../main/managed-process/capability";
 import {
-  resolveWindowsManagedProcessHelper,
+  resolveWindowsManagedProcessHelperWithRetry,
   type WindowsManagedProcessHelperResolution,
 } from "../shared/windows-managed-process-helper";
 
@@ -52,6 +57,7 @@ let checksStarted = false;
 let reaper: ManagedProcessReaper | null = null;
 let helper: WindowsManagedProcessHelperResolution | null = null;
 let finishing = false;
+let smokeHerdr: HerdrRuntimeManager | undefined;
 
 function finish(exitCode: number, error?: unknown): void {
   if (finishing) return;
@@ -61,6 +67,7 @@ function finish(exitCode: number, error?: unknown): void {
   }
   void (async () => {
     await hostManager?.stop();
+    await smokeHerdr?.stopManagedServer();
     await reaper?.reapAll();
     hostManager = null;
     updateManager?.dispose();
@@ -101,9 +108,27 @@ void app.whenReady().then(async () => {
   await toolchainManager.initialize();
 
   hostManager = new HostManager(resolveHostEntry(runtimeMainDirectory));
+  if (process.env.PI_DESKTOP_SUPERAGENT_SMOKE === "1") {
+    const discovery = await discoverHerdrAgentClis({ homeDir: os.homedir(), userDataDir: smokeUserData });
+    const runtime = { isPackaged: false, resourcesRoot: process.resourcesPath };
+    smokeHerdr = new HerdrRuntimeManager({
+      userDataDir: smokeUserData,
+      catalogPath: resolveHerdrCatalogPath(runtime),
+      bundledRoot: resolveBundledHerdrRoot(runtime),
+      agentCliEnvironmentProvider: () => discovery,
+    });
+    smokeHerdr.setListener((descriptor) => hostManager?.setHerdrRuntimeDescriptor(descriptor));
+    await smokeHerdr.initialize({
+      ...DEFAULT_HERDR_SETTINGS,
+      enabled: true,
+      mode: "managed",
+      sessionName: "superagent-smoke",
+    });
+    if (!smokeHerdr.getManagedComponentState().installed) await smokeHerdr.installManagedRuntime();
+  }
   const reaperDirectory = path.join(smokeUserData, "managed-process-reaper");
   if (process.platform === "win32")
-    helper = resolveWindowsManagedProcessHelper({
+    helper = await resolveWindowsManagedProcessHelperWithRetry({
       isPackaged: false,
       resourcesPath: process.resourcesPath,
       projectRoot: process.cwd(),
@@ -135,8 +160,11 @@ void app.whenReady().then(async () => {
   hostManager.setToolchainSnapshot(toolchainManager.getSnapshot());
   const credentialRequestHandler = createCredentialRequestHandler(credentialVault);
   const reviewSmoke = process.env.PI_DESKTOP_CODE_REVIEW_SMOKE === "1";
+  const taskCli =
+    process.env.PI_DESKTOP_SUPERAGENT_TASKS_SMOKE === "1" ? await prepareSuperAgentTaskCli(smokeUserData) : undefined;
   let reviewCrashExpected = false;
   hostManager.setRequestHandler(async (method, params) => {
+    if (method === "superagent.discoverClis") return taskCli ?? discoverSuperAgentCliPaths({ homeDir: os.homedir() });
     if (reviewSmoke && method === "ocr.runtime") return resolveOcrRuntime(path.join(process.cwd(), "build"));
     if (method.startsWith("channelSecrets.")) return credentialRequestHandler(method, params);
     if (method === "toolchain.getSnapshot") return toolchainManager.getSnapshot();

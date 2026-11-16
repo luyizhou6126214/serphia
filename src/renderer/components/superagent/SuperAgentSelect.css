@@ -1,0 +1,169 @@
+/* Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031 */
+.ux.u031 {
+  --ux-surface: var(--sa-panel);
+  --ux-surface-2: var(--sa-hover);
+  --ux-ink: var(--sa-text);
+  --ux-ink-3: var(--sa-muted);
+  --ux-line-2: var(--sa-border-strong);
+  --ux-accent: var(--sa-focus);
+  --ux-shadow-strong: var(--sa-popover-shadow);
+  --ux-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ux-spring: var(--ux-ease);
+  position: relative;
+  min-width: 0;
+  color: var(--ux-ink);
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.u031,
+.u031 *,
+.u031 *::before,
+.u031 *::after {
+  box-sizing: border-box;
+}
+.u031 .u031-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--sa-border);
+  border-radius: var(--sa-radius);
+  background: var(--sa-field);
+  color: inherit;
+  text-align: start;
+  transition:
+    border-color 0.25s var(--ux-ease),
+    background-color 0.25s var(--ux-ease);
+}
+.u031 .u031-btn:hover:not(:disabled),
+.u031 .u031-btn[aria-expanded="true"] {
+  border-color: var(--ux-line-2);
+  background: var(--ux-surface);
+}
+.u031 .u031-btn:disabled {
+  color: var(--ux-ink-3);
+  opacity: 0.65;
+}
+.u031 .u031-btn[data-placeholder] {
+  color: var(--ux-ink-3);
+}
+.u031 .u031-v,
+.u031 .u031-option-text > * {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.u031 .u031-v {
+  flex: 1;
+  min-width: 0;
+}
+.u031 .u031-car {
+  color: var(--ux-ink-3);
+  transition: transform 0.45s var(--ux-spring);
+}
+.u031 .u031-btn[aria-expanded="true"] .u031-car {
+  transform: rotate(180deg);
+}
+.u031.is-compact .u031-btn {
+  height: 32px;
+  padding-inline: 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ux-ink-3);
+  font-size: 13px;
+}
+.u031.is-compact .u031-btn:hover:not(:disabled),
+.u031.is-compact .u031-btn[aria-expanded="true"] {
+  background: var(--ux-surface-2);
+  color: var(--ux-ink);
+}
+.u031 .u031-list {
+  --ux-row: 44px;
+  position: fixed;
+  inset: auto;
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--ux-line-2);
+  border-radius: 10px;
+  background: var(--ux-surface);
+  color: var(--ux-ink);
+  box-shadow: 0 12px 32px -12px var(--ux-shadow-strong);
+  transform-origin: 50% 0;
+  transition:
+    opacity 0.2s var(--ux-ease),
+    transform 0.45s var(--ux-spring);
+}
+.u031 .u031-list[data-placement="top"] {
+  transform-origin: 50% 100%;
+}
+@starting-style {
+  .u031 .u031-list:popover-open {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.92);
+  }
+  .u031 .u031-list[data-placement="top"]:popover-open {
+    transform: translateY(6px) scaleY(0.92);
+  }
+}
+.u031 .u031-hl {
+  position: absolute;
+  inset: 4px 4px auto;
+  height: var(--ux-row);
+  border: 1px solid var(--sa-border);
+  border-radius: 6px;
+  background: var(--ux-surface-2);
+  transform: translateY(calc(var(--i, 0) * var(--ux-row)));
+  transition: transform 0.35s var(--ux-spring);
+  pointer-events: none;
+}
+.u031 .u031-o {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ux-row);
+  padding-inline: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.u031 .u031-option-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 16px;
+}
+.u031 .u031-option-text small {
+  color: var(--ux-ink-3);
+  font-size: 12px;
+}
+.u031 .u031-ck {
+  margin-inline-start: auto;
+  color: var(--ux-accent);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 0.2s,
+    transform 0.4s var(--ux-spring);
+}
+.u031 .u031-o[aria-selected="true"] .u031-ck {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ux.u031,
+  .ux.u031 *,
+  .ux.u031 *::before,
+  .ux.u031 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

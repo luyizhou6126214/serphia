@@ -7,7 +7,7 @@ import { createDocxPreviewHtml } from "@/lib/docx-preview-html";
 import { getFileName, getParentFilePath, getRelativeFilePath } from "@/lib/file-paths";
 import { watchFile } from "@/lib/file-watch-client";
 import { INITIAL_TEXT_FILE_LOAD_STATE, textFileLoadReducer, type TextFileData } from "@/lib/file-viewer-load-state";
-import { createBoundedTextDiff, type DiffLine } from "@/lib/text-diff";
+import { createBoundedTextDiff, type DiffLine } from "@shared/text-diff";
 import { useI18n } from "@/i18n";
 import { formatFileSize, formatNumber } from "@/lib/locale-format";
 

@@ -33,6 +33,9 @@ const LazySettingsConfig = lazy(preloadSettingsConfig);
 const LazyTerminalPanel = lazy(() =>
   import("./terminal/TerminalPanel").then((module) => ({ default: module.TerminalPanel })),
 );
+const LazySuperAgentPage = lazy(() =>
+  import("./superagent/SuperAgentPage").then((module) => ({ default: module.SuperAgentPage })),
+);
 
 function PanelLoading() {
   const { t } = useI18n();
@@ -124,6 +127,14 @@ export function TerminalPanel(props: ComponentProps<typeof LazyTerminalPanel>) {
   return (
     <Suspense fallback={<PanelLoading />}>
       <LazyTerminalPanel {...props} />
+    </Suspense>
+  );
+}
+
+export function SuperAgentPage(props: ComponentProps<typeof LazySuperAgentPage>) {
+  return (
+    <Suspense fallback={<PanelLoading />}>
+      <LazySuperAgentPage {...props} />
     </Suspense>
   );
 }

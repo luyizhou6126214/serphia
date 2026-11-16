@@ -55,6 +55,7 @@ import { ManagedProcessError } from "./managed-process/service";
 
 import { HerdrBridgeError } from "./herdr/errors";
 import { clearHerdrBridge, initializeHerdrBridge } from "./herdr/runtime";
+import { SuperAgentService } from "./superagent/service";
 
 export function registerHandlers(server: RpcServer): () => Promise<void> {
   const bindings = createSessionEventBindings(server);
@@ -72,6 +73,15 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
   const worktreeHandlers = createWorktreeHandlers(managedProcesses);
   const sessionHandlers = createSessionHandlers({ server, managedProcesses, clearSessionEventBinding: bindings.clear });
   const herdr = initializeHerdrBridge(server, { assertAllowedPath: (target) => assertPathAllowed(target) });
+  const superagent = new SuperAgentService(
+    path.join(desktopDataRoot(), "superagent"),
+    (roomId) => {
+      server.emit("superagent.changed", "*", { roomId });
+    },
+    herdr,
+    undefined,
+    (roomId, taskId) => server.emit("superagent.tasks.changed", "*", { roomId, taskId }),
+  );
   const stopHerdrToolSync = herdr.subscribeRuntime(() => syncDesktopToolsForAllSessions());
 
   const managedCall = async <T>(operation: () => T | Promise<T>): Promise<T> => {
@@ -429,6 +439,36 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     "system.allowRoot": guard(systemHandlers.allowRoot),
 
     "system.runningCount": guard(systemHandlers.runningCount),
+
+    "superagent.runtimes": guard((params) => superagent.runtimes(params?.probe)),
+    "superagent.roles.list": guard(() => superagent.listRoles()),
+    "superagent.roles.save": guard((params) => superagent.saveRole(params)),
+    "superagent.roles.delete": guard(({ id }) => superagent.deleteRole(id)),
+    "superagent.rooms.list": guard(() => superagent.listRooms()),
+    "superagent.rooms.get": guard(({ id }) => superagent.getRoom(id)),
+    "superagent.rooms.create": guard((params) => superagent.createRoom(params)),
+    "superagent.rooms.send": guard(({ id, text, targetId }) => superagent.send(id, text, targetId)),
+    "superagent.rooms.stop": guard(({ id }) => superagent.stop(id)),
+    "superagent.rooms.resume": guard(({ id }) => superagent.resume(id)),
+    "superagent.rooms.approval": guard(({ id, approvalId, choice }) => superagent.decide(id, approvalId, choice)),
+    "superagent.rooms.permissionMode": guard(({ id, mode }) => superagent.setPermissionMode(id, mode)),
+    "superagent.rooms.artifact": guard(({ id, memberId }) => superagent.artifact(id, memberId)),
+    "superagent.rooms.handoff": guard(({ id, memberId, close }) =>
+      herdrCall(() => superagent.handoff(id, memberId, close)),
+    ),
+    "superagent.tasks.create": guard((draft) => superagent.tasks.create(draft)),
+    "superagent.tasks.list": guard(({ roomId }) => superagent.tasks.list(roomId)),
+    "superagent.tasks.get": guard(({ id }) => superagent.tasks.get(id)),
+    "superagent.tasks.artifact": guard(({ id, runId }) => superagent.tasks.artifact(id, runId)),
+    "superagent.tasks.answer": guard(({ id, runId, text }) => superagent.tasks.answer(id, runId, text)),
+    "superagent.tasks.approval": guard(({ id, runId, approvalId, choice }) =>
+      superagent.tasks.decide(id, runId, approvalId, choice),
+    ),
+    "superagent.tasks.pause": guard(({ id }) => superagent.tasks.stop(id, "paused")),
+    "superagent.tasks.resume": guard(({ id }) => superagent.tasks.resume(id)),
+    "superagent.tasks.retry": guard(({ id, runId }) => superagent.tasks.retry(id, runId)),
+    "superagent.tasks.cancel": guard(({ id }) => superagent.tasks.stop(id, "cancelled")),
+    "superagent.tasks.review": guard(({ id, review }) => superagent.tasks.review(id, review)),
   });
 
   const shutdown = createHostShutdown([
@@ -440,6 +480,7 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     { name: "authentication flows", stop: () => authLogin.dispose() },
     { name: "model refreshes", stop: () => modelCatalogRefreshCoordinator.cancelAll() },
     { name: "Herdr tool sync", stop: stopHerdrToolSync },
+    { name: "SuperAgent", stop: () => superagent.shutdown() },
     { name: "Herdr", stop: () => herdr.shutdown() },
     { name: "Herdr registration", stop: () => clearHerdrBridge(herdr) },
     { name: "managed processes", stop: () => managedProcesses.stopAll("host") },

@@ -34,7 +34,7 @@ import { restartHostAfterExit } from "./host-install-recovery";
 import { ManagedProcessReaper, secureWindowsReaperDirectory } from "./managed-process/reaper";
 import { beforeDeadline, cleanupManagedProcessContainment } from "./managed-process/shutdown-cleanup";
 import {
-  resolveWindowsManagedProcessHelper,
+  resolveWindowsManagedProcessHelperWithRetry,
   type WindowsManagedProcessHelperResolution,
   verifyWindowsManagedProcessHelperReplaceable,
 } from "../shared/windows-managed-process-helper";
@@ -45,7 +45,11 @@ import { HerdrRuntimeManager } from "./herdr/runtime-manager";
 import { resolveBundledHerdrRoot, resolveHerdrCatalogPath } from "./herdr/catalog";
 import { isHerdrSettings } from "../contract/herdr";
 import { resolveOcrRuntime } from "./ocr-runtime";
-import { discoverHerdrAgentClis, type HerdrAgentCliDiscoverySnapshot } from "./herdr/agent-cli-discovery";
+import {
+  discoverHerdrAgentClis,
+  discoverSuperAgentCliPaths,
+  type HerdrAgentCliDiscoverySnapshot,
+} from "./herdr/agent-cli-discovery";
 
 handleClosedStdioPipes();
 
@@ -79,6 +83,8 @@ let toolchainManager: ToolchainManager | null = null;
 let browserService: BrowserService | null = null;
 let managedProcessReaper: ManagedProcessReaper | null = null;
 let windowsManagedProcessHelper: WindowsManagedProcessHelperResolution | null = null;
+let retryWindowsContainment = false;
+let containmentRecovery: Promise<void> | undefined;
 let herdrRuntimeManager: HerdrRuntimeManager | null = null;
 let herdrAgentCliDiscovery: HerdrAgentCliDiscoverySnapshot | null = null;
 let isQuitting = false;
@@ -96,6 +102,48 @@ let startupCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
 let lastHerdrToolchainDiscoveryKey: string | undefined;
+
+const windowsHelperPaths = () => ({
+  isPackaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  projectRoot: path.resolve(__dirname, "../.."),
+});
+
+async function initializeProcessContainment(): Promise<void> {
+  if (process.platform === "win32" && process.arch === "x64") {
+    windowsManagedProcessHelper = await resolveWindowsManagedProcessHelperWithRetry(windowsHelperPaths());
+    appendMainLog(
+      windowsManagedProcessHelper.ok
+        ? `windows managed process helper verified build=${windowsManagedProcessHelper.descriptor.buildId} provenance=${windowsManagedProcessHelper.descriptor.provenance}`
+        : `windows managed process helper unavailable error=${windowsManagedProcessHelper.errorCode}`,
+    );
+  }
+  const directory = path.join(app.getPath("userData"), "managed-process-reaper");
+  const descriptor = windowsManagedProcessHelper?.ok ? windowsManagedProcessHelper.descriptor : undefined;
+  const windowsHelper =
+    descriptor && (await secureWindowsReaperDirectory(directory, descriptor, appendMainLog)) ? descriptor : undefined;
+  const reaper = new ManagedProcessReaper(path.join(directory, "journal-v2.json"), {
+    log: appendMainLog,
+    windowsHelper,
+  });
+  const status = await reaper.initialize();
+  managedProcessReaper = reaper;
+  retryWindowsContainment =
+    process.platform === "win32" && process.arch === "x64" && !windowsHelper && status.errorCode === "REAP_FAILED";
+  appendMainLog(
+    `managed process reaper ready=${status.ready} records=${status.records} revision=${status.revision}${status.errorCode ? ` error=${status.errorCode}` : ""}`,
+  );
+}
+
+function recoverWindowsContainment(): Promise<void> | undefined {
+  if (!retryWindowsContainment || isQuitting) return;
+  // This path is only available when startup could not install a reaper backend,
+  // so no Windows job could have been registered against the old instance.
+  containmentRecovery ??= initializeProcessContainment().finally(() => {
+    containmentRecovery = undefined;
+  });
+  return containmentRecovery;
+}
 
 async function refreshHerdrAgentCliDiscovery(): Promise<void> {
   try {
@@ -495,35 +543,7 @@ function startMainProcess(): void {
       app.exit(exitCode);
       return;
     }
-    if (process.platform === "win32" && process.arch === "x64") {
-      windowsManagedProcessHelper = resolveWindowsManagedProcessHelper({
-        isPackaged: app.isPackaged,
-        resourcesPath: process.resourcesPath,
-        projectRoot: path.resolve(__dirname, "../.."),
-      });
-      appendMainLog(
-        windowsManagedProcessHelper.ok
-          ? `windows managed process helper verified build=${windowsManagedProcessHelper.descriptor.buildId} provenance=${windowsManagedProcessHelper.descriptor.provenance}`
-          : `windows managed process helper unavailable error=${windowsManagedProcessHelper.errorCode}`,
-      );
-    }
-    const reaperDirectory = path.join(app.getPath("userData"), "managed-process-reaper");
-    const windowsJournalSecured =
-      process.platform !== "win32" ||
-      Boolean(
-        windowsManagedProcessHelper?.ok &&
-        (await secureWindowsReaperDirectory(reaperDirectory, windowsManagedProcessHelper.descriptor, appendMainLog)),
-      );
-    managedProcessReaper = new ManagedProcessReaper(path.join(reaperDirectory, "journal-v2.json"), {
-      log: appendMainLog,
-      ...(windowsManagedProcessHelper?.ok && windowsJournalSecured
-        ? { windowsHelper: windowsManagedProcessHelper.descriptor }
-        : {}),
-    });
-    const reaperStatus = await managedProcessReaper.initialize();
-    appendMainLog(
-      `managed process reaper ready=${reaperStatus.ready} records=${reaperStatus.records} revision=${reaperStatus.revision}${reaperStatus.errorCode ? ` error=${reaperStatus.errorCode}` : ""}`,
-    );
+    await initializeProcessContainment();
     if (packagedStartupValidation) {
       startupCheckTimer = setTimeout(
         () => finishPackagedStartupValidation("Packaged startup validation timed out"),
@@ -599,11 +619,7 @@ function startMainProcess(): void {
         await cleanupManagedProcesses(deadline, true);
         if (!(await herdrCleanup).completed) throw new Error("Managed Herdr server cleanup timed out before update");
         if (process.platform === "win32") {
-          const refreshed = resolveWindowsManagedProcessHelper({
-            isPackaged: app.isPackaged,
-            resourcesPath: process.resourcesPath,
-            projectRoot: path.resolve(__dirname, "../.."),
-          });
+          const refreshed = await resolveWindowsManagedProcessHelperWithRetry(windowsHelperPaths());
           if (!refreshed.ok) throw new Error("Windows managed process helper is unavailable for update");
           if (!verifyWindowsManagedProcessHelperReplaceable(refreshed.descriptor)) {
             throw new Error("Windows managed process helper is locked for update");
@@ -761,6 +777,7 @@ function startMainProcess(): void {
     hostManager.setHerdrRuntimeDescriptor(herdrRuntimeManager.getDescriptor());
     const credentialRequestHandler = createCredentialRequestHandler(credentialVault);
     hostManager.setRequestHandler(async (method, params) => {
+      if (method === "superagent.discoverClis") return discoverSuperAgentCliPaths({ homeDir: os.homedir() });
       if (method === "ocr.runtime") {
         return resolveOcrRuntime(app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), "build"));
       }
@@ -781,6 +798,9 @@ function startMainProcess(): void {
         return toolchainManager!.resolveForProject(body.cwd, { intent: body.intent, trusted: body.trusted });
       }
       if (method === "managedProcesses.getSettings") {
+        if ((params as { retryWindowsContainment?: unknown } | undefined)?.retryWindowsContainment === true) {
+          await recoverWindowsContainment();
+        }
         const status = managedProcessReaper?.status();
         const capability = getManagedProcessCapability();
         return {
@@ -789,6 +809,9 @@ function startMainProcess(): void {
           capability,
           containmentCapability: projectProcessContainmentCapability(getProcessCapabilityInput()),
           ...(windowsManagedProcessHelper?.ok ? { windowsHelper: windowsManagedProcessHelper.descriptor } : {}),
+          windowsHelperError:
+            windowsManagedProcessHelper?.ok === false ? windowsManagedProcessHelper.errorCode : undefined,
+          reaperError: status?.errorCode,
         };
       }
       if (method === "herdr.configure") {

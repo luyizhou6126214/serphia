@@ -34,12 +34,15 @@ import { asHerdrError, HerdrBridgeError } from "./errors";
 import {
   HERDR_V20_EVENT_SUBSCRIPTIONS,
   HERDR_V20_METHODS,
+  idField,
+  isId,
   isRecord,
   numberField,
   optionalStringField,
   stringField,
   type JsonRecord,
 } from "./protocol-v20";
+import { agentKind, agentState, mapFleet, safeSessionDisplay } from "./fleet-projection";
 import { HerdrSocketClient } from "./socket-client";
 import { HerdrTerminalRegistry } from "./terminal-session";
 
@@ -51,34 +54,13 @@ const EMPTY_FLEET: HerdrFleetSnapshot = {
   workspaces: [],
   panes: [],
 };
-const MAX_WORKSPACES = 128;
-const MAX_TABS = 512;
-const MAX_PANES = 1_024;
 const MAX_PROCESS_INFO_ENTRIES = 128;
 const MAX_PUBLIC_PROCESS_ENTRIES = 32;
 const AGENT_STATUS_REFRESH_MS = 2_000;
 
-function isId(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length >= 1 &&
-    value.length <= 256 &&
-    !value.startsWith("-") &&
-    !/[\0\r\n]/.test(value)
-  );
-}
-
 function requireId(value: unknown, label: string): string {
   if (!isId(value)) throw new HerdrBridgeError("HERDR_INVALID_REQUEST", `${label} is invalid.`);
   return value;
-}
-
-function idField(value: JsonRecord, name: string): string {
-  const id = stringField(value, name, 256);
-  if (!isId(id)) {
-    throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", `Herdr field ${name} is not a safe identifier.`);
-  }
-  return id;
 }
 
 function safeDiagnosticToken(value: unknown, max = 128): string | undefined {
@@ -111,145 +93,6 @@ type HerdrBridgeOptions = {
   reconnectDelayMs?: (attempt: number) => number;
   assertAllowedPath?: (target: string) => Promise<void>;
 };
-
-function agentState(value: unknown): HerdrAgentState {
-  return ["blocked", "working", "done", "idle", "unknown"].includes(String(value))
-    ? (value as HerdrAgentState)
-    : "unknown";
-}
-
-function agentKind(value: unknown): HerdrAgentKindDisplay {
-  const normalized = String(value ?? "unknown")
-    .toLowerCase()
-    .replace(/^qwen(?:[-_ ]?code)?$/, "qwen")
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 64);
-  return isHerdrAgentKind(normalized) ? normalized : `unknown:${normalized || "agent"}`;
-}
-
-function safeSessionDisplay(value: string, kind: "id" | "path"): string | undefined {
-  if (!value) return undefined;
-  if (kind === "path") {
-    const parts = value.replace(/\\/g, "/").split("/").filter(Boolean);
-    return parts.at(-1)?.slice(0, 80);
-  }
-  return value.length <= 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`;
-}
-
-function mapFleet(result: JsonRecord, previousRevision: number, sourceGeneration = 0): HerdrFleetSnapshot {
-  if (result.type !== "session_snapshot" || !isRecord(result.snapshot)) {
-    throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr snapshot response is invalid.");
-  }
-  const snapshot = result.snapshot;
-  if (snapshot.protocol !== HERDR_PROTOCOL_VERSION) {
-    throw new HerdrBridgeError(
-      "HERDR_PROTOCOL_UNSUPPORTED",
-      "The Herdr snapshot protocol is incompatible with this serphia release.",
-    );
-  }
-  if (!Array.isArray(snapshot.workspaces) || !Array.isArray(snapshot.tabs) || !Array.isArray(snapshot.panes)) {
-    throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr snapshot collections are invalid.");
-  }
-  if (
-    snapshot.workspaces.length > MAX_WORKSPACES ||
-    snapshot.tabs.length > MAX_TABS ||
-    snapshot.panes.length > MAX_PANES
-  ) {
-    throw new HerdrBridgeError("HERDR_PROTOCOL_LIMIT_EXCEEDED", "Herdr snapshot exceeded object limits.");
-  }
-  const wireAgents = Array.isArray(snapshot.agents) ? snapshot.agents.filter(isRecord) : [];
-  const agentsByPane = new Map(wireAgents.map((item) => [String(item.pane_id ?? ""), item]));
-  const panes: HerdrPane[] = snapshot.panes.filter(isRecord).map((wire) => {
-    const id = idField(wire, "pane_id");
-    const wireAgent = agentsByPane.get(id);
-    const detected = wireAgent ?? wire;
-    const detectedName =
-      optionalStringField(detected, "agent", 128) ?? optionalStringField(detected, "display_agent", 128);
-    let session: { kind: "id" | "path"; displayValue?: string } | undefined;
-    if (wireAgent && isRecord(wireAgent.agent_session)) {
-      const kind =
-        wireAgent.agent_session.kind === "path" ? "path" : wireAgent.agent_session.kind === "id" ? "id" : null;
-      const value = typeof wireAgent.agent_session.value === "string" ? wireAgent.agent_session.value : "";
-      if (kind) session = { kind, displayValue: safeSessionDisplay(value, kind) };
-    }
-    return {
-      id,
-      terminalId: idField(wire, "terminal_id"),
-      workspaceId: idField(wire, "workspace_id"),
-      tabId: idField(wire, "tab_id"),
-      title:
-        optionalStringField(wire, "label", 256) ??
-        optionalStringField(wire, "title", 256) ??
-        optionalStringField(wire, "terminal_title_stripped", 256),
-      cwd: optionalStringField(wire, "cwd"),
-      foregroundCwd: optionalStringField(wire, "foreground_cwd"),
-      focused: wire.focused === true,
-      alive: true,
-      revision: numberField(wire, "revision"),
-      ...(detectedName
-        ? {
-            agent: {
-              name: wireAgent ? optionalStringField(wireAgent, "name", 256) : undefined,
-              kind: agentKind(detectedName),
-              state: agentState(detected.agent_status),
-              ...(session ? { session } : {}),
-              launchPending: wireAgent?.launch_pending === true,
-              interactiveReady: wireAgent?.interactive_ready === true,
-              stateChangeSeq:
-                wireAgent && Number.isSafeInteger(wireAgent.state_change_seq)
-                  ? Number(wireAgent.state_change_seq)
-                  : undefined,
-            },
-          }
-        : {}),
-    };
-  });
-  const paneIdsByTab = new Map<string, string[]>();
-  for (const pane of panes) {
-    const paneIds = paneIdsByTab.get(pane.tabId);
-    if (paneIds) paneIds.push(pane.id);
-    else paneIdsByTab.set(pane.tabId, [pane.id]);
-  }
-  const tabs = snapshot.tabs.filter(isRecord).map((wire) => {
-    const id = idField(wire, "tab_id");
-    return {
-      id,
-      workspaceId: idField(wire, "workspace_id"),
-      name: optionalStringField(wire, "label", 256),
-      focused: wire.focused === true,
-      paneIds: paneIdsByTab.get(id) ?? [],
-    };
-  });
-  const tabsByWorkspace = new Map<string, HerdrTab[]>();
-  for (const tab of tabs) {
-    const workspaceTabs = tabsByWorkspace.get(tab.workspaceId);
-    if (workspaceTabs) workspaceTabs.push(tab);
-    else tabsByWorkspace.set(tab.workspaceId, [tab]);
-  }
-  const workspaces = snapshot.workspaces.filter(isRecord).map((wire) => {
-    const id = idField(wire, "workspace_id");
-    const workspaceTabs = tabsByWorkspace.get(id) ?? [];
-    const activeTab = workspaceTabs.find((tab) => tab.focused) ?? workspaceTabs[0];
-    return {
-      id,
-      name: optionalStringField(wire, "label", 256),
-      focused: wire.focused === true,
-      rootPaneId: activeTab?.paneIds[0],
-      tabs: workspaceTabs,
-    };
-  });
-  return {
-    sourceGeneration,
-    revision: previousRevision + 1,
-    receivedAt: Date.now(),
-    stale: false,
-    focusedWorkspaceId: typeof snapshot.focused_workspace_id === "string" ? snapshot.focused_workspace_id : undefined,
-    focusedTabId: typeof snapshot.focused_tab_id === "string" ? snapshot.focused_tab_id : undefined,
-    focusedPaneId: typeof snapshot.focused_pane_id === "string" ? snapshot.focused_pane_id : undefined,
-    workspaces,
-    panes,
-  };
-}
 
 export class HerdrBridge {
   private descriptor = herdrRuntimeController.get();
@@ -955,6 +798,50 @@ export class HerdrBridge {
   }
 
   async startAgent(paneId: string, kind: unknown): Promise<{ paneId: string; state: HerdrAgentState }> {
+    return this.launchAgent(paneId, kind, []);
+  }
+
+  async resumeAgent(
+    paneId: string,
+    kind: "claude" | "codex",
+    sessionId: string,
+    command: { executable: string; prefix: readonly string[] },
+  ): Promise<{ paneId: string; state: HerdrAgentState }> {
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(sessionId)) {
+      throw new HerdrBridgeError("HERDR_INVALID_REQUEST", "The Agent session ID is invalid.");
+    }
+    const args = [kind === "claude" ? "--resume" : "resume", sessionId];
+    if (process.platform !== "win32") return this.launchAgent(paneId, kind, args, `${kind}-${sessionId.slice(0, 8)}`);
+
+    const pane = this.requirePane(paneId);
+    const cwd = pane.foregroundCwd ?? pane.cwd;
+    if (!cwd || pane.agent)
+      throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "The Herdr pane is not ready for a new Agent.");
+    await this.assertCwdAllowed(cwd);
+    // Protocol 20's Windows agent.start uses Start-Process with a bare name. Launch the
+    // already resolved executable directly so npm's extensionless shims cannot intercept it.
+    const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+    const script = `& ${[command.executable, ...command.prefix, ...args].map(quote).join(" ")}`;
+    const encoded = Buffer.from(script, "utf16le").toString("base64");
+    const result = await this.requireReady().request<JsonRecord>({
+      method: HERDR_V20_METHODS.paneSendInput,
+      params: {
+        pane_id: pane.id,
+        text: `powershell.exe -NoLogo -NoProfile -EncodedCommand ${encoded}`,
+        keys: ["enter"],
+      },
+    });
+    if (result.type !== "ok")
+      throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr did not accept the resume command.");
+    return { paneId, state: "unknown" };
+  }
+
+  private async launchAgent(
+    paneId: string,
+    kind: unknown,
+    args: string[],
+    name?: string,
+  ): Promise<{ paneId: string; state: HerdrAgentState }> {
     const pane = this.requirePane(paneId);
     if (!isHerdrAgentKind(kind) || !isHerdrStartableAgentKind(kind))
       throw new HerdrBridgeError("HERDR_AGENT_KIND_UNSUPPORTED", "Agent kind is unsupported.");
@@ -966,7 +853,7 @@ export class HerdrBridge {
     }
     const result = await this.requireReady().request<JsonRecord>({
       method: HERDR_V20_METHODS.agentStart,
-      params: { name: kind, kind, pane_id: paneId, args: [], timeout_ms: 60_000 },
+      params: { name: name ?? kind, kind, pane_id: paneId, args, timeout_ms: 60_000 },
       timeoutMs: 65_000,
     });
     if (result.type !== "agent_started" || !isRecord(result.agent)) {

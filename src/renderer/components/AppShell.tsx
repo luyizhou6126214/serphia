@@ -1,5 +1,5 @@
 import { getRecentProjects, useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
-import { CalendarClock, Moon, PanelLeft, PanelRight, ShieldCheck, Sun } from "lucide-react";
+import { CalendarClock, Moon, PanelLeft, PanelRight, ShieldCheck, Sun, Workflow } from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
@@ -28,7 +28,13 @@ import { SessionInfoPanel } from "./SessionInfoPanel";
 import { SessionPresentationStore } from "@/lib/session-presentation-store";
 import { FileViewer } from "./FileViewer";
 import type { SettingsTab } from "./SettingsConfig";
-import { preloadSettingsConfig, scheduleSettingsConfigPreload, SettingsConfig, TerminalPanel } from "./DeferredPanels";
+import {
+  preloadSettingsConfig,
+  scheduleSettingsConfigPreload,
+  SettingsConfig,
+  SuperAgentPage,
+  TerminalPanel,
+} from "./DeferredPanels";
 import { useMcpSettingsRequests } from "../hooks/useMcpSettingsRequests";
 import { QuickChannelBinding } from "./channels/QuickChannelBinding";
 import { OpenInAppButton } from "./OpenInAppButton";
@@ -96,7 +102,7 @@ import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice 
 import type { TerminalShellInfo } from "@contract/terminal";
 
 const TERMINAL_PANEL_RATIO = 0.55;
-type PrimaryView = "sessions" | "schedule" | "review";
+type PrimaryView = "sessions" | "schedule" | "review" | "superagent";
 type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean; primary: PrimaryView };
 const sameNavigationView = (a: NavigationView, b: NavigationView) =>
   a.settings === b.settings && a.primary === b.primary && a.session?.id === b.session?.id && a.draftCwd === b.draftCwd;
@@ -145,6 +151,7 @@ export function AppShell({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [primaryView, setPrimaryView] = useState<PrimaryView>("sessions");
   const scheduledOpen = primaryView === "schedule";
+  const superAgentOpen = primaryView === "superagent";
   const reviewOpen = primaryView === "review";
   const reviewVisible = reviewOpen && !settingsOpen;
   const [reviewVisited, setReviewVisited] = useState(false);
@@ -236,8 +243,9 @@ export function AppShell({
   const panelWidthKind = rightPanelWidthKind(activePanelTab);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
-  const rightPanelVisible = rightPanelOpen && !scheduledOpen;
-  const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && !scheduledOpen;
+  const primaryViewAllowsRightPanel = !scheduledOpen && !superAgentOpen;
+  const rightPanelVisible = rightPanelOpen && primaryViewAllowsRightPanel;
+  const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && primaryViewAllowsRightPanel;
   const canResizeRightPanel = showRightPanelContent && !isMobile && !rightPanelFullscreen;
   const [guideNotice, setGuideNotice] = useState<string | null>(null);
   const [rightPanelBounds, setRightPanelBounds] = useState(() =>
@@ -1075,54 +1083,36 @@ export function AppShell({
   const sidebarRail = (
     <div className="sidebar-rail" aria-label={t("navigation", "Navigation")}>
       <div className="sidebar-rail-top">
-        <button
-          type="button"
-          className={`sidebar-rail-button${!settingsOpen && sessionsOpen ? " is-active" : ""}`}
-          title={t("sessions", "Sessions")}
-          aria-label={t("sessions", "Sessions")}
-          aria-current={!settingsOpen && sessionsOpen ? "page" : undefined}
-          onClick={() =>
-            leaveSettingsFor(() => {
-              setPrimaryView("sessions");
-              setRightPanelOpen(false);
-              setActiveTopPanel(null);
-            })
-          }
-        >
-          <HomeFilled />
-        </button>
-        <button
-          type="button"
-          className={`sidebar-rail-button${!settingsOpen && scheduledOpen ? " is-active" : ""}`}
-          title={t("scheduledTasks", "Scheduled tasks")}
-          aria-label={t("scheduledTasks", "Scheduled tasks")}
-          aria-current={!settingsOpen && scheduledOpen ? "page" : undefined}
-          onClick={() =>
-            leaveSettingsFor(() => {
-              setPrimaryView("schedule");
-              setRightPanelOpen(false);
-              setActiveTopPanel(null);
-            })
-          }
-        >
-          <CalendarClock size={18} strokeWidth={1.7} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className={`sidebar-rail-button${!settingsOpen && reviewOpen ? " is-active" : ""}`}
-          title={t("codeReview", "Code review")}
-          aria-label={t("codeReview", "Code review")}
-          aria-current={!settingsOpen && reviewOpen ? "page" : undefined}
-          onClick={() =>
-            leaveSettingsFor(() => {
-              setPrimaryView("review");
-              setRightPanelOpen(false);
-              setActiveTopPanel(null);
-            })
-          }
-        >
-          <ShieldCheck size={18} strokeWidth={1.7} aria-hidden="true" />
-        </button>
+        {(
+          [
+            ["sessions", t("sessions", "Sessions"), <HomeFilled />],
+            [
+              "schedule",
+              t("scheduledTasks", "Scheduled tasks"),
+              <CalendarClock size={18} strokeWidth={1.7} aria-hidden="true" />,
+            ],
+            ["superagent", t("superAgent", "SuperAgent"), <Workflow size={18} strokeWidth={1.7} aria-hidden="true" />],
+            ["review", t("codeReview", "Code review"), <ShieldCheck size={18} strokeWidth={1.7} aria-hidden="true" />],
+          ] as const
+        ).map(([view, label, icon]) => (
+          <button
+            key={view}
+            type="button"
+            className={`sidebar-rail-button${!settingsOpen && primaryView === view ? " is-active" : ""}`}
+            title={label}
+            aria-label={label}
+            aria-current={!settingsOpen && primaryView === view ? "page" : undefined}
+            onClick={() =>
+              leaveSettingsFor(() => {
+                setPrimaryView(view);
+                setRightPanelOpen(false);
+                setActiveTopPanel(null);
+              })
+            }
+          >
+            {icon}
+          </button>
+        ))}
       </div>
       <button
         type="button"
@@ -1367,6 +1357,7 @@ export function AppShell({
                 onOpenSession={handleSelectSession}
               />
             )}
+            {superAgentOpen && !settingsOpen && <SuperAgentPage cwd={workspaceCwd} />}
             {(reviewVisible || reviewVisited) && (
               <CodeReviewPage
                 visible={reviewVisible}

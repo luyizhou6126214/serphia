@@ -151,6 +151,7 @@ export async function call<M extends ApiMethod>(
 ): Promise<ApiResult<M>> {
   const client = await ensureRpc();
   if (method.startsWith("codeReview.")) return client.callWithTimeout(method, 0, ...(args as never));
+  if (method.startsWith("superagent.")) return client.callWithTimeout(method, 120_000, ...(args as never));
   return client.call(method, ...(args as never));
 }
 

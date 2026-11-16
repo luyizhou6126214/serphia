@@ -1,7 +1,8 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 
 export interface WindowsManagedProcessHelperDescriptor {
   path: string;
@@ -14,7 +15,11 @@ export interface WindowsManagedProcessHelperDescriptor {
 
 export type WindowsManagedProcessHelperResolution =
   | { ok: true; descriptor: WindowsManagedProcessHelperDescriptor }
-  | { ok: false; errorCode: "HELPER_MISSING" | "HELPER_INTEGRITY" };
+  | { ok: false; errorCode: "HELPER_MISSING" | "HELPER_INTEGRITY" | "HELPER_PROBE_FAILED" };
+
+const execFileAsync = promisify(execFile);
+const probeCommand = ["--version-json-v1"];
+const probeTimeoutMs = 6_000;
 
 type HelperManifest = {
   schemaVersion: 1;
@@ -77,35 +82,34 @@ function containedFile(directory: string, file: string): string | null {
     : null;
 }
 
-function versionMatches(executable: string, manifest: HelperManifest): boolean {
-  const result = spawnSync(executable, ["--version-json-v1"], {
-    encoding: "utf8",
-    timeout: 2_000,
-    windowsHide: true,
-    shell: false,
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  if (result.status !== 0 || result.signal || result.error) return false;
+function verifyVersion(
+  resolution: Extract<WindowsManagedProcessHelperResolution, { ok: true }>,
+  output: string,
+): WindowsManagedProcessHelperResolution {
+  const { descriptor } = resolution;
   try {
-    const version = JSON.parse(result.stdout) as Record<string, unknown>;
-    return (
+    const version = JSON.parse(output) as Record<string, unknown>;
+    if (
       Object.keys(version).sort().join("\0") === "arch\0buildId\0protocolVersion\0provenance" &&
-      version.protocolVersion === manifest.protocolVersion &&
-      version.buildId === manifest.buildId &&
-      version.arch === manifest.arch &&
-      version.provenance === manifest.provenance
-    );
+      version.protocolVersion === descriptor.protocolVersion &&
+      version.buildId === descriptor.buildId &&
+      version.arch === descriptor.arch &&
+      version.provenance === descriptor.provenance
+    )
+      return resolution;
   } catch {
-    return false;
+    // An invalid version response is an integrity error.
   }
+  return { ok: false, errorCode: "HELPER_INTEGRITY" };
 }
 
-export function resolveWindowsManagedProcessHelper(options: {
+type HelperPaths = {
   isPackaged: boolean;
   resourcesPath: string;
   projectRoot: string;
-  verifyExecutable?: boolean;
-}): WindowsManagedProcessHelperResolution {
+};
+
+function resolveHelperFiles(options: HelperPaths): WindowsManagedProcessHelperResolution {
   const directory = options.isPackaged
     ? path.join(options.resourcesPath, "managed-process", "win32-x64")
     : path.join(options.projectRoot, "out", "native", "windows-managed-process-helper");
@@ -124,9 +128,6 @@ export function resolveWindowsManagedProcessHelper(options: {
   if (!executable) return { ok: false, errorCode: "HELPER_MISSING" };
   const actualHash = createHash("sha256").update(fs.readFileSync(executable)).digest("hex");
   if (actualHash !== manifest.sha256) return { ok: false, errorCode: "HELPER_INTEGRITY" };
-  if (options.verifyExecutable !== false && !versionMatches(executable, manifest)) {
-    return { ok: false, errorCode: "HELPER_INTEGRITY" };
-  }
   return {
     ok: true,
     descriptor: {
@@ -138,6 +139,49 @@ export function resolveWindowsManagedProcessHelper(options: {
       sha256: manifest.sha256,
     },
   };
+}
+
+export function resolveWindowsManagedProcessHelper(
+  options: HelperPaths & { verifyExecutable?: boolean },
+): WindowsManagedProcessHelperResolution {
+  const resolution = resolveHelperFiles(options);
+  if (!resolution.ok || options.verifyExecutable === false) return resolution;
+  const result = spawnSync(resolution.descriptor.path, probeCommand, {
+    encoding: "utf8",
+    timeout: probeTimeoutMs,
+    maxBuffer: 16_384,
+    windowsHide: true,
+    shell: false,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0 || result.signal || result.error) return { ok: false, errorCode: "HELPER_PROBE_FAILED" };
+  return verifyVersion(resolution, result.stdout);
+}
+
+async function probeHelperVersion(executable: string): Promise<string> {
+  const { stdout } = await execFileAsync(executable, probeCommand, {
+    encoding: "utf8",
+    timeout: probeTimeoutMs,
+    maxBuffer: 16_384,
+    windowsHide: true,
+  });
+  return stdout;
+}
+
+export async function resolveWindowsManagedProcessHelperWithRetry(
+  options: HelperPaths,
+  probeVersion = probeHelperVersion,
+): Promise<WindowsManagedProcessHelperResolution> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const resolution = resolveHelperFiles(options);
+    if (!resolution.ok) return resolution;
+    try {
+      return verifyVersion(resolution, await probeVersion(resolution.descriptor.path));
+    } catch {
+      // A failed launch or timeout can be transient. Recheck the files before retrying.
+    }
+  }
+  return { ok: false, errorCode: "HELPER_PROBE_FAILED" };
 }
 
 export function verifyWindowsManagedProcessHelperReplaceable(
