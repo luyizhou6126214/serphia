@@ -29,6 +29,7 @@ import { isExecutionIntent, type ToolchainSnapshot } from "../shared/toolchains/
 import { readLegacyNpmCommand } from "./toolchains/legacy-npm-command";
 import { createElectronRuntimeFetch } from "./toolchains/electron-runtime-fetch";
 import { BrowserService } from "./browser/browser-service";
+import { createDesktopWindowPrototype } from "./desktop-window/prototype";
 import { findDesktopDeepLink, parseDesktopDeepLink } from "./deep-link";
 import { restartHostAfterExit } from "./host-install-recovery";
 import { ManagedProcessReaper, secureWindowsReaperDirectory } from "./managed-process/reaper";
@@ -762,7 +763,8 @@ function startMainProcess(): void {
       nativeTheme.themeSource = ui.theme;
     }
 
-    hostManager = new HostManager(resolveHostEntry());
+    const desktopWindowPrototype = createDesktopWindowPrototype(getMainWindow);
+    hostManager = new HostManager(resolveHostEntry(), Boolean(desktopWindowPrototype));
     hostManager.setBeforeRestartHandler(async () => {
       const status = await managedProcessReaper!.reapAll();
       appendMainLog(
@@ -776,7 +778,9 @@ function startMainProcess(): void {
     hostManager.setBrowserCapabilitySnapshot(browserService.getCapabilitySnapshot());
     hostManager.setHerdrRuntimeDescriptor(herdrRuntimeManager.getDescriptor());
     const credentialRequestHandler = createCredentialRequestHandler(credentialVault);
+    app.on("before-quit", () => desktopWindowPrototype?.stop());
     hostManager.setRequestHandler(async (method, params) => {
+      if (method === "desktopWindow" && desktopWindowPrototype) return desktopWindowPrototype.handle(params);
       if (method === "superagent.discoverClis") return discoverSuperAgentCliPaths({ homeDir: os.homedir() });
       if (method === "ocr.runtime") {
         return resolveOcrRuntime(app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), "build"));
@@ -898,6 +902,7 @@ function startMainProcess(): void {
         else finishPackagedStartupValidation();
       }
       if (status !== "ready") {
+        desktopWindowPrototype?.stop();
         runningAgentSessionCount = 0;
         runningManagedProcessCount = 0;
         setTrayRunningCount(0, getMainWindow);
@@ -917,6 +922,8 @@ function startMainProcess(): void {
     });
 
     hostManager.setMessageListener((msg) => {
+      if (msg.type === "agent-end" && msg.eventType === "agent_settled" && typeof msg.sessionId === "string")
+        desktopWindowPrototype?.stop(msg.sessionId);
       if (packagedStartupValidation && (msg.type === "toolchain:ack" || msg.type === "managed-process-owner:ack"))
         finishPackagedStartupValidation();
       if (msg.type === "running-sessions") {

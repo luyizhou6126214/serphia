@@ -12,6 +12,7 @@ directories:
 
 files:
   - out/**/*
+  - "!out/native/desktop-window/**"
   - package.json
   - LICENSE
   - build/icon.png
@@ -88,6 +89,12 @@ mac:
 win:
   icon: build/icon.ico
   extraResources:
+    - from: out/native/desktop-window/win32-x64
+      to: desktop-window/win32-x64
+      filter:
+        - agent-desktop.exe
+    - from: build/desktop-window/LICENSE
+      to: desktop-window/LICENSE
     - from: out/native/windows-managed-process-helper
       to: managed-process/win32-x64
       filter:

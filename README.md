@@ -109,6 +109,11 @@
 - 用户与 Agent 操作同一个页面，并可随时接管；提交、下载、上传、权限和外部协议继续经过本地策略或确认
 - 设置页管理全局默认与具体会话的永久权限，授权弹窗只产生当前会话的临时权限；高级浏览器模式由一个仅本次启动有效的本机开关统一控制
 - 高级浏览器模式整合三层 UA/Client Hints 身份、可信输入、CDP 网络抓包与确认后的写请求重放、JavaScript 经验库和专用高级 Profile；Agent 工具不接收或返回 Cookie value
+
+Windows x64 版内置桌面应用控制。在本地聊天里直接指明 App 和操作，例如“用记事本打开的窗口输入测试文字”。Serphia 会显示窗口选择对话框，并把匹配名称的窗口排在前面。选择后，Agent 可以截取窗口画面、按控件点击和写入文本。切走窗口、停止任务或任务结束后需要重新选择。
+
+驱动随 Windows 应用分发。开发时，`npm run dev` 在构建阶段自动准备并校验 [agent-desktop v1.3.1](https://github.com/vercel-labs/agent-desktop/releases/tag/v1.3.1)。运行 `node scripts/test-desktop-window-prototype.mjs` 会用两个临时 WinForms 窗口验证真实驱动和停止行为。
+
 - 私网保护当前为明确标记的 best-effort；未部署受控网络沙箱时，Strict 模式会直接拒绝请求
 
 ### 可观察、可控制的受管开发进程

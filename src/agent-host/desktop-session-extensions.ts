@@ -8,6 +8,7 @@ import { desktopMcpExtensions } from "./mcp/extensions";
 import { sessionOrchestrationExtensions } from "./session-orchestration";
 import { createAgentSettlementExtension } from "./agent-settlement";
 import { createAdditionalSkillReferencesExtension } from "./additional-skill-references";
+import { createSessionWorkflowExtension } from "./session-workflow";
 
 export function desktopSessionExtensions(
   policy: SessionToolPolicy,
@@ -26,5 +27,6 @@ export function desktopSessionExtensions(
     createLegacyChannelContextExtension(),
     createAdditionalSkillReferencesExtension(getSkills),
     createDesktopPromptExtension(prompt),
+    createSessionWorkflowExtension(policy),
   ];
 }

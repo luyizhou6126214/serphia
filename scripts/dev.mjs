@@ -2,6 +2,7 @@
 /** Dev orchestration: Vite (renderer) + tsup watch (main/preload/host) + Electron. */
 
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveElectronBinary, resolvePackageFile, terminateProcessTree } from "./process-utils.mjs";
@@ -46,7 +47,7 @@ export function createDevRuntime(projectRoot = root) {
   const run = (label, command, args, options = {}) => {
     const child = spawn(command, args, {
       cwd: projectRoot,
-      stdio: "inherit",
+      stdio: options.ipc ? ["inherit", "inherit", "inherit", "ipc"] : "inherit",
       detached: process.platform !== "win32",
       env: { ...process.env, ...options.env },
     });
@@ -72,28 +73,18 @@ export function createDevRuntime(projectRoot = root) {
   return { children, run, shutdown };
 }
 
-async function waitForSuccessfulBuild(child) {
-  const result = await new Promise((resolve) => {
-    child.once("error", (error) => resolve({ error }));
-    child.once("exit", (code, signal) => resolve({ code, signal }));
-  });
-  if (result.error) throw new Error(`initial build failed to start: ${result.error.message}`);
-  if (result.signal) throw new Error(`initial build terminated by signal ${result.signal}`);
-  if (result.code !== 0) throw new Error(`initial build exited with status ${result.code ?? "none"}`);
-}
-
 export async function runDev(projectRoot = root) {
   const runtime = createDevRuntime(projectRoot);
   process.once("SIGINT", () => runtime.shutdown(0));
   process.once("SIGTERM", () => runtime.shutdown(0));
 
-  console.log("[dev] building main/preload/host…");
-  const initialBuild = runtime.run("initial build", process.execPath, ["scripts/build-main.mjs"], { fatal: false });
   try {
-    await waitForSuccessfulBuild(initialBuild);
-    const tsupCli = resolvePackageFile(projectRoot, "tsup", "dist/cli-default.js");
+    console.log("[dev] building main/preload/host…");
+    const watcher = runtime.run("tsup watch", process.execPath, ["scripts/build-main.mjs", "--watch"], { ipc: true });
+    const [status] = await once(watcher, "message");
+    if (status !== "build-ready") throw new Error(`unexpected tsup watch status: ${status}`);
+
     const viteCli = resolvePackageFile(projectRoot, "vite", "bin/vite.js");
-    runtime.run("tsup watch", process.execPath, [tsupCli, "--config", "tsup.config.ts", "--watch"]);
     runtime.run("Vite", process.execPath, [viteCli, "--config", "vite.config.ts"]);
     await waitForViteReady(rendererUrl);
 

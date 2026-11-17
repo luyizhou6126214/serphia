@@ -22,7 +22,8 @@ import { usePendingComposerFlow } from "@/hooks/usePendingComposerFlow";
 import { PendingMessages } from "./composer/PendingMessages";
 import { QueuedMessageRow } from "./composer/QueuedMessageRow";
 import {
-  BUILTIN_SLASH_COMMANDS,
+  builtinSlashCommands,
+  localizeSlashCommand,
   SLASH_SOURCES,
   SLASH_SOURCE_GROUP_LABEL,
   SLASH_SOURCE_ORDER,
@@ -268,8 +269,11 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    const commands = [...(isStreaming ? [] : BUILTIN_SLASH_COMMANDS), ...(slashCommands ?? [])];
-    return [...commands]
+    const commands = [
+      ...(isStreaming ? [] : builtinSlashCommands(t)),
+      ...(slashCommands ?? []).map((command) => localizeSlashCommand(command, t)),
+    ];
+    return commands
       .filter((command) => {
         if (slashStart !== 0 && command.source !== "skill") return false;
         const name = command.name.toLowerCase();

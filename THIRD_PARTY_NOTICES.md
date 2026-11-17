@@ -32,6 +32,8 @@ application.
 | `windows-link`                         | 0.2.1            | Windows import-link support                          | [Apache-2.0 OR MIT](https://github.com/microsoft/windows-rs/tree/0.61.2/license-mit)                                             | [microsoft/windows-rs](https://github.com/microsoft/windows-rs/tree/0.61.2)                                               |
 | Microsoft Visual C++ runtime           | Per release SBOM | Statically linked into the Windows helper            | [Microsoft software license terms](https://go.microsoft.com/fwlink/?LinkId=2086102)                                              | The authoritative native toolset version is recorded in the Windows CycloneDX SBOM                                        |
 
+The foreground workflow scheduler bundles [@quintinshaw/pi-dynamic-workflows 3.15.2](https://github.com/QuintinShaw/pi-dynamic-workflows) under the [MIT license](https://github.com/QuintinShaw/pi-dynamic-workflows/blob/main/LICENSE). Copyright © 2026 QuintinShaw and Michael Livs (original pi-dynamic-workflows).
+
 ## Pi 1.4.0 runtime dependencies
 
 The 1.4.0 SDK does not depend on `@earendil-works/chord`. The experimental
@@ -59,6 +61,10 @@ It is bundled locally as `src/renderer/assets/providers/typesafe.png` for provid
 The TypeSafe name and logo belong to TypeSafe AI; this notice does not relicense the brand asset.
 
 ## Developer toolchains
+
+The Windows x64 desktop app bundles [Vercel agent-desktop 1.3.1](https://github.com/vercel-labs/agent-desktop/releases/tag/v1.3.1)
+for native window control under the [Apache License 2.0](https://github.com/vercel-labs/agent-desktop/blob/v1.3.1/LICENSE).
+The license text is included at `resources/desktop-window/LICENSE`.
 
 Pi Agent Desktop redistributes the target-specific ripgrep, fd, and supported macOS/Linux Herdr executables in its
 default installer. Remaining tools are fixed official releases downloaded to private application storage only after

@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveOcrRuntime } from "../src/main/ocr-runtime.ts";
 import ocrCatalog from "../build/ocr/runtime-catalog.json" with { type: "json" };
+import agentDesktopRelease from "../build/desktop-window/agent-desktop-release.json" with { type: "json" };
 import { darwinCodeDigest } from "../src/main/toolchains/darwin-binary-integrity.ts";
 import { extractFile, listPackage } from "@electron/asar";
 import { verifyWindowsHelperPe } from "./windows-helper-pe.mjs";
@@ -50,6 +51,7 @@ const layout = findPackagedLayout(dist, target);
 
 verifyPackagedResources(layout.resources, target);
 verifyWindowsManagedProcessHelper(layout.resources, target, !staticOnly, requireReleaseHelper);
+verifyPackagedDesktopWindowDriver(layout.resources, target);
 verifyPiRuntimeAssets(layout.resources, expectedPlatform, expectedArch);
 verifyBundledTools(layout.resources, expectedPlatform, expectedArch, !staticOnly);
 verifyBundledHerdr(layout.resources, expectedPlatform, expectedArch, !staticOnly);
@@ -162,6 +164,20 @@ function verifyPackagedResources(resources, toolTarget) {
     if (/PortableGit-.*\.exe$/i.test(relative)) forbidden.push(relative);
   });
   if (forbidden.length > 0) throw new Error(`Packaged managed runtime residue: ${forbidden.join(", ")}`);
+}
+
+function verifyPackagedDesktopWindowDriver(resources, toolTarget) {
+  const driverRoot = path.join(resources, "desktop-window");
+  if (toolTarget !== agentDesktopRelease.target) {
+    if (fs.existsSync(driverRoot)) throw new Error("Unexpected bundled agent-desktop on this target");
+    return;
+  }
+  const executable = path.join(driverRoot, toolTarget, agentDesktopRelease.executable);
+  if (createHash("sha256").update(fs.readFileSync(executable)).digest("hex") !== agentDesktopRelease.executableSha256)
+    throw new Error("Packaged agent-desktop checksum mismatch");
+  const license = fs.readFileSync(path.join(driverRoot, "LICENSE"));
+  if (!license.equals(fs.readFileSync(path.join(root, "build", "desktop-window", "LICENSE"))))
+    throw new Error("Packaged agent-desktop license mismatch");
 }
 
 function verifyWindowsManagedProcessHelper(resources, toolTarget, executeHelper, requireReleaseProvenance) {

@@ -1,4 +1,5 @@
 import type { SlashCommandInfo } from "@/hooks/useAgentSession";
+import type { useI18n } from "@/i18n";
 
 export const SLASH_COMMAND_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -12,13 +13,51 @@ export type SlashCommandPaletteItem =
 
 export type SlashCommandSource = SlashCommandPaletteItem["source"];
 
-export const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
-  { name: "compact", description: "Compress context, optionally with instructions", source: "builtin" },
-  { name: "reload", description: "Reload extensions, skills, prompts, and tools", source: "builtin" },
-  { name: "name", description: "Set the session display name", source: "builtin" },
-  { name: "session", description: "Show session message, token, and cost stats", source: "builtin" },
-  { name: "copy", description: "Copy the last assistant message", source: "builtin" },
-];
+type Translate = ReturnType<typeof useI18n>["t"];
+
+export function builtinSlashCommands(t: Translate): SlashCommandPaletteItem[] {
+  return [
+    {
+      name: "compact",
+      description: t("slashCommandCompact", "Compress context, optionally with instructions"),
+      source: "builtin",
+    },
+    {
+      name: "reload",
+      description: t("slashCommandReload", "Reload extensions, skills, prompts, and tools"),
+      source: "builtin",
+    },
+    { name: "name", description: t("slashCommandName", "Set the session display name"), source: "builtin" },
+    {
+      name: "session",
+      description: t("slashCommandSession", "Show session message, token, and cost stats"),
+      source: "builtin",
+    },
+    { name: "copy", description: t("slashCommandCopy", "Copy the last assistant message"), source: "builtin" },
+  ];
+}
+
+export function localizeSlashCommand(command: SlashCommandInfo, t: Translate): SlashCommandInfo {
+  if (command.source !== "extension") return command;
+  // Only translate app-provided commands; a third-party extension can register the same name.
+  const path = command.sourceInfo?.path;
+  const name = command.name.split(":", 1)[0];
+  if (path === "builtin:mcp" && name === "mcp") {
+    return { ...command, description: t("slashCommandMcp", "Manage MCP servers in Desktop Settings") };
+  }
+  if (path === "builtin:serphia-workflow") {
+    if (name === "run_workflow") {
+      return {
+        ...command,
+        description: t("slashCommandRunWorkflow", "Run a task as a workflow with dependent stages"),
+      };
+    }
+    if (name === "swarm") {
+      return { ...command, description: t("slashCommandSwarm", "Split a task across parallel subagents") };
+    }
+  }
+  return command;
+}
 
 export const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
 

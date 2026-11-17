@@ -13,6 +13,7 @@ import type { AgentSessionWrapper } from "./rpc-manager";
 import type { SessionToolPolicy } from "./session-tool-policy";
 import { createDesktopSearchToolDefinitions } from "./toolchain-search";
 import { createBrowserToolDefinitions } from "./browser-tools";
+import { desktopWindowPrototypeTools } from "./desktop-window-prototype-tool";
 import { browserAgentRuntime } from "./browser-agent-runtime";
 import { peekHerdrBridge } from "./herdr/runtime";
 import { createHerdrToolDefinitions } from "./herdr/tools";
@@ -35,7 +36,7 @@ export async function createDesktopSessionTools(
 ) {
   if (!cwd) {
     return {
-      customTools: [history.tool(), ...createBrowserToolDefinitions()],
+      customTools: [history.tool(), ...createBrowserToolDefinitions(), ...desktopWindowPrototypeTools(platform)],
       attach(_wrapper: AgentSessionWrapper, executionPolicy: SessionToolPolicy) {
         executionPolicy.setAvailability(() => true);
       },
@@ -73,6 +74,7 @@ export async function createDesktopSessionTools(
         : []),
       ...createDesktopSearchToolDefinitions(cwd, context, runtime),
       ...createBrowserToolDefinitions(),
+      ...desktopWindowPrototypeTools(platform),
       ...(peekHerdrBridge() ? [...createHerdrToolDefinitions(cwd, peekHerdrBridge()!)] : []),
       ...(peekManagedProcessService()
         ? createManagedProcessToolDefinitions(cwd, settings.isProjectTrusted(), peekManagedProcessService()!)

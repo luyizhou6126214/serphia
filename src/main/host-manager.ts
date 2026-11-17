@@ -8,6 +8,7 @@ import path from "path";
 import { appendMainLog, appendMainLogs } from "./logger";
 import type { ToolchainSnapshot } from "../shared/toolchains/types";
 import type { BrowserCapabilitySnapshot } from "../contract/browser";
+import { DESKTOP_WINDOW_AVAILABLE_ENV } from "../contract/desktop-window-prototype";
 import type { HerdrRuntimeDescriptor } from "../contract/herdr";
 import { BrowserError } from "./browser/browser-error";
 import { createHostExitSignal, reserveHostRestart, trySpawnHost, type HostExitSignal } from "./host-restart-core";
@@ -60,7 +61,10 @@ export class HostManager {
   private hostGeneration = 0;
   private managedProcessOwnerReady = false;
 
-  constructor(private readonly hostEntry: string) {}
+  constructor(
+    private readonly hostEntry: string,
+    private readonly desktopWindowAvailable = false,
+  ) {}
 
   setStatusListener(cb: (s: HostStatus, detail?: string) => void): void {
     this.onStatusChange = cb;
@@ -247,6 +251,8 @@ export class HostManager {
     }
     // Host must NOT run as pure node — it needs parentPort from utilityProcess
     delete env.ELECTRON_RUN_AS_NODE;
+    if (this.desktopWindowAvailable) env[DESKTOP_WINDOW_AVAILABLE_ENV] = "1";
+    else delete env[DESKTOP_WINDOW_AVAILABLE_ENV];
     env.PI_AGENT_HOST = "1";
     env.PI_DESKTOP_USER_DATA = app.getPath("userData");
     env.PI_DESKTOP_DOCUMENTS = app.getPath("documents");

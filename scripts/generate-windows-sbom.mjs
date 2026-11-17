@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import ocrCatalog from "../build/ocr/runtime-catalog.json" with { type: "json" };
+import agentDesktopRelease from "../build/desktop-window/agent-desktop-release.json" with { type: "json" };
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -378,6 +379,16 @@ export function createWindowsSbom(facts) {
         { name: "pi:build:role", value: "authoritative-native-helper-runtime" },
       ],
     }),
+    component({
+      type: "application",
+      ref: "bundled:agent-desktop",
+      name: "agent-desktop",
+      version: agentDesktopRelease.version,
+      purl: `pkg:github/vercel-labs/agent-desktop@${agentDesktopRelease.version}`,
+      license: "Apache-2.0",
+      hash: agentDesktopRelease.executableSha256,
+      properties: [{ name: "pi:bundled:artifact-sha256", value: agentDesktopRelease.archiveSha256 }],
+    }),
     ...[ripgrep, fd].map((tool) =>
       component({
         type: "application",
@@ -449,6 +460,7 @@ export function createWindowsSbom(facts) {
         "native:managed-process-helper",
         "bundled:ripgrep",
         "bundled:fd",
+        "bundled:agent-desktop",
         "bundled:open-code-review",
       ].sort(),
     },

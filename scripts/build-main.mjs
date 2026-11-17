@@ -14,9 +14,22 @@ export function cleanMainBuildOutputs(projectRoot = root) {
   fs.rmSync(path.join(projectRoot, "out", "preload"), { recursive: true, force: true });
 }
 
-export function buildMain(projectRoot = root) {
+function prepareMainBuild(projectRoot) {
   prepareOcrSdk(projectRoot);
+  if (process.platform === "win32" && process.arch === "x64")
+    assertSuccessfulSpawn(
+      spawnSync(process.execPath, [path.join(projectRoot, "scripts", "prepare-desktop-window-driver.mjs")], {
+        cwd: projectRoot,
+        stdio: "inherit",
+        windowsHide: true,
+      }),
+      "desktop window driver preparation",
+    );
   cleanMainBuildOutputs(projectRoot);
+}
+
+export function buildMain(projectRoot = root) {
+  prepareMainBuild(projectRoot);
   const tsupCli = resolvePackageFile(projectRoot, "tsup", "dist/cli-default.js");
   assertSuccessfulSpawn(
     spawnSync(process.execPath, [tsupCli, "--config", "tsup.config.ts"], {
@@ -30,9 +43,22 @@ export function buildMain(projectRoot = root) {
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isMain) {
   try {
-    buildMain();
+    if (process.argv.includes("--watch")) {
+      prepareMainBuild(root);
+      const { build } = await import("tsup");
+      // The watch build also emits the initial bundles. Wait for every target to finish writing.
+      await build({
+        config: "tsup.config.ts",
+        // tsup expands watch globs before applying ignore rules, so give it source paths only.
+        watch: ["src/{main,preload,agent-host,contract,shared}/**/*", "package.json"],
+      });
+      process.send?.("build-ready");
+    } else {
+      buildMain();
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
+    // A different tsup sub-config may have already started its watcher.
+    process.exit(1);
   }
 }
