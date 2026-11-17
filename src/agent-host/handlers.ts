@@ -20,6 +20,7 @@ import { createCodeReviewHandlers } from "./handlers/code-review";
 import { createHerdrHandlers } from "./handlers/herdr";
 import { createProcessHandlers } from "./handlers/processes";
 import { createMcpHandlers } from "./handlers/mcp";
+import { createPresentationAgent } from "./presentation-agent";
 import { initializeMcpService } from "./mcp/runtime";
 export { generateSessionTitleWithFallback, applySessionNameIfEmpty } from "./handlers/agent-title";
 export { createAgentNewLockKey } from "./handlers/agent";
@@ -151,6 +152,7 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
   const herdrHandlers = createHerdrHandlers(herdr, herdrCall);
   const codeReview = new CodeReviewService();
   const reviewHandlers = createCodeReviewHandlers(codeReview);
+  const presentations = createPresentationAgent();
 
   const guard =
     <P, R>(handler: (params: P, context: RpcRequestContext) => R) =>
@@ -169,6 +171,9 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     };
 
   server.handle({
+    "presentations.outline": guard(presentations.outline),
+    "presentations.page": guard(presentations.page),
+    "presentations.stop": guard(({ id }, context) => presentations.stop(id, context)),
     "codeReview.preview": guard(reviewHandlers["codeReview.preview"]),
     "codeReview.branches": guard(reviewHandlers["codeReview.branches"]),
     "codeReview.config.get": guard(reviewHandlers["codeReview.config.get"]),
@@ -472,6 +477,7 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
   });
 
   const shutdown = createHostShutdown([
+    { name: "presentation agents", stop: presentations.shutdown },
     { name: "code review", stop: () => codeReview.shutdown() },
     { name: "scheduled task timer", stop: () => scheduledTasks.stop() },
     { name: "running subscription", stop: stopRunning },

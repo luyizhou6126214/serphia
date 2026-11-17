@@ -151,6 +151,12 @@ Windows x64 版内置桌面应用控制。在本地聊天里直接指明 App 和
 - Agent 回复和 Markdown 文件支持代码高亮、Mermaid、KaTeX，并可预览 Word（`.docx`）文档
 - 文件变更监听与 Git 状态感知，让会话始终贴近当前项目
 
+### PPT 工作台
+
+- 从左侧「PPT 工作台」新建演示文稿，在 16:9 画布中编辑文字、形状、图片和条形图。文稿按项目自动保存，无项目时保存在本地文稿列表。
+- 在「Pi Agent」中输入需求，可粘贴资料或添加 TXT、Markdown、CSV。确认大纲后逐页生成，在画布预览后保存为新文稿或追加到已有文稿。
+- 导出时保留 PowerPoint 原生文本、形状、图片和图表，条形图的数据可在 PowerPoint 中继续编辑。
+
 ### 模型与扩展统一管理
 
 - main 中的 Windows 新会话默认 Shell 为 PowerShell，可在“设置 → 通用 → Agent 默认 Shell”改为 Bash。

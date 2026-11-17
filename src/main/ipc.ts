@@ -33,6 +33,7 @@ import { createDesktopTerminalService } from "./terminal/host.ts";
 import type { TerminalCreateInput } from "../contract/terminal";
 import type { ManagedProcessPublicInfo } from "../contract/processes";
 import { validateDesktopUiStatePatch } from "./ui-state-patch";
+import { createPresentationIpc } from "./presentations/ipc";
 import type {
   BrowserConfirmationKind,
   BrowserConfirmationProof,
@@ -359,6 +360,12 @@ export function installDesktopIpc(options: DesktopIpcOptions): void {
     }
     setChannelCredential(payload);
   });
+
+  const presentations = createPresentationIpc();
+  trustedHandle("desktop:presentations:list", presentations.list);
+  trustedHandle("desktop:presentations:load", presentations.load);
+  trustedHandle("desktop:presentations:save", presentations.save);
+  trustedHandle("desktop:presentations:export", presentations.export);
 
   trustedHandle("desktop:save-file", async (event, saveOptions: SaveTextFileOptions) => {
     const win = BrowserWindow.fromWebContents(event.sender);

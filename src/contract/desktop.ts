@@ -3,6 +3,7 @@ import type { ChannelId } from "../shared/channel-types";
 import type { ManagedProcessCapability } from "./processes";
 import type { ChatAppearancePreferences } from "../shared/chat-appearance";
 import type { HerdrSettings } from "./herdr";
+import type { Presentation, PresentationSummary, SavedPresentation } from "./presentations";
 import type {
   TerminalAttachResult,
   TerminalCreateInput,
@@ -157,6 +158,10 @@ export interface PiBridge {
   platform: NodeJS.Platform;
   showApplicationMenu: (index: number, x: number, y: number) => Promise<void>;
   isDesktop: true;
+  listPresentations: (cwd: string | null) => Promise<PresentationSummary[]>;
+  loadPresentation: (cwd: string | null, id: string) => Promise<SavedPresentation>;
+  savePresentation: (cwd: string | null, deck: Presentation, revision: number) => Promise<number>;
+  exportPresentation: (deck: Presentation) => Promise<string | null>;
   getVersion: () => Promise<string>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   checkForUpdates: () => Promise<DesktopUpdateState>;

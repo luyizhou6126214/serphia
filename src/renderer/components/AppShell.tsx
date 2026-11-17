@@ -1,5 +1,5 @@
 import { getRecentProjects, useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
-import { CalendarClock, Moon, PanelLeft, PanelRight, ShieldCheck, Sun, Workflow } from "lucide-react";
+import { CalendarClock, Moon, PanelLeft, PanelRight, Presentation, ShieldCheck, Sun, Workflow } from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
@@ -31,6 +31,7 @@ import type { SettingsTab } from "./SettingsConfig";
 import {
   preloadSettingsConfig,
   scheduleSettingsConfigPreload,
+  PresentationWorkspace,
   SettingsConfig,
   SuperAgentPage,
   TerminalPanel,
@@ -102,7 +103,7 @@ import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice 
 import type { TerminalShellInfo } from "@contract/terminal";
 
 const TERMINAL_PANEL_RATIO = 0.55;
-type PrimaryView = "sessions" | "schedule" | "review" | "superagent";
+type PrimaryView = "sessions" | "schedule" | "review" | "superagent" | "ppt";
 type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean; primary: PrimaryView };
 const sameNavigationView = (a: NavigationView, b: NavigationView) =>
   a.settings === b.settings && a.primary === b.primary && a.session?.id === b.session?.id && a.draftCwd === b.draftCwd;
@@ -150,6 +151,7 @@ export function AppShell({
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [primaryView, setPrimaryView] = useState<PrimaryView>("sessions");
+  const [presentationVisited, setPresentationVisited] = useState(false);
   const scheduledOpen = primaryView === "schedule";
   const superAgentOpen = primaryView === "superagent";
   const reviewOpen = primaryView === "review";
@@ -243,7 +245,7 @@ export function AppShell({
   const panelWidthKind = rightPanelWidthKind(activePanelTab);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
-  const primaryViewAllowsRightPanel = !scheduledOpen && !superAgentOpen;
+  const primaryViewAllowsRightPanel = !scheduledOpen && !superAgentOpen && primaryView !== "ppt";
   const rightPanelVisible = rightPanelOpen && primaryViewAllowsRightPanel;
   const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && primaryViewAllowsRightPanel;
   const canResizeRightPanel = showRightPanelContent && !isMobile && !rightPanelFullscreen;
@@ -1080,6 +1082,8 @@ export function AppShell({
     if (settingsOpen && settingsTransitionRef.current) settingsTransitionRef.current(navigate);
     else navigate();
   };
+  const openModels = () => openSidebarSettings("models");
+  const ppt = { cwd: workspace.selectedProject, hidden: settingsOpen || primaryView !== "ppt", openModels };
   const sidebarRail = (
     <div className="sidebar-rail" aria-label={t("navigation", "Navigation")}>
       <div className="sidebar-rail-top">
@@ -1092,6 +1096,7 @@ export function AppShell({
               <CalendarClock size={18} strokeWidth={1.7} aria-hidden="true" />,
             ],
             ["superagent", t("superAgent", "SuperAgent"), <Workflow size={18} strokeWidth={1.7} aria-hidden="true" />],
+            ["ppt", t("pptTitle", "PPT Studio"), <Presentation size={18} strokeWidth={1.7} aria-hidden="true" />],
             ["review", t("codeReview", "Code review"), <ShieldCheck size={18} strokeWidth={1.7} aria-hidden="true" />],
           ] as const
         ).map(([view, label, icon]) => (
@@ -1105,6 +1110,7 @@ export function AppShell({
             onClick={() =>
               leaveSettingsFor(() => {
                 setPrimaryView(view);
+                if (view === "ppt") setPresentationVisited(true);
                 setRightPanelOpen(false);
                 setActiveTopPanel(null);
               })
@@ -1358,6 +1364,7 @@ export function AppShell({
               />
             )}
             {superAgentOpen && !settingsOpen && <SuperAgentPage cwd={workspaceCwd} />}
+            {presentationVisited && <PresentationWorkspace key={ppt.cwd} {...ppt} />}
             {(reviewVisible || reviewVisited) && (
               <CodeReviewPage
                 visible={reviewVisible}
@@ -1365,7 +1372,7 @@ export function AppShell({
                 project={workspace.selectedProject}
                 projects={getRecentProjects(workspaceSessions)}
                 home={workspace.homeDir}
-                onOpenModels={() => openSidebarSettings("models")}
+                onOpenModels={openModels}
                 workStepDisplay={chatAppearance.workStepDisplay}
                 modelsRevision={modelsRefreshKey}
                 onOpenFile={({ path, root, line }) =>

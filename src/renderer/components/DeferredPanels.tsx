@@ -36,6 +36,17 @@ const LazyTerminalPanel = lazy(() =>
 const LazySuperAgentPage = lazy(() =>
   import("./superagent/SuperAgentPage").then((module) => ({ default: module.SuperAgentPage })),
 );
+const LazyPresentationWorkspace = lazy(() =>
+  import("./presentations/PresentationWorkspace").then((module) => ({ default: module.PresentationWorkspace })),
+);
+
+export function PresentationWorkspace(props: ComponentProps<typeof LazyPresentationWorkspace>) {
+  return (
+    <Suspense fallback={props.hidden ? null : <PanelLoading />}>
+      <LazyPresentationWorkspace {...props} />
+    </Suspense>
+  );
+}
 
 function PanelLoading() {
   const { t } = useI18n();

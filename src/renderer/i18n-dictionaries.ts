@@ -19,6 +19,7 @@ import { enUS as scheduleEnUS, zhCN as scheduleZhCN, zhTW as scheduleZhTW } from
 import { enUS as sessionEnUS, zhCN as sessionZhCN, zhTW as sessionZhTW } from "./i18n/session.ts";
 import { enUS as settingsEnUS, zhCN as settingsZhCN, zhTW as settingsZhTW } from "./i18n/settings.ts";
 import { enUS as trajectoryEnUS, zhCN as trajectoryZhCN, zhTW as trajectoryZhTW } from "./i18n/trajectory.ts";
+import { enUS as pptEnUS, zhCN as pptZhCN, zhTW as pptZhTW } from "./i18n/presentations.ts";
 
 export const enUS = mergeDictionaries(
   routingEnUS,
@@ -40,6 +41,7 @@ export const enUS = mergeDictionaries(
   sessionEnUS,
   settingsEnUS,
   trajectoryEnUS,
+  pptEnUS,
 );
 export const zhCN = mergeDictionaries(
   routingZhCN,
@@ -61,6 +63,7 @@ export const zhCN = mergeDictionaries(
   sessionZhCN,
   settingsZhCN,
   trajectoryZhCN,
+  pptZhCN,
 );
 export const zhTW = mergeDictionaries(
   routingZhTW,
@@ -82,6 +85,7 @@ export const zhTW = mergeDictionaries(
   sessionZhTW,
   settingsZhTW,
   trajectoryZhTW,
+  pptZhTW,
 );
 
 export const dictionaries = { "en-US": enUS, "zh-CN": zhCN, "zh-TW": zhTW } satisfies Record<

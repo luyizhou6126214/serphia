@@ -98,6 +98,7 @@ import type {
   ReviewRun,
 } from "./code-review";
 import type { ScheduleSave, ScheduleTask } from "./schedule";
+import type { AgentSlide, Outline, OutlineRequest, PageRequest } from "./presentations";
 import type {
   SuperAgentCli,
   SuperAgentPermissionMode,
@@ -124,6 +125,9 @@ import type {
 
 /** Request/response API surface (replaces HTTP routes). */
 export interface Api {
+  "presentations.outline": { params: OutlineRequest; result: Outline };
+  "presentations.page": { params: PageRequest; result: AgentSlide };
+  "presentations.stop": { params: { id: string }; result: void };
   "superagent.runtimes": { params: { probe?: SuperAgentCli }; result: SuperAgentRuntime[] };
   "superagent.roles.list": { params: void; result: SuperAgentRole[] };
   "superagent.roles.save": { params: Omit<SuperAgentRole, "id"> & { id?: string }; result: SuperAgentRole };

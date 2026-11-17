@@ -34,6 +34,8 @@ application.
 
 The foreground workflow scheduler bundles [@quintinshaw/pi-dynamic-workflows 3.15.2](https://github.com/QuintinShaw/pi-dynamic-workflows) under the [MIT license](https://github.com/QuintinShaw/pi-dynamic-workflows/blob/main/LICENSE). Copyright © 2026 QuintinShaw and Michael Livs (original pi-dynamic-workflows).
 
+The PPT workspace uses [PptxGenJS 4.0.1](https://github.com/gitbrent/PptxGenJS/tree/v4.0.1) by Brent Ely under the [MIT license](https://github.com/gitbrent/PptxGenJS/blob/v4.0.1/LICENSE).
+
 ## Pi 1.4.0 runtime dependencies
 
 The 1.4.0 SDK does not depend on `@earendil-works/chord`. The experimental
