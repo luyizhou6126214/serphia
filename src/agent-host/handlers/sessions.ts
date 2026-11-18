@@ -6,7 +6,7 @@ import { SessionExecutionHistory } from "../session-execution-history";
 import { ExecutionLogStore } from "../execution-log-store";
 import { validateExecutionQuery } from "../../contract/executions";
 import { RpcError, type HistoryWindow, type SessionDetail, type SessionRuntimeState } from "../../contract/types";
-import type { SessionTreeNode } from "../../shared/types";
+import type { SessionEntry, SessionTreeNode } from "../../shared/types";
 import { getRpcSession, getRunningRpcSessionIds } from "../rpc-manager";
 import { readSessionSnapshot, assertSessionWritable } from "../session-readonly";
 import { getDesktopSessionToolNames } from "../session-tool-store";
@@ -159,18 +159,25 @@ export function createSessionHandlers({
         })();
 
         const resolveStartedAt = performance.now();
-        const filePath = await resolveSessionPath(id);
+        const persistedPath = await resolveSessionPath(id);
+        // A prepared skill session has no transcript file until its first user message.
+        // Let the standard ChatWindow subscribe and render it before generation begins.
+        const pendingSession = !persistedPath ? getRpcSession(id) : undefined;
+        const pendingManager = pendingSession?.isAlive() ? pendingSession.inner.sessionManager : undefined;
+        const filePath = persistedPath ?? pendingManager?.getSessionFile();
         const resolvePathMs = performance.now() - resolveStartedAt;
         if (!filePath) throw new RpcError({ code: "NOT_FOUND", message: "Session not found" });
 
         const openStartedAt = performance.now();
-        const { manager: sm, entries } = getSessionContentSnapshot(filePath);
+        const { manager: sm, entries } = pendingManager
+          ? { manager: pendingManager, entries: pendingManager.getEntries() as unknown as SessionEntry[] }
+          : getSessionContentSnapshot(filePath);
         const openMs = performance.now() - openStartedAt;
 
         const contextStartedAt = performance.now();
         const leafId = sm.getLeafId();
         const tree = projectSessionTreeForResponse(sm.getTree() as never) as SessionTreeNode[];
-        const historyRevision = buildHistoryRevision(filePath, id);
+        const historyRevision = persistedPath ? buildHistoryRevision(filePath, id) : `pending:${id}`;
         const context = buildSessionHistoryPage({ entries, leafId, historyWindow, historyRevision });
         const contextMs = performance.now() - contextStartedAt;
 
@@ -211,7 +218,7 @@ export function createSessionHandlers({
           stateMs: roundSessionMilliseconds(stateMs),
           entryCount: entries.length,
           messageCount: context.messages.length,
-          fileBytes: statSync(filePath).size,
+          fileBytes: persistedPath ? statSync(filePath).size : 0,
           ...(responseBytes === undefined ? {} : { responseBytes }),
         });
         return detail;

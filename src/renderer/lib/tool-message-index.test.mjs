@@ -3,6 +3,27 @@ import test from "node:test";
 
 import { buildToolMessageIndex } from "./tool-message-index.ts";
 
+test("progress overlays do not change history and persisted nested receipts replace them", () => {
+  const assistant = { role: "assistant", content: [{ type: "toolCall", toolCallId: "parallel" }] };
+  const history = [assistant];
+  const live = {
+    role: "toolResult",
+    toolCallId: "parallel",
+    partial: true,
+    content: [{ type: "text", text: "running" }],
+  };
+  const before = buildToolMessageIndex(history, undefined, { parallel: live });
+  assert.equal(before.get(assistant).results.get("parallel"), live);
+  assert.deepEqual(history, [assistant]);
+  const final = {
+    ...live,
+    partial: undefined,
+    nestedCalls: { calls: [{ id: "parallel/1", name: "write", status: "ok" }], complete: true },
+  };
+  const after = buildToolMessageIndex([...history, final], before, { parallel: live });
+  assert.equal(after.get(assistant).results.get("parallel"), final);
+});
+
 test("tool results and durations are indexed once for only their owning assistant", () => {
   const first = {
     role: "assistant",

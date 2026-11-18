@@ -128,6 +128,23 @@ export interface Api {
   "presentations.outline": { params: OutlineRequest; result: Outline };
   "presentations.page": { params: PageRequest; result: AgentSlide };
   "presentations.stop": { params: { id: string }; result: void };
+  "presentations.prepare": {
+    params: {
+      cwd: string | null;
+      brief: string;
+      source: string;
+      count: number;
+      language: string;
+      model?: { provider: string; modelId: string };
+      thinkingLevel?: string;
+    };
+    result: import("./presentations").PresentationWorkflow;
+  };
+  "presentations.artifacts": {
+    params: { sessionId: string };
+    result: import("./presentations").PresentationArtifactSnapshot;
+  };
+  "presentations.workflow": { params: { sessionId: string }; result: import("./presentations").PresentationWorkflow };
   "superagent.runtimes": { params: { probe?: SuperAgentCli }; result: SuperAgentRuntime[] };
   "superagent.roles.list": { params: void; result: SuperAgentRole[] };
   "superagent.roles.save": { params: Omit<SuperAgentRole, "id"> & { id?: string }; result: SuperAgentRole };
@@ -693,6 +710,7 @@ export interface Api {
 
 /** Server-push streams delivered over MessagePort RPC. */
 export interface Streams {
+  "presentations.events": import("./presentations").PresentationEvent;
   "superagent.changed": { roomId?: string };
   "superagent.tasks.changed": { roomId: string; taskId: string };
   "schedule.changed": Record<string, never>;

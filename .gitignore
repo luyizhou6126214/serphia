@@ -12,6 +12,9 @@ temp/
 .env
 .env.*
 .artifacts/
+.serphia/presentations/
+__pycache__/
+*.pyc
 build/toolchains/.core-cache/
 build/toolchains/core/
 build/herdr/bin/

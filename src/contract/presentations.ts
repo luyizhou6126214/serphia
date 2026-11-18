@@ -138,3 +138,27 @@ export type OutlineRequest = Static<typeof outlineRequestSchema>;
 export type PageRequest = Static<typeof pageRequestSchema>;
 export type SavedPresentation = { revision: number; deck: Presentation };
 export type PresentationSummary = { id: string; title: string; updatedAt: number };
+
+/** Public execution receipts only; provider-private reasoning is never forwarded. */
+export type PresentationEvent = {
+  runId: string;
+  at: number;
+  index: number | null;
+  type: "started" | "summary" | "tool_start" | "tool_end" | "render" | "complete" | "error";
+  message?: string;
+  tool?: string;
+  callId?: string;
+  detail?: string;
+  slide?: AgentSlide;
+};
+
+export type PresentationWorkflow = {
+  sessionId: string;
+  cwd: string;
+  directory: string;
+  prompt: string;
+};
+export type PresentationArtifactSnapshot = {
+  pages: { name: string; path: string; revision: string; image: string; updatedAt: number }[];
+  exports: { name: string; path: string; updatedAt: number }[];
+};

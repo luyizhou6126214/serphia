@@ -70,6 +70,8 @@ interface Props {
   thinkingExpansionStore: ThinkingExpansionStore;
   processDetailsExpansionStore: ThinkingExpansionStore;
   workStepDisplay: WorkStepDisplay;
+  /** Start a prepared workflow through the same subscribed send path as the composer. */
+  initialPrompt?: string;
 }
 
 function toMinimapMessage(message: AgentMessage | Partial<AgentMessage>): ChatMinimapMessage | null {
@@ -173,6 +175,7 @@ export function ChatWindow({
   thinkingExpansionStore,
   processDetailsExpansionStore,
   workStepDisplay,
+  initialPrompt,
 }: Props) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
@@ -229,6 +232,7 @@ export function ChatWindow({
     sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
+    liveToolResults,
     isNew,
     messagesEndRef,
     liveContentEndRef,
@@ -266,6 +270,15 @@ export function ChatWindow({
     presentationStore,
     onSessionStatsPanelOpen,
   });
+  const startedPrompt = useRef<string | null>(null);
+  useEffect(() => {
+    if (!session || !initialPrompt || loading || error || startedPrompt.current === session.id) return;
+    startedPrompt.current = session.id;
+    void handleSend(initialPrompt).catch(() => {
+      // handleSend displays the normal failure notice; retain the brief for retry.
+      chatInputRef?.current?.insertIfEmpty(initialPrompt);
+    });
+  }, [session, initialPrompt, loading, error, handleSend, chatInputRef]);
   useMcpSettingsCommand(currentSessionId);
   const runningToolCallIds = useMemo(
     () => new Set(agentPhase?.kind === "running_tools" ? agentPhase.tools.map((tool) => tool.id) : []),
@@ -290,7 +303,10 @@ export function ChatWindow({
     [streamState.streamingMessage],
   );
   const [toolIndex] = useState(() => new ToolMessageIndex());
-  const toolMessageIndex = useMemo(() => toolIndex.build(messages), [messages, toolIndex]);
+  const toolMessageIndex = useMemo(
+    () => toolIndex.build(messages, liveToolResults),
+    [messages, liveToolResults, toolIndex],
+  );
   const insertEditedContent = useCallback(
     (content: string) => chatInputRef?.current?.insertIfEmpty(content),
     [chatInputRef],

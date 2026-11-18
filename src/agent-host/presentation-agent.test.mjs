@@ -46,12 +46,36 @@ test(
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      const output = requests.length === 1 ? outline : page;
+      const body = requests.at(-1);
+      const output = JSON.stringify(body.messages).includes("Plan exactly") ? outline : page;
+      const needsTool = !body.messages.some((message) => message.role === "tool");
       response.writeHead(200, { "Content-Type": "text/event-stream" });
-      for (const [delta, finish] of [
-        [{ role: "assistant", content: JSON.stringify(output) }, null],
-        [{}, "stop"],
-      ]) {
+      for (const [delta, finish] of needsTool
+        ? [
+            [
+              {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "design-plan",
+                    type: "function",
+                    function: {
+                      name: "report_design",
+                      arguments: JSON.stringify({ summary: "使用清晰的标题层级和充分留白，保留来源事实。" }),
+                    },
+                  },
+                ],
+              },
+              null,
+            ],
+            [{}, "tool_calls"],
+          ]
+        : [
+            [{ role: "assistant", content: JSON.stringify(output).slice(0, -2) }, null],
+            [{ content: JSON.stringify(output).slice(-2) }, null],
+            [{}, "stop"],
+          ]) {
         response.write(
           "data: " +
             JSON.stringify({
@@ -89,7 +113,8 @@ test(
       path.join(root, "settings.json"),
       JSON.stringify({ defaultProvider: "fixture", defaultModel: "fixture" }),
     );
-    const agent = createPresentationAgent();
+    const events = [];
+    const agent = createPresentationAgent((event) => events.push(event));
     const leases = new Map();
     const context = {
       setLease(key, release) {
@@ -106,8 +131,14 @@ test(
     assert.deepEqual(await agent.outline({ ...input, count: 1, id: randomUUID() }, context), outline);
     assert.deepEqual(await agent.page({ ...input, outline, index: 0, id: randomUUID() }, context), page);
     assert.equal(leases.size, 0);
-    assert.equal(requests.length, 2);
-    assert.ok(requests.every((request) => !request.tools?.length));
+    assert.equal(requests.length, 4);
+    assert.ok(requests.every((request) => request.tools?.some((tool) => tool.function.name === "report_design")));
+    assert.ok(events.some((event) => event.type === "render" && event.slide.elements.length === 1));
+    assert.equal(events.filter((event) => event.type === "complete").length, 2);
+    assert.equal(events.filter((event) => event.type === "summary").length, 2);
+    assert.equal(events.filter((event) => event.type === "tool_start").length, 2);
+    assert.equal(events.filter((event) => event.type === "tool_end").length, 2);
+    assert.ok(events.every((event) => event.type !== "thinking"));
     assert.match(JSON.stringify(requests[1].messages), /交付了客户门户/);
     assert.throws(
       () => decodeAgentSlide(JSON.stringify({ ...page, elements: [{ ...page.elements[0], shell: "invalid" }] })),

@@ -113,6 +113,20 @@ export interface ToolResultMessage {
   /** Wall time the tool's execution took, as persisted by Pi. */
   durationMs?: number;
   timestamp?: number;
+  /** UI-only projection of tool_execution_update; never appended to history. */
+  partial?: boolean;
+  nestedCalls?: {
+    calls: {
+      id: string;
+      name: string;
+      arguments?: Record<string, unknown>;
+      argumentsBytes?: number;
+      status: "ok" | "error" | "unfinished";
+      durationMs?: number;
+      error?: string;
+    }[];
+    complete: boolean;
+  };
 }
 
 export interface CustomMessage {

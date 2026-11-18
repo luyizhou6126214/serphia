@@ -19,6 +19,8 @@ import {
   Undo2,
   X,
   ChartNoAxesColumn,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import {
   MAX_DECK_IMAGE_DATA,
@@ -43,6 +45,8 @@ import {
 } from "./presentation-editor";
 import { usePresentationAgent } from "./usePresentationAgent";
 import { usePresentationLibrary } from "./usePresentationLibrary";
+import { PresentationLiveCanvas } from "./PresentationLiveCanvas";
+import { PresentationSkillWorkspace } from "./PresentationSkillWorkspace";
 import "./PresentationWorkspace.css";
 
 async function readImage(file: File): Promise<Extract<PresentationElement, { kind: "image" }>> {
@@ -122,14 +126,16 @@ function slideImageSize(slide: Slide): number {
   return slide.elements.reduce((sum, element) => sum + (element.kind === "image" ? element.data.length : 0), 0);
 }
 
-export function PresentationWorkspace({
+function NativePresentationWorkspace({
   cwd,
   hidden,
   openModels,
+  openSkill,
 }: {
   cwd: string | null;
   hidden: boolean;
   openModels: () => void;
+  openSkill: () => void;
 }) {
   const { t } = useI18n();
   const library = usePresentationLibrary(cwd);
@@ -144,6 +150,7 @@ export function PresentationWorkspace({
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState("");
   const [error, setError] = useState("");
+  const [panelClosed, setPanelClosed] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const imageTarget = useRef<{ deckId: string; slideId: string } | null>(null);
   const isDraft = draftIndex !== null;
@@ -274,15 +281,20 @@ export function PresentationWorkspace({
   }
 
   function startPages() {
-    setDraftIndex(agent.slides.length ? agent.slides.length - 1 : 0);
+    setDraftIndex(
+      Math.max(
+        0,
+        agent.pageStates.findIndex((state) => state !== "complete"),
+      ),
+    );
     void agent.generatePages();
   }
 
   async function acceptDraft(append: boolean) {
-    if (agent.phase !== "idle" || !agent.outline || !agent.slides.length) return;
+    if (agent.phase !== "idle" || !agent.outline || !agent.completedCount) return;
     setError("");
     setExported("");
-    const slides = agent.slides;
+    const slides = agent.slides.filter((_, index) => agent.pageStates[index] === "complete");
     if (append && deck) {
       if (deck.slides.length + slides.length > MAX_SLIDES) {
         setError(t("pptDraftLimit", "The draft exceeds the remaining slide capacity. Save it as a new deck."));
@@ -291,7 +303,7 @@ export function PresentationWorkspace({
       library.change((current) => ({ ...current, slides: [...current.slides, ...slides] }));
       selectSlide(slides[0].id);
     } else if (!(await library.create(createDeck(agent.outline.title.trim(), slides)))) return;
-    agent.reset();
+    agent.reset(true);
     setDraftIndex(null);
     setElementId(null);
     setPanel("properties");
@@ -364,6 +376,19 @@ export function PresentationWorkspace({
           </button>
         </div>
         <div className="ppt-controls ppt-header-actions">
+          <button className="ppt-button" type="button" disabled={agent.phase !== "idle"} onClick={openSkill}>
+            {t("pptSkillWorkflow", "Skill workflow")}
+          </button>
+          <button
+            className="ppt-icon"
+            type="button"
+            aria-label={t("pptTogglePanel", "Toggle studio panel")}
+            title={t("pptTogglePanel", "Toggle studio panel")}
+            aria-pressed={!panelClosed}
+            onClick={() => setPanelClosed(!panelClosed)}
+          >
+            {panelClosed ? <PanelRightOpen /> : <PanelRightClose />}
+          </button>
           {deck && (
             <>
               <span className="ppt-save-state" role="status">
@@ -443,7 +468,7 @@ export function PresentationWorkspace({
           )}
         </div>
       )}
-      <div className={`ppt-editor${!deck && !isDraft ? " is-empty" : ""}`}>
+      <div className={`ppt-editor${!deck && !isDraft ? " is-empty" : ""}${panelClosed ? " panel-closed" : ""}`}>
         {(deck || isDraft) && (
           <nav className="ppt-slide-list" aria-label={t("pptSlides", "Slides")}>
             <div className="ppt-column-heading">
@@ -464,6 +489,17 @@ export function PresentationWorkspace({
                     </div>
                     <span>{String(index + 1).padStart(2, "0")}</span>
                     <span>{slide.title}</span>
+                    {isDraft && (
+                      <span className={`ppt-thumb-status is-${agent.pageStates[index]}`}>
+                        {agent.pageStates[index] === "complete"
+                          ? t("pptDone", "Complete")
+                          : agent.pageStates[index] === "running"
+                            ? t("pptLiveRender", "Live rendering")
+                            : agent.pageStates[index] === "error"
+                              ? t("pptFailed", "Failed")
+                              : t("pptQueued", "Queued")}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -523,7 +559,7 @@ export function PresentationWorkspace({
                       type="button"
                       className="ppt-button is-primary"
                       onClick={() => void acceptDraft(false)}
-                      disabled={!agent.slides.length || agent.phase !== "idle" || library.busy}
+                      disabled={!agent.completedCount || agent.phase !== "idle" || library.busy}
                     >
                       {t("pptSaveDraft", "Save as new deck")}
                     </button>
@@ -532,7 +568,7 @@ export function PresentationWorkspace({
                         type="button"
                         className="ppt-button"
                         onClick={() => void acceptDraft(true)}
-                        disabled={!agent.slides.length || agent.phase !== "idle" || library.busy}
+                        disabled={!agent.completedCount || agent.phase !== "idle" || library.busy}
                       >
                         {t("pptAppendDraft", "Append to deck")}
                       </button>
@@ -660,7 +696,13 @@ export function PresentationWorkspace({
                 )}
               </div>
               <div className="ppt-stage">
-                {canvasSlide ? (
+                {canvasSlide && isDraft ? (
+                  <PresentationLiveCanvas
+                    key={canvasSlide.id}
+                    slide={canvasSlide}
+                    running={agent.pageStates[activeIndex] === "running"}
+                  />
+                ) : canvasSlide ? (
                   <div className="ppt-paper">
                     <SlideCanvas
                       key={canvasSlide.id}
@@ -732,6 +774,7 @@ export function PresentationWorkspace({
           )}
         </main>
         <aside
+          hidden={panelClosed}
           className="ppt-sidepanel"
           aria-label={t("pptProperties", "Properties") + " / " + t("pptAgent", "Pi Agent")}
         >
@@ -787,5 +830,19 @@ export function PresentationWorkspace({
         <SlidePreview slides={visibleSlides} initialIndex={Math.max(activeIndex, 0)} close={() => setPreview(false)} />
       )}
     </section>
+  );
+}
+
+export function PresentationWorkspace(props: { cwd: string | null; hidden: boolean; openModels: () => void }) {
+  const [engine, setEngine] = useState<"skill" | "native">("skill");
+  return engine === "skill" ? (
+    <PresentationSkillWorkspace
+      key={props.cwd ?? "local"}
+      cwd={props.cwd}
+      hidden={props.hidden}
+      openNative={() => setEngine("native")}
+    />
+  ) : (
+    <NativePresentationWorkspace {...props} openSkill={() => setEngine("skill")} />
   );
 }

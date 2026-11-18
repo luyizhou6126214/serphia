@@ -60,9 +60,16 @@ test("nested tool progress stays inside the parent phase until the parent ends",
   state = event(state, "tool_execution_start", { toolCallId: "parent", toolName: "caller" });
   const parent = state;
   state = event(state, "tool_execution_start", { toolCallId: "child", parentToolCallId: "parent", toolName: "child" });
-  assert.equal(state, parent);
+  assert.equal(state.agentPhase, parent.agentPhase);
+  assert.equal(state.liveToolResults.parent.nestedCalls.calls[0].status, "unfinished");
+  state = event(state, "tool_execution_update", {
+    toolCallId: "parent",
+    partialResult: { content: [{ type: "text", text: "page: running" }] },
+  });
+  assert.equal(state.liveToolResults.parent.nestedCalls.calls[0].status, "unfinished");
   state = event(state, "tool_execution_end", { toolCallId: "child", parentToolCallId: "parent", isError: true });
-  assert.equal(state, parent);
+  assert.equal(state.agentPhase, parent.agentPhase);
+  assert.equal(state.liveToolResults.parent.nestedCalls.calls[0].status, "error");
   state = event(state, "tool_execution_end", { toolCallId: "parent" });
   assert.deepEqual(state.agentPhase, { kind: "waiting_model" });
 });
@@ -77,6 +84,28 @@ test("retry state ends independently of the enclosing prompt", () => {
   assert.equal(state.retryInfo, null);
   state = event(state, "auto_retry_start", { attempt: 2, maxAttempts: 3 });
   assert.equal(reduceSessionTurnState(state, { type: "settled" }).retryInfo, null);
+});
+
+test("live tool progress is transient, stays running, and cannot leak across settled turns", () => {
+  let state = event(createSessionTurnState(), "agent_start");
+  state = event(state, "tool_execution_start", { toolCallId: "parallel", toolName: "serphia_workflow" });
+  state = event(state, "tool_execution_update", {
+    toolCallId: "parallel",
+    partialResult: { content: [{ type: "text", text: "cover: done\ndata: running" }] },
+  });
+  assert.equal(state.agentPhase.kind, "running_tools");
+  assert.equal(state.liveToolResults.parallel.partial, true);
+  assert.match(state.liveToolResults.parallel.content[0].text, /data: running/);
+  assert.equal(event(state, "tool_execution_update", { toolCallId: "child", parentToolCallId: "parallel" }), state);
+  state = reduceSessionTurnState(state, { type: "settled" });
+  assert.deepEqual(state.liveToolResults, {});
+  assert.equal(
+    event(state, "tool_execution_update", {
+      toolCallId: "parallel",
+      partialResult: { content: [{ type: "text", text: "late" }] },
+    }),
+    state,
+  );
 });
 
 test("queue snapshots are independent of transport arrays and other sessions", () => {

@@ -208,6 +208,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [turnState, dispatchTurn] = useReducer(reduceSessionTurnState, undefined, createSessionTurnState);
   const {
     streamState,
+    liveToolResults,
     agentRunning,
     agentPhase,
     retryInfo,
@@ -1357,6 +1358,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     respondToExtensionUi,
     sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
+    liveToolResults,
     agentPhase,
     isNew,
     // "Scroll to bottom" affordance state + action

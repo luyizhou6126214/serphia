@@ -91,7 +91,7 @@ export const ToolCallRow = memo(function ToolCallRow({
       toolRowModel(
         block.toolName,
         block.input,
-        result === undefined ? undefined : { isError: result.isError ?? false, text: resultText },
+        result === undefined || result.partial ? undefined : { isError: result.isError ?? false, text: resultText },
         running,
         cwd,
         home,
@@ -104,7 +104,7 @@ export const ToolCallRow = memo(function ToolCallRow({
   const isStopped = model.state === "stopped";
   const isRunning = model.state === "running" || model.state === "preparing";
   const inputRaw = model.bodyRaw;
-  const outputText = model.output;
+  const outputText = result?.partial ? resultText : model.output;
   const patch = !isError ? getResultPatch(result) : null;
   const expandable = inputRaw !== null || outputText !== null || result !== undefined;
   const open = expanded && expandable;
@@ -147,8 +147,41 @@ export const ToolCallRow = memo(function ToolCallRow({
     [isError, isStopped, summaryText],
   );
 
+  const nestedContent = result?.nestedCalls && result.nestedCalls.calls.length > 0 && (
+    <div className="dsh-nested-tools" aria-label={t("toolCalls", "Tool Calls")}>
+      {result.nestedCalls.calls.map((call) => (
+        <details key={call.id} className="dsh-nested-tool" data-state={call.status}>
+          <summary>
+            <Wrench size={12} aria-hidden="true" />
+            <span>{call.name}</span>
+            <span className="dsh-nested-tool-status">
+              {call.status === "error"
+                ? t("toolRowFailed", "Failed")
+                : call.status === "unfinished"
+                  ? result.partial && isRunning
+                    ? runningLabel
+                    : stoppedLabel
+                  : "✓"}
+              {call.durationMs !== undefined && ` · ${call.durationMs} ms`}
+            </span>
+          </summary>
+          {call.arguments && (
+            <ToolIoCard
+              input={JSON.stringify(call.arguments, null, 2)}
+              output={call.error ?? null}
+              error={call.status === "error"}
+              inputLabel={inputLabel}
+              outputLabel={outputLabel}
+            />
+          )}
+          {!call.arguments && call.error && <p>{call.error}</p>}
+        </details>
+      ))}
+    </div>
+  );
   const expandedContent = open ? (
     <div className="dsh-tool-body-wrap">
+      {nestedContent}
       {patch !== null ? (
         <PatchResultView text={patch} />
       ) : (
@@ -199,6 +232,12 @@ export const ToolCallRow = memo(function ToolCallRow({
       >
         {expandedContent}
       </DisclosureRow>
+      {result?.partial && !open && nestedContent}
+      {result?.partial && isRunning && !open && outputText && (
+        <pre className="dsh-tool-live-progress" role="status">
+          {outputText}
+        </pre>
+      )}
       {/* Tool result images stay visible under the folded row: an image is the
           call's payload, not a detail behind a disclosure. */}
       {result !== undefined && <ToolResultImages content={result.content} />}

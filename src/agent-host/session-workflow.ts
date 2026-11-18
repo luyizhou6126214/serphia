@@ -13,6 +13,7 @@ import { THINKING_LEVELS } from "../shared/thinking-levels";
 import { getAgentSessionSource } from "./session-source";
 import { WORKFLOW_TOOL_NAME, type SessionToolPolicy } from "./session-tool-policy";
 import { CODING_TOOL_NAMES } from "./tool-activation";
+import { presentationWorkflowContext, presentationWorkflowInstructions } from "./presentation-workflow-context";
 
 const concurrency = 4;
 const maxStages = 3;
@@ -153,11 +154,17 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
           parameters: planSchema,
           async execute(_callId, { stages }, signal, onUpdate, ctx) {
             const parent = getParent();
-            if (!request || request.used || !parent || !signal)
+            const presentation = presentationWorkflowContext(ctx.sessionManager);
+            if (
+              (!presentation && (!request || request.used)) ||
+              !parent ||
+              !signal ||
+              getAgentSessionSource(ctx.sessionManager) !== "local"
+            )
               throw new Error("Start a workflow with /run_workflow or /swarm.");
-            if (request.command === "swarm" && (stages.length !== 1 || stages[0].tasks.length < 2))
+            if (request?.command === "swarm" && (stages.length !== 1 || stages[0].tasks.length < 2))
               throw new Error("/swarm requires one stage with at least two parallel tasks.");
-            request.used = true;
+            if (request) request.used = true;
             const { runWorkflow } = await import("@quintinshaw/pi-dynamic-workflows");
             signal.throwIfAborted();
             const services = await createAgentSessionServices({
@@ -200,7 +207,9 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
                       parent,
                       ctx,
                       policy,
-                      prompt,
+                      presentation
+                        ? `${presentationWorkflowInstructions(presentation)}\n\nYou are a delegated page designer. Follow the delegated instructions and read the reference documents supplied by the coordinator. The coordinator owns gates, shared specs and final export. Perform only this assigned task:\n${prompt}`
+                        : prompt,
                       childSignal,
                       options?.thinking ?? parent.thinkingLevel,
                     );
@@ -268,7 +277,13 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
         });
       }
 
-      pi.on("before_agent_start", (event) => {
+      pi.on("before_agent_start", (event, ctx) => {
+        const presentation = presentationWorkflowContext(ctx.sessionManager);
+        if (presentation && getAgentSessionSource(ctx.sessionManager) === "local" && !policy.isEmpty() && !request) {
+          policy.setWorkflowRequested(true);
+          pi.setActiveTools([...new Set([...pi.getActiveTools(), WORKFLOW_TOOL_NAME])]);
+          return { systemPrompt: `${event.systemPrompt}\n\n${presentationWorkflowInstructions(presentation)}` };
+        }
         if (!request || request.used) return;
         const plan =
           request.command === "swarm"
@@ -277,6 +292,14 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
         return {
           systemPrompt: `${event.systemPrompt}\n\nThe user explicitly requested /${request.command}. Call ${WORKFLOW_TOOL_NAME} once to run their task. ${plan} Give each subagent a concrete prompt and avoid overlapping writes. After the tool returns, synthesize its results and report any failures.`,
         };
+      });
+      // agent_end also fires before automatic provider retries. Keep the grant until
+      // the complete user turn settles, or the retried request loses its tools.
+      pi.on("agent_settled", (_event, ctx) => {
+        if (presentationWorkflowContext(ctx.sessionManager) && !request) {
+          policy.setWorkflowRequested(false);
+          pi.setActiveTools(pi.getActiveTools().filter((name) => name !== WORKFLOW_TOOL_NAME));
+        }
       });
     },
   };

@@ -4990,6 +4990,43 @@ html.dark .composer-menu {
   min-width: 0;
 }
 
+.dsh-tool-live-progress {
+  margin: 4px 0 8px 22px;
+  padding-left: 12px;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-nested-tools {
+  margin: 6px 0 8px 22px;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  padding-left: 12px;
+}
+
+.dsh-nested-tool > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-nested-tool-status {
+  margin-left: auto;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+}
+
+.dsh-nested-tool[data-state="error"] .dsh-nested-tool-status {
+  color: var(--dsw-alias-state-warn-label);
+}
+
 /* Expanded input/output card: the code-block surface and radius from the
    terminal family, capped per section so a long input never buries output. */
 .dsh-tool-io-card {

@@ -17,8 +17,11 @@ function sameEntries<T>(left: ReadonlyMap<string, T>, right: ReadonlyMap<string,
 export class ToolMessageIndex {
   private previous: ReadonlyMap<AgentMessage, ToolMessageData> = new Map();
 
-  build(messages: AgentMessage[]): ReadonlyMap<AgentMessage, ToolMessageData> {
-    this.previous = buildToolMessageIndex(messages, this.previous);
+  build(
+    messages: AgentMessage[],
+    liveResults?: Record<string, ToolResultMessage>,
+  ): ReadonlyMap<AgentMessage, ToolMessageData> {
+    this.previous = buildToolMessageIndex(messages, this.previous, liveResults);
     return this.previous;
   }
 }
@@ -26,8 +29,10 @@ export class ToolMessageIndex {
 export function buildToolMessageIndex(
   messages: AgentMessage[],
   previous?: ReadonlyMap<AgentMessage, ToolMessageData>,
+  liveResults?: Record<string, ToolResultMessage>,
 ): ReadonlyMap<AgentMessage, ToolMessageData> {
-  const resultsById = new Map<string, ToolResultMessage>();
+  // Canonical history always wins over an in-flight preview for the same call.
+  const resultsById = new Map<string, ToolResultMessage>(Object.entries(liveResults ?? {}));
   for (const message of messages) {
     if (message.role === "toolResult") resultsById.set(message.toolCallId, message as ToolResultMessage);
   }

@@ -21,6 +21,7 @@ import { createHerdrHandlers } from "./handlers/herdr";
 import { createProcessHandlers } from "./handlers/processes";
 import { createMcpHandlers } from "./handlers/mcp";
 import { createPresentationAgent } from "./presentation-agent";
+import { createPresentationWorkflows } from "./presentation-workflows";
 import { initializeMcpService } from "./mcp/runtime";
 export { generateSessionTitleWithFallback, applySessionNameIfEmpty } from "./handlers/agent-title";
 export { createAgentNewLockKey } from "./handlers/agent";
@@ -152,7 +153,8 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
   const herdrHandlers = createHerdrHandlers(herdr, herdrCall);
   const codeReview = new CodeReviewService();
   const reviewHandlers = createCodeReviewHandlers(codeReview);
-  const presentations = createPresentationAgent();
+  const presentations = createPresentationAgent((event) => server.emit("presentations.events", event.runId, event));
+  const presentationWorkflows = createPresentationWorkflows(agentHandlers.new);
 
   const guard =
     <P, R>(handler: (params: P, context: RpcRequestContext) => R) =>
@@ -171,6 +173,9 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     };
 
   server.handle({
+    "presentations.prepare": guard(presentationWorkflows.prepare),
+    "presentations.workflow": guard(presentationWorkflows.workflow),
+    "presentations.artifacts": guard(presentationWorkflows.artifacts),
     "presentations.outline": guard(presentations.outline),
     "presentations.page": guard(presentations.page),
     "presentations.stop": guard(({ id }, context) => presentations.stop(id, context)),

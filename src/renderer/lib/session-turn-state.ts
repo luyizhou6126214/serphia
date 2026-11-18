@@ -1,5 +1,5 @@
 import type { AgentEvent } from "../../contract/types.ts";
-import type { AgentMessage } from "../../shared/types.ts";
+import type { AgentMessage, ToolResultMessage } from "../../shared/types.ts";
 import { normalizeToolCalls } from "../../shared/normalize.ts";
 
 export interface StreamingState {
@@ -28,6 +28,7 @@ export interface CompactResultInfo {
 }
 
 export interface SessionTurnState {
+  liveToolResults: Record<string, ToolResultMessage>;
   streamState: StreamingState;
   agentRunning: boolean;
   agentPhase: AgentPhase;
@@ -53,6 +54,7 @@ export type SessionTurnAction =
 
 export function createSessionTurnState(): SessionTurnState {
   return {
+    liveToolResults: {},
     streamState: { isStreaming: false, streamingMessage: null },
     agentRunning: false,
     agentPhase: null,
@@ -95,6 +97,7 @@ export function reduceSessionTurnState(state: SessionTurnState, action: SessionT
     case "start":
       return {
         ...state,
+        liveToolResults: {},
         agentRunning: true,
         agentPhase: { kind: action.phase ?? "waiting_model" },
         streamState: streamReducer(state.streamState, { type: "start" }),
@@ -103,6 +106,7 @@ export function reduceSessionTurnState(state: SessionTurnState, action: SessionT
     case "send-failed":
       return {
         ...state,
+        liveToolResults: {},
         agentRunning: false,
         agentPhase: null,
         retryInfo: action.type === "settled" ? null : state.retryInfo,
@@ -128,6 +132,52 @@ export function reduceSessionTurnState(state: SessionTurnState, action: SessionT
 }
 
 function reduceAgentEvent(state: SessionTurnState, event: AgentEvent): SessionTurnState {
+  if (
+    state.agentRunning &&
+    typeof event.parentToolCallId === "string" &&
+    typeof event.toolCallId === "string" &&
+    (event.type === "tool_execution_start" || event.type === "tool_execution_end")
+  ) {
+    const parentId = event.parentToolCallId;
+    const parent = state.liveToolResults[parentId];
+    const calls = [...(parent?.nestedCalls?.calls ?? [])];
+    const index = calls.findIndex((call) => call.id === event.toolCallId);
+    const previous = index < 0 ? undefined : calls[index];
+    const result = event.result as Partial<ToolResultMessage> | undefined;
+    const failed = Boolean(event.isError || result?.isError);
+    const call: NonNullable<ToolResultMessage["nestedCalls"]>["calls"][number] = {
+      ...previous,
+      id: event.toolCallId,
+      name: typeof event.toolName === "string" ? event.toolName : (previous?.name ?? "tool"),
+      status: event.type === "tool_execution_start" ? "unfinished" : failed ? "error" : "ok",
+      ...(event.args && typeof event.args === "object" ? { arguments: event.args as Record<string, unknown> } : {}),
+      ...(typeof event.durationMs === "number" ? { durationMs: event.durationMs } : {}),
+      ...(failed
+        ? {
+            error:
+              result?.content
+                ?.filter((item) => item.type === "text")
+                .map((item) => item.text)
+                .join("\n") ?? "",
+          }
+        : {}),
+    };
+    if (index < 0) calls.push(call);
+    else calls[index] = call;
+    return {
+      ...state,
+      liveToolResults: {
+        ...state.liveToolResults,
+        [parentId]: {
+          role: "toolResult",
+          toolCallId: parentId,
+          content: parent?.content ?? [],
+          partial: true,
+          nestedCalls: { calls, complete: false },
+        },
+      },
+    };
+  }
   switch (event.type) {
     case "agent_start":
       return reduceSessionTurnState(state, { type: "start" });
@@ -156,6 +206,24 @@ function reduceAgentEvent(state: SessionTurnState, event: AgentEvent): SessionTu
         agentPhase: { kind: "waiting_model" },
         streamState: streamReducer(state.streamState, { type: "reset" }),
       };
+    case "tool_execution_update": {
+      if (!state.agentRunning || event.parentToolCallId || typeof event.toolCallId !== "string") return state;
+      const result = event.partialResult as Partial<ToolResultMessage> | undefined;
+      if (!Array.isArray(result?.content)) return state;
+      return {
+        ...state,
+        liveToolResults: {
+          ...state.liveToolResults,
+          [event.toolCallId]: {
+            ...state.liveToolResults[event.toolCallId],
+            role: "toolResult",
+            toolCallId: event.toolCallId,
+            content: result.content,
+            partial: true,
+          },
+        },
+      };
+    }
     case "tool_execution_start": {
       if (event.parentToolCallId) return state;
       const id = event.toolCallId as string;
