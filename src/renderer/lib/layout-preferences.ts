@@ -45,6 +45,7 @@ export function getRightPanelWidthBounds(
   viewportWidth: number,
   sidebarOpen: boolean,
   maxViewportRatio = RIGHT_PANEL_MAX_VIEWPORT_RATIO,
+  sidebarWidth = SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH,
 ): RightPanelWidthBounds {
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
     return { minWidth: RIGHT_PANEL_MIN_WIDTH, maxWidth: RIGHT_PANEL_DEFAULT_WIDTH };
@@ -54,7 +55,7 @@ export function getRightPanelWidthBounds(
     ? Math.min(1, Math.max(RIGHT_PANEL_MAX_VIEWPORT_RATIO, maxViewportRatio))
     : RIGHT_PANEL_MAX_VIEWPORT_RATIO;
   const ratioLimit = Math.floor(viewportWidth * safeRatio);
-  const reservedWidth = CHAT_MIN_WIDTH + WORKSPACE_EDGE_INSET + (sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_RAIL_WIDTH);
+  const reservedWidth = CHAT_MIN_WIDTH + WORKSPACE_EDGE_INSET + SIDEBAR_RAIL_WIDTH + (sidebarOpen ? sidebarWidth : 0);
   const availableLimit = Math.floor(viewportWidth - reservedWidth);
   const maxWidth = Math.max(0, Math.min(ratioLimit, availableLimit));
 
@@ -69,16 +70,22 @@ export function clampRightPanelWidth(
   viewportWidth: number,
   sidebarOpen: boolean,
   maxViewportRatio = RIGHT_PANEL_MAX_VIEWPORT_RATIO,
+  sidebarWidth?: number,
 ): number {
-  const { minWidth, maxWidth } = getRightPanelWidthBounds(viewportWidth, sidebarOpen, maxViewportRatio);
+  const { minWidth, maxWidth } = getRightPanelWidthBounds(viewportWidth, sidebarOpen, maxViewportRatio, sidebarWidth);
   if (maxWidth <= 0) return 0;
   const candidate = Number.isFinite(width) ? width : RIGHT_PANEL_DEFAULT_WIDTH;
   return Math.round(Math.min(maxWidth, Math.max(minWidth, candidate)));
 }
 
-export function shouldCollapseSidebarForRightPanel(viewportWidth: number): boolean {
+export function shouldCollapseSidebarForRightPanel(
+  viewportWidth: number,
+  sidebarWidth = SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH,
+): boolean {
   if (!Number.isFinite(viewportWidth)) return false;
-  return viewportWidth < SIDEBAR_WIDTH + CHAT_MIN_WIDTH + RIGHT_PANEL_MIN_WIDTH + WORKSPACE_EDGE_INSET;
+  return (
+    viewportWidth < SIDEBAR_RAIL_WIDTH + sidebarWidth + CHAT_MIN_WIDTH + RIGHT_PANEL_MIN_WIDTH + WORKSPACE_EDGE_INSET
+  );
 }
 
 export function getKeyboardAdjustedRightPanelWidth(

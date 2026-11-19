@@ -49,6 +49,13 @@
       "skillPath": "skills/gsap-utils/SKILL.md",
       "computedHash": ""
     },
+    "leibox": {
+      "source": "leibox.pantoria.cn",
+      "sourceUrl": "https://leibox.pantoria.cn",
+      "sourceType": "well-known",
+      "computedHash": "04ace0d8a557d86c336feca0184c1aa787118b308709e9605ad99ae464325bb7",
+      "wellKnownDigest": "sha256:07e72458dc2aaf6c683eb3a6ee0efde1707b4de7f166fb75f24c5997c8de87ce"
+    },
     "lucian-uxui": {
       "source": "Seokwoooo/lucian-uxui",
       "sourceType": "github",

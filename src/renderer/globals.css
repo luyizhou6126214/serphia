@@ -1841,8 +1841,8 @@ span.linenumber {
       min-width 0.2s ease;
   }
   .sidebar-container.sidebar-open {
-    width: 248px;
-    min-width: 248px;
+    width: var(--sidebar-live-width, var(--sidebar-width, 248px));
+    min-width: 0;
   }
   .sidebar-container.sidebar-closed {
     width: 0;
@@ -1851,8 +1851,8 @@ span.linenumber {
   }
   /* keep inner content at fixed width so it doesn't reflow during animation */
   .sidebar-container > * {
-    width: 248px;
-    min-width: 248px;
+    width: var(--sidebar-live-width, var(--sidebar-width, 248px));
+    min-width: var(--sidebar-live-width, var(--sidebar-width, 248px));
   }
 }
 
@@ -1866,12 +1866,13 @@ span.linenumber {
       min-width 0.2s ease;
     flex-shrink: 0;
   }
-  .right-panel-container.right-panel-resizing {
+  .sidebar-container[data-elastic-resize],
+  .right-panel-container[data-elastic-resize],
+  .app-frame:has(.sidebar-container[data-elastic-resize]) .app-topbar-navigation.with-sidebar {
     transition: none;
   }
   .right-panel-container.right-panel-open {
-    width: var(--right-panel-width, 360px);
-    min-width: var(--right-panel-min-width, 280px);
+    width: var(--right-panel-live-width, var(--right-panel-width, 360px));
   }
   .right-panel-container.right-panel-closed {
     width: 0;
@@ -1880,24 +1881,12 @@ span.linenumber {
   }
   /* keep inner content at fixed width so it doesn't reflow during animation */
   .right-panel-container > * {
-    width: var(--right-panel-width, 360px);
-    min-width: var(--right-panel-min-width, 280px);
+    width: var(--right-panel-live-width, var(--right-panel-width, 360px));
   }
-  /* The native browser view starts inside the panel. Keep the hit area on the chat side. */
-  .right-panel-resize-edge {
+  .session-panel-resize-edge {
     position: relative;
-    z-index: 10;
+    z-index: 201;
     flex: 0 0 0;
-  }
-  .right-panel-resizer {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: -1px;
-    width: 12px;
-    cursor: col-resize;
-    touch-action: none;
-    -webkit-app-region: no-drag;
   }
 }
 
@@ -3419,8 +3408,7 @@ html.dark .settings-page {
 }
 @media (min-width: 641px) {
   .app-topbar-navigation.with-sidebar {
-    /* Match the 52px rail and 248px sidebar, excluding the top bar's left inset. */
-    width: 292px;
+    width: calc(44px + var(--sidebar-live-width, var(--sidebar-width, 248px)));
   }
 }
 .app-topbar-button {
@@ -6731,7 +6719,7 @@ html.dark .turn-changes {
 }
 @media (min-width: 641px) {
   .is-macos .app-topbar-navigation.with-sidebar {
-    width: 292px;
+    width: calc(44px + var(--sidebar-live-width, var(--sidebar-width, 248px)));
   }
 }
 

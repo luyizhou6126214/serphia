@@ -972,7 +972,7 @@ export function ChatWindow({
 
       <ChatWidthHandles
         rootRef={chatRootRef}
-        visible={!isMobile && activeSessionView === "chat"}
+        visible={!isMobile && activeSessionView === "chat" && !isEmptyNew}
         top={showSessionViews ? 38 : 0}
       />
     </div>

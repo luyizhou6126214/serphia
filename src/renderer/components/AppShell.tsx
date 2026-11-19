@@ -9,17 +9,8 @@ import {
 import { useSessionList } from "@/hooks/useSessionList";
 import { recordNavigation } from "@/lib/navigation-history";
 import { call, subscribe } from "@/lib/api-client";
-import {
-  useState,
-  useReducer,
-  useCallback,
-  useRef,
-  useEffect,
-  useSyncExternalStore,
-  type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useState, useReducer, useCallback, useRef, useEffect, useSyncExternalStore, type CSSProperties } from "react";
+import { SessionPanelResize } from "./elastic-panel-resize/SessionPanelResize";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { ScheduledTasksPage } from "./schedule/ScheduledTasksPage";
@@ -74,13 +65,14 @@ import { SessionProfiler } from "./SessionProfiler";
 import { buildAtMentionText } from "@/lib/file-fuzzy";
 import { ThinkingExpansionRegistry } from "@/lib/thinking-expansion-store";
 import {
+  CHAT_MIN_WIDTH,
+  SIDEBAR_RAIL_WIDTH,
+  SIDEBAR_WIDTH,
   RIGHT_PANEL_DEFAULT_WIDTH,
   RIGHT_PANEL_MIN_WIDTH,
   clampRightPanelWidth,
-  getKeyboardAdjustedRightPanelWidth,
   getRightPanelWidthBounds,
   shouldCollapseSidebarForRightPanel,
-  type RightPanelResizeKey,
 } from "@/lib/layout-preferences";
 import type { SessionInfo } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
@@ -100,6 +92,9 @@ import { useAutomaticBrowserPreview, useBrowserPanelTabs } from "@/hooks/useBrow
 import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice } from "@/lib/terminal-shells";
 import type { TerminalShellInfo } from "@contract/terminal";
 
+const SIDEBAR_DEFAULT_WIDTH = SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH;
+const SIDEBAR_MIN_WIDTH = 208;
+const SIDEBAR_MAX_WIDTH = 420;
 const TERMINAL_PANEL_RATIO = 0.55;
 type PrimaryView = "sessions" | "schedule" | "herdr";
 type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean; primary: PrimaryView };
@@ -168,6 +163,9 @@ export function AppShell({
   const [channelSnapshot, setChannelSnapshot] = useState<ChannelsSnapshot>(EMPTY_CHANNELS);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const sidebarPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
 
   // On mobile the sidebar is an overlay drawer; hide it by default so the chat
@@ -239,9 +237,6 @@ export function AppShell({
   const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && sessionsOpen;
   const canResizeRightPanel = showRightPanelContent && !isMobile && !rightPanelFullscreen;
   const [guideNotice, setGuideNotice] = useState<string | null>(null);
-  const [rightPanelBounds, setRightPanelBounds] = useState(() =>
-    getRightPanelWidthBounds(window.innerWidth, sidebarOpen),
-  );
   const rightPanelPreferredWidthRef = useRef(RIGHT_PANEL_DEFAULT_WIDTH);
   const rightPanelKindRef = useRef<"files" | "browser" | "processes" | "terminal">("files");
   const [managedProcessCount, setManagedProcessCount] = useState(0);
@@ -249,10 +244,9 @@ export function AppShell({
   const [rightPanelWidth, setRightPanelWidth] = useState(() => {
     const preferredWidth = initialRightPanelPreferredWidth();
     rightPanelPreferredWidthRef.current = preferredWidth;
-    return clampRightPanelWidth(preferredWidth, window.innerWidth, sidebarOpen);
+    return clampRightPanelWidth(preferredWidth, window.innerWidth, sidebarOpen, undefined, sidebarWidth);
   });
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
-  const rightPanelResizeCleanupRef = useRef<(() => void) | null>(null);
   const rightPanelMaxRatio = panelWidthKind === "terminal" ? TERMINAL_PANEL_RATIO : undefined;
   const browserPanelTabs = useBrowserPanelTabs(selectedSession?.id ?? null);
   // Shells the Host discovered, plus the remembered choice a new terminal uses.
@@ -309,72 +303,6 @@ export function AppShell({
     };
   }, [isMobile]);
 
-  const handleRightPanelResizeStart = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || !event.isPrimary) return;
-      event.preventDefault();
-      rightPanelResizeCleanupRef.current?.();
-
-      const handle = event.currentTarget;
-      const pointerId = event.pointerId;
-      const startX = event.clientX;
-      const startWidth = rightPanelWidth;
-      const { cursor, userSelect } = document.body.style;
-      let finalWidth = startWidth;
-      let didResize = false;
-
-      const handleMove = (moveEvent: PointerEvent) => {
-        if (moveEvent.pointerId !== pointerId) return;
-        if (moveEvent.clientX !== startX) didResize = true;
-        finalWidth = clampRightPanelWidth(
-          startWidth + startX - moveEvent.clientX,
-          window.innerWidth,
-          sidebarOpen,
-          rightPanelMaxRatio,
-        );
-        setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, sidebarOpen, rightPanelMaxRatio));
-        setRightPanelWidth(finalWidth);
-      };
-      const cleanup = (commit: boolean) => {
-        handle.removeEventListener("pointermove", handleMove);
-        handle.removeEventListener("pointerup", handlePointerUp);
-        handle.removeEventListener("lostpointercapture", handlePointerCancel);
-        window.removeEventListener("blur", handleBlur);
-        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
-        document.body.style.cursor = cursor;
-        document.body.style.userSelect = userSelect;
-        setRightPanelResizing(false);
-        rightPanelResizeCleanupRef.current = null;
-        if (commit && didResize && finalWidth >= RIGHT_PANEL_MIN_WIDTH) {
-          rightPanelPreferredWidthRef.current = finalWidth;
-          persistRightPanelPreferredWidth(finalWidth, panelWidthKind === "browser");
-        }
-      };
-      const handlePointerUp = (upEvent: PointerEvent) => {
-        if (upEvent.pointerId !== pointerId) return;
-        handleMove(upEvent);
-        cleanup(true);
-      };
-      const handlePointerCancel = (cancelEvent: PointerEvent) => {
-        if (cancelEvent.pointerId === pointerId) cleanup(false);
-      };
-      const handleBlur = () => cleanup(true);
-
-      handle.setPointerCapture(pointerId);
-      rightPanelResizeCleanupRef.current = () => cleanup(false);
-      setRightPanelResizing(true);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      handle.addEventListener("pointermove", handleMove);
-      handle.addEventListener("pointerup", handlePointerUp);
-      handle.addEventListener("lostpointercapture", handlePointerCancel);
-      window.addEventListener("blur", handleBlur);
-    },
-    [panelWidthKind, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
-  );
-
-  useEffect(() => () => rightPanelResizeCleanupRef.current?.(), [activePanelTab.id, canResizeRightPanel]);
-
   useEffect(() => {
     if (isMobile) return;
     const nextKind = panelWidthKind;
@@ -389,41 +317,44 @@ export function AppShell({
           : initialRightPanelPreferredWidth();
     rightPanelPreferredWidthRef.current = preferred;
     const maxRatio = nextKind === "terminal" ? TERMINAL_PANEL_RATIO : undefined;
-    setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, sidebarOpen, maxRatio));
-    setRightPanelWidth(clampRightPanelWidth(preferred, window.innerWidth, sidebarOpen, maxRatio));
-  }, [isMobile, panelWidthKind, sidebarOpen]);
+    setRightPanelWidth(clampRightPanelWidth(preferred, window.innerWidth, sidebarOpen, maxRatio, sidebarWidth));
+  }, [isMobile, panelWidthKind, sidebarOpen, sidebarWidth]);
 
   useEffect(() => {
     if (isMobile) return;
     const fitToWindow = () => {
-      const bounds = getRightPanelWidthBounds(window.innerWidth, sidebarOpen, rightPanelMaxRatio);
-      setRightPanelBounds(bounds);
       setRightPanelWidth(
-        clampRightPanelWidth(rightPanelPreferredWidthRef.current, window.innerWidth, sidebarOpen, rightPanelMaxRatio),
+        clampRightPanelWidth(
+          rightPanelPreferredWidthRef.current,
+          window.innerWidth,
+          sidebarOpen,
+          rightPanelMaxRatio,
+          sidebarWidth,
+        ),
       );
     };
     fitToWindow();
     window.addEventListener("resize", fitToWindow);
     return () => window.removeEventListener("resize", fitToWindow);
-  }, [isMobile, rightPanelMaxRatio, sidebarOpen]);
+  }, [isMobile, rightPanelMaxRatio, sidebarOpen, sidebarWidth]);
 
   const openRightPanel = useCallback(() => {
-    const closeSidebar = isMobile || shouldCollapseSidebarForRightPanel(window.innerWidth);
+    const closeSidebar = isMobile || shouldCollapseSidebarForRightPanel(window.innerWidth, sidebarWidth);
     const nextSidebarOpen = closeSidebar ? false : sidebarOpen;
     if (closeSidebar) setSidebarOpen(false);
     if (!isMobile) {
-      setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, nextSidebarOpen, rightPanelMaxRatio));
       setRightPanelWidth(
         clampRightPanelWidth(
           rightPanelPreferredWidthRef.current,
           window.innerWidth,
           nextSidebarOpen,
           rightPanelMaxRatio,
+          sidebarWidth,
         ),
       );
     }
     setRightPanelOpen(true);
-  }, [isMobile, rightPanelMaxRatio, sidebarOpen]);
+  }, [isMobile, rightPanelMaxRatio, sidebarOpen, sidebarWidth]);
 
   const handleRightPanelToggle = useCallback(() => {
     if (rightPanelOpen) setRightPanelOpen(false);
@@ -520,33 +451,6 @@ export function AppShell({
         .finally(() => setBrowserAuthorization((current) => (current?.id === requestId ? null : current)));
     },
     [browserAuthorization?.id],
-  );
-
-  const handleRightPanelResizeKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (
-        isMobile ||
-        !(["ArrowLeft", "ArrowRight", "Home", "End"] as const).includes(event.key as RightPanelResizeKey)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      const nextWidth = getKeyboardAdjustedRightPanelWidth(
-        rightPanelWidth,
-        event.key as RightPanelResizeKey,
-        window.innerWidth,
-        sidebarOpen,
-        event.shiftKey,
-        rightPanelMaxRatio,
-      );
-      setRightPanelBounds(getRightPanelWidthBounds(window.innerWidth, sidebarOpen, rightPanelMaxRatio));
-      setRightPanelWidth(nextWidth);
-      if (nextWidth >= RIGHT_PANEL_MIN_WIDTH) {
-        rightPanelPreferredWidthRef.current = nextWidth;
-        persistRightPanelPreferredWidth(nextWidth, panelWidthKind === "browser");
-      }
-    },
-    [isMobile, panelWidthKind, rightPanelMaxRatio, rightPanelWidth, sidebarOpen],
   );
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
@@ -1133,6 +1037,42 @@ export function AppShell({
   const isWindows = window.piBridge?.platform === "win32";
   const isMac = window.piBridge?.platform === "darwin";
   const sidebarVisible = sidebarOpen && sessionsOpen;
+  const canResizeSidebar =
+    sidebarVisible && !settingsOpen && !browserAuthorization && !isMobile && !rightPanelFullscreen;
+  const reservedRightWidth = rightPanelVisible ? rightPanelWidth : 0;
+  const sidebarBounds = useCallback(
+    (workspaceWidth: number) => {
+      const maxWidth = Math.max(
+        Math.min(SIDEBAR_DEFAULT_WIDTH, workspaceWidth - SIDEBAR_RAIL_WIDTH - reservedRightWidth),
+        workspaceWidth - SIDEBAR_RAIL_WIDTH - reservedRightWidth - CHAT_MIN_WIDTH - 8,
+      );
+      return {
+        minWidth: Math.max(0, Math.min(SIDEBAR_MIN_WIDTH, maxWidth)),
+        maxWidth: Math.max(0, Math.min(SIDEBAR_MAX_WIDTH, maxWidth)),
+      };
+    },
+    [reservedRightWidth],
+  );
+  const rightBounds = useCallback(
+    (workspaceWidth: number) =>
+      getRightPanelWidthBounds(workspaceWidth, sidebarVisible, rightPanelMaxRatio, sidebarWidth),
+    [sidebarVisible, rightPanelMaxRatio, sidebarWidth],
+  );
+  const formatPanelWidth = useCallback(
+    (width: number) =>
+      t("rightPanelWidthPixels", "{width} pixels").replace("{width}", formatNumber(Math.round(width), language)),
+    [language, t],
+  );
+  const commitRightPanelWidth = useCallback(
+    (width: number) => {
+      setRightPanelWidth(width);
+      if (width >= RIGHT_PANEL_MIN_WIDTH) {
+        rightPanelPreferredWidthRef.current = width;
+        persistRightPanelPreferredWidth(width, panelWidthKind === "browser");
+      }
+    },
+    [panelWidthKind],
+  );
   const sessionHeader = (
     <>
       <div
@@ -1232,7 +1172,10 @@ export function AppShell({
         }
       }
     `}</style>
-      <div className={`app-frame${isWindows ? " is-windows" : ""}${isMac ? " is-macos" : ""}`}>
+      <div
+        className={`app-frame${isWindows ? " is-windows" : ""}${isMac ? " is-macos" : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
         <header className="app-topbar">
           <div className={`app-topbar-navigation${sidebarVisible && !isMobile ? " with-sidebar" : ""}`}>
             <button
@@ -1312,6 +1255,8 @@ export function AppShell({
           {sidebarRail}
           {/* Left sidebar */}
           <div
+            id="session-list-panel"
+            ref={sidebarPanelRef}
             className={`sidebar-container${sidebarVisible ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
             aria-hidden={!sidebarVisible || undefined}
             inert={!sidebarVisible || undefined}
@@ -1325,6 +1270,18 @@ export function AppShell({
           >
             {sidebarContent}
           </div>
+          {canResizeSidebar && (
+            <SessionPanelResize
+              side="left"
+              panelRef={sidebarPanelRef}
+              width={sidebarWidth}
+              defaultWidth={SIDEBAR_DEFAULT_WIDTH}
+              bounds={sidebarBounds}
+              label={t("resizeSessionList", "Resize session list")}
+              formatWidth={formatPanelWidth}
+              onCommit={setSidebarWidth}
+            />
+          )}
 
           {/* Center: chat */}
           <div
@@ -1390,29 +1347,27 @@ export function AppShell({
           </div>
 
           {canResizeRightPanel && (
-            <div className="right-panel-resize-edge">
-              <div
-                className="right-panel-resizer"
-                role="separator"
-                aria-label={t("resizeRightPanel", "Resize right panel")}
-                aria-orientation="vertical"
-                aria-valuemin={rightPanelBounds.minWidth}
-                aria-valuemax={rightPanelBounds.maxWidth}
-                aria-valuenow={Math.round(rightPanelWidth)}
-                aria-valuetext={t("rightPanelWidthPixels", "{width} pixels").replace(
-                  "{width}",
-                  formatNumber(Math.round(rightPanelWidth), language),
-                )}
-                tabIndex={0}
-                onPointerDown={handleRightPanelResizeStart}
-                onKeyDown={handleRightPanelResizeKeyDown}
-              />
-            </div>
+            <SessionPanelResize
+              key={panelWidthKind}
+              side="right"
+              panelRef={rightPanelRef}
+              width={rightPanelWidth}
+              defaultWidth={
+                panelWidthKind === "browser" || panelWidthKind === "terminal" ? 520 : RIGHT_PANEL_DEFAULT_WIDTH
+              }
+              bounds={rightBounds}
+              label={t("resizeRightPanel", "Resize right panel")}
+              formatWidth={formatPanelWidth}
+              onCommit={commitRightPanelWidth}
+              onDragChange={setRightPanelResizing}
+            />
           )}
 
           {/* Right panel: the guide plus files, terminals, browser tabs, files, and managed processes */}
           <div
-            className={`right-panel-container${rightPanelVisible ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
+            id="session-tools-panel"
+            ref={rightPanelRef}
+            className={`right-panel-container${rightPanelVisible ? " right-panel-open" : " right-panel-closed"}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
             style={
               {
                 display: "flex",
@@ -1420,7 +1375,6 @@ export function AppShell({
                 borderLeft: "1px solid var(--border)",
                 background: "var(--bg)",
                 "--right-panel-width": `${rightPanelWidth}px`,
-                "--right-panel-min-width": `${rightPanelBounds.minWidth}px`,
               } as CSSProperties
             }
           >
