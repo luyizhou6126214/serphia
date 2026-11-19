@@ -238,7 +238,11 @@ export function SettingsConfig({
       tabIndex={-1}
       className="settings-page"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (
+          event.key === "Escape" &&
+          !event.defaultPrevented &&
+          !event.currentTarget.querySelector("select:open, [popover]:popover-open")
+        ) {
           event.preventDefault();
           requestSettingsTransition(onClose);
         }

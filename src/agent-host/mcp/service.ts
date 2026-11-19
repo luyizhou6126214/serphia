@@ -93,7 +93,7 @@ export interface McpServiceOptions {
   changed(sessionId: string, instances: McpInstanceSnapshot[]): void;
   oauth: ConstructorParameters<typeof McpOAuthLoginManager>[1];
   connection?: Pick<McpConnectionOptions, "createTransport" | "fetch" | "runtime" | "providerToken">;
-  settings?(sessionId: string): void;
+  showServers?(sessionId: string): void;
 }
 
 /** Sole owner of Desktop MCP clients; built-in SDK factories register the tools but do not own a second connection. */
@@ -246,8 +246,8 @@ export class McpService {
         .map((tool) => tool.name),
     };
   }
-  requestSettings(sessionId: string): void {
-    this.options.settings?.(sessionId);
+  requestServerList(sessionId: string): void {
+    this.options.showServers?.(sessionId);
   }
   observeInactive(sessionId: string, reason: McpPanelSnapshot["inactiveReason"]): void {
     if (!this.sessions.has(sessionId)) this.inactive.set(sessionId, reason);

@@ -15,7 +15,7 @@ export interface ReferenceRange {
 }
 
 export function getReferenceRanges(text: string, requireTerminator = false): ReferenceRange[] {
-  const pattern = /(^|\s)(\/(?:skill:[^\s]+|mcp(?:[:/][^\s]+)?)|@(?:"[^"\n]+"|[^\s"@]+))/g;
+  const pattern = /(^|\s)(\/(?:skill:[^\s]+|mcp[:/][^\s]+)|@(?:"[^"\n]+"|[^\s"@]+))/g;
   const ranges: ReferenceRange[] = [];
   for (const match of text.matchAll(pattern)) {
     const token = match[2];

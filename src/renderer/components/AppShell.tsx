@@ -1,5 +1,7 @@
 import { useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
-import { CalendarClock, Layers3, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
+import { useGSAP } from "@gsap/react";
+import { gsap } from "gsap";
+import { CalendarClock, Layers3, PanelLeft, PanelRight } from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
@@ -11,6 +13,7 @@ import { recordNavigation } from "@/lib/navigation-history";
 import { call, subscribe } from "@/lib/api-client";
 import { useState, useReducer, useCallback, useRef, useEffect, useSyncExternalStore, type CSSProperties } from "react";
 import { SessionPanelResize } from "./elastic-panel-resize/SessionPanelResize";
+import { PixelToggle } from "./pixel-toggle/PixelToggle";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { ScheduledTasksPage } from "./schedule/ScheduledTasksPage";
@@ -96,6 +99,8 @@ const SIDEBAR_DEFAULT_WIDTH = SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH;
 const SIDEBAR_MIN_WIDTH = 208;
 const SIDEBAR_MAX_WIDTH = 420;
 const TERMINAL_PANEL_RATIO = 0.55;
+gsap.registerPlugin(useGSAP);
+
 type PrimaryView = "sessions" | "schedule" | "herdr";
 type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean; primary: PrimaryView };
 const sameNavigationView = (a: NavigationView, b: NavigationView) =>
@@ -118,7 +123,7 @@ export function AppShell({
   onChatAppearanceChange: (preferences: ChatAppearancePreferences) => Promise<void>;
 }) {
   const router = routerCompat;
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark, setTheme } = useTheme();
   const { language, t } = useI18n();
   const sessionList = useSessionList();
   const { sessions: workspaceSessions, projectInfoRevision } = useSyncExternalStore(
@@ -232,10 +237,11 @@ export function AppShell({
   const activePanelTab = activeRightPanelTab(rightPanel);
   const panelWidthKind = rightPanelWidthKind(activePanelTab);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
   const rightPanelVisible = rightPanelOpen && sessionsOpen;
   const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && sessionsOpen;
-  const canResizeRightPanel = showRightPanelContent && !isMobile && !rightPanelFullscreen;
+  const canResizeRightPanel = showRightPanelContent && rightPanelExpanded && !isMobile && !rightPanelFullscreen;
   const [guideNotice, setGuideNotice] = useState<string | null>(null);
   const rightPanelPreferredWidthRef = useRef(RIGHT_PANEL_DEFAULT_WIDTH);
   const rightPanelKindRef = useRef<"files" | "browser" | "processes" | "terminal">("files");
@@ -365,10 +371,24 @@ export function AppShell({
     setRightPanelFullscreen((fullscreen) => !fullscreen);
   }, []);
 
-  // A closed panel never keeps the fullscreen presentation for the next open.
-  useEffect(() => {
-    if (!rightPanelOpen) setRightPanelFullscreen(false);
-  }, [rightPanelOpen]);
+  useGSAP(
+    () => {
+      const panel = rightPanelRef.current;
+      if (!panel) return;
+      setRightPanelExpanded(false);
+      gsap.to(panel, {
+        "--right-panel-reveal": rightPanelVisible ? 1 : 0,
+        duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 0.24,
+        ease: "power2.inOut",
+        overwrite: true,
+        onComplete: () => {
+          setRightPanelExpanded(rightPanelVisible);
+          if (!rightPanelOpen) setRightPanelFullscreen(false);
+        },
+      });
+    },
+    { scope: rightPanelRef, dependencies: [rightPanelOpen, rightPanelVisible] },
+  );
 
   // Mirror the Session's Main-owned browser tabs as panel tabs: one chip per
   // browser tab, and a chip disappears with the tab it binds.
@@ -885,7 +905,7 @@ export function AppShell({
 
   const handleBrowserElement = (element: BrowserElementReference) => {
     if (isMobile) setRightPanelOpen(false);
-    setRightPanelFullscreen(false);
+    else setRightPanelFullscreen(false);
     chatInputRef.current?.insertText(formatBrowserElementReference(element));
   };
 
@@ -1124,23 +1144,14 @@ export function AppShell({
             panelContainerRef={chatContentRef}
           />
           <OpenInAppButton directory={selectedSession?.cwd ?? effectiveNewSessionCwd ?? null} />
-          <button
-            type="button"
-            className="app-topbar-button"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-            }}
-            title={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
-            aria-label={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
-            aria-pressed={isDark}
-          >
-            {isDark ? (
-              <Sun size={17} strokeWidth={1.7} aria-hidden="true" />
-            ) : (
-              <Moon size={17} strokeWidth={1.7} aria-hidden="true" />
-            )}
-          </button>
+          <div className="app-topbar-theme-switch">
+            <PixelToggle
+              embedded
+              checked={!isDark}
+              label={t("light", "Light")}
+              onCheckedChange={(day) => setTheme(day ? "light" : "dark")}
+            />
+          </div>
           <span className="app-topbar-divider" aria-hidden="true" />
           <button
             type="button"
@@ -1148,6 +1159,7 @@ export function AppShell({
             onClick={handleRightPanelToggle}
             aria-pressed={rightPanelOpen}
             aria-expanded={rightPanelOpen}
+            aria-controls="session-tools-panel"
             title={rightPanelOpen ? t("hideFilePanel", "Hide file panel") : t("showFilePanel", "Show file panel")}
             aria-label={rightPanelOpen ? t("hideFilePanel", "Hide file panel") : t("showFilePanel", "Show file panel")}
           >
@@ -1286,6 +1298,7 @@ export function AppShell({
           {/* Center: chat */}
           <div
             className={`app-chat${sidebarVisible && !isMobile ? " with-sidebar" : ""}${rightPanelVisible ? " with-right-panel" : ""}`}
+            inert={(isMobile && rightPanelVisible) || undefined}
             style={{
               flex: 1,
               display: "flex",
@@ -1368,6 +1381,7 @@ export function AppShell({
             id="session-tools-panel"
             ref={rightPanelRef}
             className={`right-panel-container${rightPanelVisible ? " right-panel-open" : " right-panel-closed"}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
+            inert={!rightPanelVisible}
             style={
               {
                 display: "flex",
@@ -1432,7 +1446,7 @@ export function AppShell({
                 <BrowserDock
                   key={activePanelTab.browserTabId}
                   visible={showRightPanelContent}
-                  suspendSurface={rightPanelResizing}
+                  suspendSurface={rightPanelResizing || !rightPanelExpanded}
                   ownerSessionId={selectedSession?.id ?? null}
                   tabId={activePanelTab.browserTabId ?? null}
                   onReference={showChat && sessionsOpen ? handleBrowserElement : undefined}

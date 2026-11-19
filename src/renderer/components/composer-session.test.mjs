@@ -53,6 +53,7 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
       export const fileIndex = async () => ({files:[],truncated:false});
       export const call = (method, params) => method === 'agent.generateTitle' ? pending(method, params, 'generate_title') : unexpected();
       const unexpected = async () => {throw new Error('Unexpected composer session IO');};
+      export {unexpected as subscribe};
       export {unexpected as getSessionContext,unexpected as getSessionContextPage,unexpected as getSessionEntryContent,unexpected as refreshModels,unexpected as cancelModelsRefresh};
     `,
         }));

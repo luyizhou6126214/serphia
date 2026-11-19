@@ -62,7 +62,11 @@ const { ChatInput } = await importTestBundle("composer-focus", {
       setup(build) {
         build.onResolve({ filter: /^@\/lib\/api-client$/ }, () => ({ path: "api", namespace: "focus-test" }));
         build.onLoad({ filter: /.*/, namespace: "focus-test" }, () => ({
-          contents: "export const fileIndex = async () => ({ files: [], truncated: false });",
+          contents: `
+            export const fileIndex = async () => ({ files: [], truncated: false });
+            export async function call() { throw new Error("Unexpected composer RPC"); }
+            export async function subscribe() { throw new Error("Unexpected composer subscription"); }
+          `,
         }));
       },
     },

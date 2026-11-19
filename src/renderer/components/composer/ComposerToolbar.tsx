@@ -1,19 +1,8 @@
-import { Check, ChevronDown, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import {
-  type CSSProperties,
-  type KeyboardEvent,
-  type ReactNode,
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import { createPortal } from "react-dom";
+import { Brain, CircleAlert, Feather, Hand, Lightbulb, Plus, RefreshCw, ShieldHalf } from "lucide-react";
+import { type ReactNode, memo, useEffect, useId, useRef, useState } from "react";
+import { DeepAgentMenuScope } from "./DeepAgentMenuScope";
 import type { ModelCatalogStatus } from "@contract/types";
 import { useI18n } from "@/i18n";
-import { scaledChatFont } from "@/lib/chat-appearance";
 import type { ToolPreset } from "@shared/tool-presets";
 import { thinkingMenuLevels, type ThinkingLevelOption } from "@shared/thinking-levels";
 
@@ -46,6 +35,18 @@ export interface ComposerToolbarOptions {
 }
 
 const TOOL_PRESETS = ["none", "default", "full"] as const;
+const PERMISSION_ICONS = { none: Hand, default: ShieldHalf, full: CircleAlert };
+const THINKING_ICONS = {
+  auto: Lightbulb,
+  off: Feather,
+  minimal: Feather,
+  low: Feather,
+  medium: Lightbulb,
+  high: Brain,
+  xhigh: Brain,
+  max: Brain,
+};
+const modelKey = (model: Pick<ModelOption, "provider" | "modelId">) => JSON.stringify([model.provider, model.modelId]);
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 function compareModelOptions(a: ModelOption, b: ModelOption): number {
@@ -56,7 +57,7 @@ function compareModelOptions(a: ModelOption, b: ModelOption): number {
   );
 }
 
-/** Local menu placement, dismissal and focus ownership for the composer controls. */
+/** Connect the model directory, thinking levels, and tool presets to the composer menus. */
 function ComposerToolbarView({
   options,
   isMobile,
@@ -90,21 +91,22 @@ function ComposerToolbarView({
     availableThinkingLevels,
     thinkingLevelMap,
   } = options;
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const [dropdownRect, setDropdownRect] = useState<{
-    top: number;
-    bottom: number;
-    left: number;
-    width: number;
-    viewportWidth: number;
-    viewportHeight: number;
-  } | null>(null);
-  const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const modelButtonRef = useRef<HTMLButtonElement>(null);
-  const menuPanelRef = useRef<HTMLDivElement>(null);
-  const toolDropdownRef = useRef<HTMLDivElement>(null);
-  const toolButtonRef = useRef<HTMLButtonElement>(null);
+  const permissionLayoutId = useId();
+  const [activeMenu, setActiveMenu] = useState<"model" | "permission" | null>(null);
+  const currentMenu = isStreaming ? null : activeMenu;
+  const modelWasOpen = useRef(false);
+
+  useEffect(() => {
+    if (modelWasOpen.current && currentMenu !== "model" && modelRefreshing) onModelsRefreshCancel?.();
+    modelWasOpen.current = currentMenu === "model";
+  }, [currentMenu, modelRefreshing, onModelsRefreshCancel]);
+
+  useEffect(() => setActiveMenu(null), [isMobile, isStreaming]);
+
+  const setMenuOpen = (menu: "model" | "permission", open: boolean) => {
+    setActiveMenu((previous) => (open ? menu : previous === menu ? null : previous));
+  };
+
   // Build model options: prefer modelList (has provider info), fallback to modelNames
   const modelOptions: ModelOption[] = (() => {
     if (modelList && modelList.length > 0) {
@@ -119,18 +121,16 @@ function ComposerToolbarView({
       .sort(compareModelOptions);
   })();
 
-  // Group options by provider, preserving insertion order
-  const modelsByProvider: { provider: string; options: ModelOption[] }[] = [];
-  for (const opt of modelOptions) {
-    const group = modelsByProvider.find((g) => g.provider === opt.provider);
-    if (group) group.options.push(opt);
-    else modelsByProvider.push({ provider: opt.provider, options: [opt] });
+  const modelsByProvider = new Map<string, ModelOption[]>();
+  for (const option of modelOptions) {
+    const group = modelsByProvider.get(option.provider);
+    if (group) group.push(option);
+    else modelsByProvider.set(option.provider, [option]);
   }
-
-  const displayModelName = model
-    ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
-    : null;
-  const currentName = displayModelName;
+  const modelsByKey = new Map([...modelsByProvider.values()].flat().map((option) => [modelKey(option), option]));
+  const selectedModelKey = model ? modelKey(model) : undefined;
+  const currentModelName = selectedModelKey ? (modelsByKey.get(selectedModelKey)?.name ?? model?.modelId) : undefined;
+  const multipleProviders = modelsByProvider.size > 1;
 
   const thinkingLabels: Record<ThinkingLevelOption, string> = {
     auto: t("thinkingAuto", "Auto"),
@@ -142,171 +142,54 @@ function ComposerToolbarView({
     xhigh: t("thinkingXHigh", "Extra high"),
     max: t("thinkingMax", "Maximum"),
   };
-  const thinkingDescriptions: Record<ThinkingLevelOption, string> = {
-    auto: t("thinkingDefaultDescription", "Use Pi default"),
-    off: t("thinkingOffDescription", "Reasoning off"),
-    minimal: t("thinkingMinimalDescription", "Minimal reasoning"),
-    low: t("thinkingLowDescription", "Low reasoning"),
-    medium: t("thinkingMediumDescription", "Medium reasoning"),
-    high: t("thinkingHighDescription", "High reasoning"),
-    xhigh: t("thinkingXHighDescription", "Extra-high reasoning"),
-    max: t("thinkingMaxDescription", "Maximum reasoning"),
-  };
   const thinkingChoiceLabel = (level: ThinkingLevelOption): string => {
     const mapped = level === "auto" ? undefined : thinkingLevelMap?.[level];
     return mapped != null && mapped !== level ? `${thinkingLabels[level]} → ${mapped}` : thinkingLabels[level];
   };
-  const thinkingDisplayLabel = thinkingChoiceLabel(thinkingLevel ?? "auto");
   const thinkingSteps = thinkingMenuLevels(availableThinkingLevels);
-  const thinkingStep = Math.max(0, thinkingSteps.indexOf(thinkingLevel ?? "auto"));
-  const currentThinkingDescription =
-    thinkingLevel &&
-    thinkingLevel !== "auto" &&
-    thinkingLevelMap?.[thinkingLevel] != null &&
-    thinkingLevelMap[thinkingLevel] !== thinkingLevel
-      ? t("thinkingMappedDescription", "Provider value: {value}").replace("{value}", thinkingLevelMap[thinkingLevel]!)
-      : thinkingDescriptions[thinkingLevel ?? "auto"];
-
-  const toolPresetKey = toolPreset ?? "default";
-  const toolPresetLabels: Record<ToolPreset, string> = {
+  const currentThinking = thinkingLevel && thinkingSteps.includes(thinkingLevel) ? thinkingLevel : "auto";
+  const thinkingOptions = thinkingSteps.map((id) => ({ id, label: thinkingChoiceLabel(id), icon: THINKING_ICONS[id] }));
+  const labels: Record<ToolPreset, string> = {
     none: t("permissionReadOnly", "Read only"),
     default: t("permissionStandard", "Standard"),
     full: t("permissionFull", "Full access"),
   };
-  const toolPresetLabel = toolPresetLabels[toolPresetKey];
-  const closeControlDropdowns = useCallback(() => {
-    setModelDropdownOpen(false);
-    setToolDropdownOpen(false);
-  }, []);
-
-  const updateDropdownRect = useCallback(() => {
-    const button = toolDropdownOpen ? toolButtonRef.current : modelButtonRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const next = {
-      top: rect.top,
-      bottom: rect.bottom,
-      left: rect.left,
-      width: rect.width,
-      viewportWidth: window.visualViewport?.width ?? window.innerWidth,
-      viewportHeight: window.visualViewport?.height ?? window.innerHeight,
-    };
-    setDropdownRect((previous) =>
-      previous &&
-      previous.top === next.top &&
-      previous.bottom === next.bottom &&
-      previous.left === next.left &&
-      previous.width === next.width &&
-      previous.viewportWidth === next.viewportWidth &&
-      previous.viewportHeight === next.viewportHeight
-        ? previous
-        : next,
-    );
-  }, [toolDropdownOpen]);
-
-  // Close dropdowns on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (menuPanelRef.current?.contains(target)) return;
-      if (!dropdownRef.current?.contains(target)) setModelDropdownOpen(false);
-      if (!toolDropdownRef.current?.contains(target)) setToolDropdownOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [closeControlDropdowns]);
-
-  useEffect(() => {
-    closeControlDropdowns();
-  }, [closeControlDropdowns, isMobile, isStreaming]);
-
-  const modelDropdownWasOpenRef = useRef(false);
-  useEffect(() => {
-    if (modelDropdownWasOpenRef.current && !modelDropdownOpen && modelRefreshing) onModelsRefreshCancel?.();
-    modelDropdownWasOpenRef.current = modelDropdownOpen;
-  }, [modelDropdownOpen, modelRefreshing, onModelsRefreshCancel]);
-
-  useLayoutEffect(() => {
-    if (!modelDropdownOpen && !toolDropdownOpen) return;
-    updateDropdownRect();
-
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => updateDropdownRect());
-    const button = toolDropdownOpen ? toolButtonRef.current : modelButtonRef.current;
-    if (button) observer?.observe(button);
-    if (dropdownRef.current?.parentElement) observer?.observe(dropdownRef.current.parentElement);
-
-    const visualViewport = window.visualViewport;
-    window.addEventListener("resize", updateDropdownRect);
-    window.addEventListener("scroll", updateDropdownRect, true);
-    visualViewport?.addEventListener("resize", updateDropdownRect);
-    visualViewport?.addEventListener("scroll", updateDropdownRect);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", updateDropdownRect);
-      window.removeEventListener("scroll", updateDropdownRect, true);
-      visualViewport?.removeEventListener("resize", updateDropdownRect);
-      visualViewport?.removeEventListener("scroll", updateDropdownRect);
-    };
-  }, [modelDropdownOpen, toolDropdownOpen, updateDropdownRect]);
-
-  useEffect(() => {
-    if (!modelDropdownOpen && !toolDropdownOpen) return;
-    const handleEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      const button = modelDropdownOpen ? modelButtonRef.current : toolButtonRef.current;
-      closeControlDropdowns();
-      button?.focus();
-    };
-    document.addEventListener("keydown", handleEscape, true);
-    return () => document.removeEventListener("keydown", handleEscape, true);
-  }, [closeControlDropdowns, modelDropdownOpen, toolDropdownOpen]);
-
-  const hasDropdownRect = dropdownRect !== null;
-  useEffect(() => {
-    menuPanelRef.current?.focus();
-  }, [modelDropdownOpen, toolDropdownOpen, hasDropdownRect]);
-
-  const viewportWidth = dropdownRect?.viewportWidth ?? 1200;
-  const viewportHeight = dropdownRect?.viewportHeight ?? 800;
-  const menuWidth = Math.min(modelDropdownOpen ? 320 : toolDropdownOpen ? 304 : 264, viewportWidth - 16);
-  const spaceAbove = Math.max(0, (dropdownRect?.top ?? 0) - 16);
-  const spaceBelow = Math.max(0, viewportHeight - (dropdownRect?.bottom ?? 0) - 16);
-  const openAbove = spaceAbove >= Math.min(viewportHeight * 0.55, 320) || spaceAbove >= spaceBelow;
-  const menuStyle: CSSProperties = {
-    position: "fixed",
-    width: menuWidth,
-    left: Math.max(
-      8,
-      Math.min((dropdownRect?.left ?? 8) + (dropdownRect?.width ?? 0) - menuWidth, viewportWidth - menuWidth - 8),
-    ),
-    ...(openAbove
-      ? { bottom: viewportHeight - (dropdownRect?.top ?? 0) + 8 }
-      : { top: (dropdownRect?.bottom ?? 0) + 8 }),
-    maxHeight: Math.min(440, openAbove ? spaceAbove : spaceBelow),
-    fontSize: scaledChatFont(12),
+  const descriptions: Record<ToolPreset, string> = {
+    none: t("permissionReadOnlyDescription", "No tools, read-only"),
+    default: t("permissionStandardDescription", "4 built-in tools"),
+    full: t("permissionFullDescription", "All tools, code orchestration, image generation, classification and search"),
   };
-  const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).matches("input[type=range]")) return;
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    const items = Array.from(
-      event.currentTarget.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
-        "button:not(:disabled), input[type=range]:not(:disabled)",
-      ),
-    );
-    if (!items.length) return;
-    event.preventDefault();
-    const focusedIndex = items.indexOf(document.activeElement as HTMLButtonElement | HTMLInputElement);
-    const current = focusedIndex < 0 && event.key === "ArrowUp" ? 0 : focusedIndex;
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? items.length - 1
-          : (current + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
-    items[next].focus();
-  };
+  const permissionOptions = TOOL_PRESETS.map((id) => ({
+    id,
+    label: labels[id],
+    desc: descriptions[id],
+    icon: PERMISSION_ICONS[id],
+  }));
+  const modelCatalogControls = onModelsRefresh && (
+    <div className="pt-1">
+      <button
+        type="button"
+        disabled={modelRefreshing}
+        onClick={() => void onModelsRefresh()}
+        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] text-text-secondary hover:bg-ui-tint"
+      >
+        <RefreshCw size={14} strokeWidth={1.7} aria-hidden="true" />
+        {modelRefreshing
+          ? t("refreshingModels", "Refreshing model directory…")
+          : t("refreshModels", "Refresh model directory")}
+      </button>
+      {modelCatalog?.source === "offline" && (
+        <div className="px-2 py-1 text-[11px] text-text-secondary">
+          {t("modelsOfflineCache", "Offline: using the cached model directory.")}
+        </div>
+      )}
+      {modelCatalog?.warnings?.map((warning) => (
+        <div key={warning.provider + ":" + warning.code} role="alert" className="px-2 py-1 text-[11px]">
+          {warning.message}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="composer-toolbar">
@@ -347,301 +230,71 @@ function ComposerToolbarView({
           <Plus size={18} strokeWidth={1.8} aria-hidden="true" />
         </button>
         {onToolPresetChange && (
-          <div ref={toolDropdownRef} style={{ position: "relative" }}>
-            <button
-              ref={toolButtonRef}
-              className="composer-toolbar-control"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={toolDropdownOpen}
-              onClick={() => {
-                if (isStreaming) return;
-                setModelDropdownOpen(false);
-                setToolDropdownOpen((v) => !v);
-              }}
-              disabled={isStreaming}
-              title={`${t("changePermission", "Change permission settings")}: ${toolPresetLabel}`}
-              aria-label={`${t("changePermission", "Change permission settings")}: ${toolPresetLabel}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 5,
-                padding: isMobile ? 0 : "0 9px",
-                minWidth: 32,
-                minHeight: 32,
-                background: toolDropdownOpen ? "var(--bg-selected)" : "var(--bg-panel)",
-                border: `1px solid ${toolPresetKey === "full" ? "rgba(239,68,68,0.35)" : "var(--border)"}`,
-                borderRadius: 9,
-                color: "var(--text-muted)",
-                cursor: isStreaming ? "not-allowed" : "pointer",
-                fontSize: scaledChatFont(12),
-                opacity: isStreaming ? 0.5 : 1,
-                transition: "background 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                if (isStreaming) return;
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = "var(--text)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = toolDropdownOpen ? "var(--bg-selected)" : "var(--bg-panel)";
-                e.currentTarget.style.color = "var(--text-muted)";
-              }}
-            >
-              <ShieldCheck size={15} strokeWidth={1.7} aria-hidden="true" />
-              {!isMobile && (
-                <span style={{ whiteSpace: "nowrap" }}>
-                  {t("permissionShort", "Access")}: {toolPresetLabel}
-                </span>
-              )}
-              <ChevronDown size={12} aria-hidden="true" />
-            </button>
-            {toolDropdownOpen &&
-              dropdownRect &&
-              createPortal(
-                <div
-                  ref={menuPanelRef}
-                  className="composer-menu chat-appearance-scope"
-                  role="menu"
-                  tabIndex={-1}
-                  aria-label={t("changePermission", "Change permission settings")}
-                  onKeyDown={handleMenuKeyDown}
-                  style={menuStyle}
-                >
-                  <div className="composer-menu-heading">{t("permissionShort", "Access")}</div>
-                  {TOOL_PRESETS.map((preset) => {
-                    const isActive = toolPresetKey === preset;
-                    const desc =
-                      preset === "none"
-                        ? t("permissionReadOnlyDescription", "No tools, read-only")
-                        : preset === "default"
-                          ? t("permissionStandardDescription", "4 built-in tools")
-                          : t(
-                              "permissionFullDescription",
-                              "All tools, code orchestration, image generation, classification and search",
-                            );
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={isActive}
-                        className="composer-menu-item"
-                        onClick={() => {
-                          onToolPresetChange(preset);
-                          setToolDropdownOpen(false);
-                          toolButtonRef.current?.focus();
-                        }}
-                      >
-                        <span className="composer-menu-copy">
-                          <span className="composer-menu-label">{toolPresetLabels[preset]}</span>
-                          <span className="composer-menu-description">{desc}</span>
-                        </span>
-                        <Check size={15} strokeWidth={2} className="composer-menu-check" aria-hidden="true" />
-                      </button>
-                    );
-                  })}
-                  {toolSelectionError && (
-                    <div role="alert" className="composer-menu-error">
-                      {toolSelectionError}
-                    </div>
-                  )}
-                </div>,
-                document.body,
-              )}
-          </div>
+          <DeepAgentMenuScope>
+            {({ ApprovalMenu }) => (
+              <ApprovalMenu
+                open={currentMenu === "permission"}
+                onOpenChange={(open) => setMenuOpen("permission", open)}
+                layoutId={permissionLayoutId}
+                menuLabel={t("changePermission", "Change permission settings")}
+                disabled={isStreaming}
+                compact={isMobile}
+                visibleOptions={permissionOptions}
+                selectedApproval={permissionOptions[TOOL_PRESETS.indexOf(toolPreset ?? "default")]}
+                chooseApproval={({ id }) => {
+                  onToolPresetChange(id);
+                  setMenuOpen("permission", false);
+                }}
+                error={toolSelectionError}
+              />
+            )}
+          </DeepAgentMenuScope>
         )}
       </div>
       <div className="composer-toolbar-settings">
         {modelStatus}
-        {(onThinkingLevelChange || onModelsRefresh || (modelOptions.length > 0 && currentName && onModelChange)) && (
-          <div ref={dropdownRef} style={{ position: "relative", flex: isMobile ? "1 1 auto" : undefined, minWidth: 0 }}>
-            <button
-              ref={modelButtonRef}
-              className="composer-toolbar-model"
-              aria-label={`${t("modelAndReasoning", "Model and reasoning")}: ${currentName ?? t("models", "Models")}${onThinkingLevelChange ? ` · ${thinkingDisplayLabel}` : ""}`}
-              type="button"
-              title={`${currentName ?? t("models", "Models")}${onThinkingLevelChange ? ` · ${thinkingDisplayLabel}` : ""}`}
-              aria-haspopup="menu"
-              aria-expanded={modelDropdownOpen}
-              onClick={() => {
-                setToolDropdownOpen(false);
-                updateDropdownRect();
-                setModelDropdownOpen((v) => !v);
-              }}
-              disabled={isStreaming}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                justifyContent: isMobile ? "flex-start" : undefined,
-                padding: isMobile ? "8px 10px" : "8px 12px",
-                minHeight: 32,
-                width: isMobile ? "100%" : undefined,
-                maxWidth: "100%",
-                overflow: "hidden",
-                background: modelDropdownOpen ? "var(--bg-selected)" : "var(--bg-panel)",
-                border: "1px solid var(--border)",
-                borderRadius: 9,
-                color: "var(--text-muted)",
-                cursor: isStreaming ? "not-allowed" : "pointer",
-                fontSize: scaledChatFont(12),
-                opacity: isStreaming ? 0.5 : 1,
-                transition: "background 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                if (isStreaming) return;
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = "var(--text)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = modelDropdownOpen ? "var(--bg-selected)" : "var(--bg-panel)";
-                e.currentTarget.style.color = "var(--text-muted)";
-              }}
-            >
-              <span className="composer-model-name">{currentName ?? t("models", "Models")}</span>
-              {onThinkingLevelChange && (
-                <>
-                  <span className="composer-model-divider" aria-hidden="true" />
-                  <span className="composer-model-effort">{thinkingDisplayLabel}</span>
-                </>
-              )}
-              <ChevronDown size={13} aria-hidden="true" />
-            </button>
-            {modelDropdownOpen &&
-              dropdownRect &&
-              typeof document !== "undefined" &&
-              createPortal(
-                <div
-                  ref={menuPanelRef}
-                  className="composer-menu chat-appearance-scope"
-                  role="menu"
-                  tabIndex={-1}
-                  aria-label={t("modelAndReasoning", "Model and reasoning")}
-                  onKeyDown={handleMenuKeyDown}
-                  style={menuStyle}
-                >
-                  {onModelsRefresh && (
-                    <div className="composer-menu-refresh">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={modelRefreshing}
-                        onClick={() => void onModelsRefresh?.()}
-                        className="composer-menu-item"
-                      >
-                        <RefreshCw size={14} strokeWidth={1.7} aria-hidden="true" />
-                        {modelRefreshing
-                          ? t("refreshingModels", "Refreshing model directory…")
-                          : t("refreshModels", "Refresh model directory")}
-                      </button>
-                      {modelCatalog?.source === "offline" && (
-                        <div style={{ marginTop: 6, color: "var(--text-dim)", fontSize: scaledChatFont(11) }}>
-                          {t("modelsOfflineCache", "Offline: using the cached model directory.")}
-                        </div>
-                      )}
-                      {(modelCatalog?.warnings ?? []).map((warning) => (
-                        <div
-                          key={`${warning.provider}:${warning.code}`}
-                          role="alert"
-                          style={{
-                            marginTop: 6,
-                            color: "var(--warning)",
-                            fontSize: scaledChatFont(11),
-                            whiteSpace: "normal",
-                          }}
-                        >
-                          {warning.message}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {modelOptions.length > 0 && (
-                    <>
-                      <div className="composer-menu-heading">{t("models", "Models")}</div>
-                      <div className="composer-model-options" role="group" aria-label={t("models", "Models")}>
-                        {modelsByProvider.map((group) => (
-                          <div key={group.provider}>
-                            {modelsByProvider.length > 1 && <div className="composer-menu-group">{group.provider}</div>}
-                            {group.options.map((opt) => {
-                              const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
-                              return (
-                                <button
-                                  key={`${opt.provider}:${opt.modelId}`}
-                                  type="button"
-                                  role="menuitemradio"
-                                  aria-checked={isActive}
-                                  className="composer-menu-item"
-                                  onClick={() => {
-                                    setModelDropdownOpen(false);
-                                    if (!isActive || isAutoModelSelection) onModelChange?.(opt.provider, opt.modelId);
-                                    modelButtonRef.current?.focus();
-                                  }}
-                                >
-                                  <span className="composer-menu-label">{opt.name}</span>
-                                  <Check size={15} strokeWidth={2} className="composer-menu-check" aria-hidden="true" />
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {onThinkingLevelChange && (
-                    <div className="composer-reasoning-section">
-                      <div className="composer-reasoning-heading">
-                        <span>{t("reasoningShort", "Reasoning")}</span>
-                        <span className="composer-reasoning-value">{thinkingDisplayLabel}</span>
-                      </div>
-                      <div
-                        className="composer-reasoning-slider"
-                        style={
-                          {
-                            "--reasoning-progress": `${(thinkingStep / Math.max(1, thinkingSteps.length - 1)) * 100}%`,
-                          } as CSSProperties
-                        }
-                      >
-                        <input
-                          type="range"
-                          min={0}
-                          max={Math.max(0, thinkingSteps.length - 1)}
-                          step={1}
-                          value={thinkingStep}
-                          disabled={thinkingSteps.length < 2 || isStreaming}
-                          aria-label={t("changeThinkingLevel", "Change reasoning level")}
-                          aria-valuetext={thinkingDisplayLabel}
-                          title={currentThinkingDescription}
-                          onChange={(event) => {
-                            const next = thinkingSteps[Number(event.currentTarget.value)];
-                            if (next && next !== (thinkingLevel ?? "auto")) onThinkingLevelChange(next);
-                          }}
-                        />
-                        <div className="composer-reasoning-ticks" aria-hidden="true">
-                          {thinkingSteps.map((level, index) => (
-                            <span key={level} title={thinkingChoiceLabel(level)} data-filled={index <= thinkingStep} />
-                          ))}
-                        </div>
-                        <div className="composer-reasoning-endpoints" aria-hidden="true">
-                          <span>{thinkingChoiceLabel(thinkingSteps[0])}</span>
-                          <span>{thinkingChoiceLabel(thinkingSteps[thinkingSteps.length - 1])}</span>
-                        </div>
-                      </div>
-                      <p className="composer-reasoning-description">{currentThinkingDescription}</p>
-                    </div>
-                  )}
-                </div>,
-                document.body,
-              )}
-          </div>
+        {(onThinkingLevelChange ||
+          onModelsRefresh ||
+          (modelOptions.length > 0 && currentModelName && onModelChange)) && (
+          <DeepAgentMenuScope>
+            {({ ModelThinkingSelector }) => (
+              <ModelThinkingSelector
+                open={currentMenu === "model"}
+                onOpenChange={(open) => setMenuOpen("model", open)}
+                menuLabel={t("modelAndReasoning", "Model and reasoning")}
+                selectModelLabel={t("models", "Models")}
+                modelsLabel={t("models", "Models")}
+                noModelsLabel={t("composerNoModels", "No models available")}
+                reasoningLabel={t("composerEffortTitle", "Reasoning effort")}
+                disabled={isStreaming}
+                showThinking={Boolean(onThinkingLevelChange)}
+                thinkingDisabled={isStreaming}
+                models={[...modelsByKey.keys()]}
+                selectedModel={selectedModelKey}
+                getModelLabel={(id) => modelsByKey.get(id)?.name ?? currentModelName ?? id}
+                getModelGroup={multipleProviders ? (id) => modelsByKey.get(id)?.provider : undefined}
+                selectedThinking={currentThinking}
+                thinkingOptions={thinkingOptions}
+                modelStatus={modelCatalogControls}
+                onChooseModel={(id) => {
+                  const option = modelsByKey.get(id);
+                  if (option && (id !== selectedModelKey || isAutoModelSelection)) {
+                    onModelChange?.(option.provider, option.modelId);
+                  }
+                }}
+                onChooseThinking={(next) => {
+                  if (next !== currentThinking && thinkingSteps.includes(next)) onThinkingLevelChange?.(next);
+                }}
+              />
+            )}
+          </DeepAgentMenuScope>
         )}
       </div>
       {isStreaming && (
         <button
           type="button"
           onClick={() => {
-            closeControlDropdowns();
+            setActiveMenu(null);
             onAbort();
           }}
           className="chat-composer-stop"

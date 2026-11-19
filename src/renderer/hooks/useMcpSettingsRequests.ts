@@ -3,13 +3,17 @@ import type { Dispatch, SetStateAction } from "react";
 import type { SettingsTab } from "../components/SettingsConfig";
 import { subscribe } from "@/lib/api-client";
 
-export function useMcpSettingsCommand(sessionId: string | null): void {
+export function openMcpSettings(sessionId: string | null): void {
+  window.dispatchEvent(new CustomEvent("pi-desktop:open-mcp-settings", { detail: { sessionId } }));
+}
+
+export function useMcpServerListCommand(sessionId: string | null, show: () => void): void {
   useEffect(() => {
     if (!sessionId) return;
     let disposed = false;
     let off: (() => void) | undefined;
-    void subscribe("mcp.settings", sessionId, () => {
-      if (!disposed) window.dispatchEvent(new CustomEvent("pi-desktop:open-mcp-settings", { detail: { sessionId } }));
+    void subscribe("mcp.showServers", sessionId, () => {
+      if (!disposed) show();
     })
       .then((value) => {
         if (disposed) value();
@@ -20,7 +24,7 @@ export function useMcpSettingsCommand(sessionId: string | null): void {
       disposed = true;
       off?.();
     };
-  }, [sessionId]);
+  }, [sessionId, show]);
 }
 
 export function useMcpSettingsRequests(

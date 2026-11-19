@@ -166,7 +166,11 @@ export function BrowserDock({
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const surfaceRect = element.getBoundingClientRect();
-        const rect = browserSurfaceBounds(surfaceRect, panel?.getBoundingClientRect() ?? surfaceRect);
+        const rect = browserSurfaceBounds(
+          surfaceRect,
+          panel?.getBoundingClientRect() ?? surfaceRect,
+          panel ? getComputedStyle(panel) : undefined,
+        );
         if (!rect) return;
         const scaleFactorVersion = Math.round(window.devicePixelRatio * 1000);
         const key = `${rect.x}:${rect.y}:${rect.width}:${rect.height}:${scaleFactorVersion}`;

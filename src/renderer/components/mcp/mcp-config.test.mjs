@@ -4,10 +4,10 @@ import test from "node:test";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { importTestBundle } from "#test-bundle";
-const { McpServerEditor, McpProjectOverrideEditor, McpConfig, McpToolsPanel, api } = await importTestBundle("mcp-ui", {
+const { McpServerEditor, McpConfig, McpToolsPanel, api } = await importTestBundle("mcp-ui", {
   stdin: {
     contents:
-      'export {McpServerEditor} from "./McpServerEditor.tsx"; export {McpProjectOverrideEditor} from "./McpProjectOverrideEditor.tsx"; export {McpConfig} from "./McpConfig.tsx"; export {McpToolsPanel} from "./McpToolsPanel.tsx"; export * as api from "@/lib/api-client";',
+      'export {McpServerEditor} from "./McpServerEditor.tsx"; export {McpConfig} from "./McpConfig.tsx"; export {McpToolsPanel} from "./McpToolsPanel.tsx"; export * as api from "@/lib/api-client";',
     resolveDir: import.meta.dirname,
     loader: "tsx",
   },
@@ -107,12 +107,11 @@ test("the MCP editor shows one codemode choice for legacy aliases and saves a se
   assert.equal(saved[0].description, "New searchable summary");
 });
 
-test("MCP settings reads and import previews do not connect servers and protect unsaved navigation", async (t) => {
+test("MCP settings open the add form directly and protect unsaved navigation", async (t) => {
   const ref = { current: null };
   let navigated = 0;
   api.respond(async (method) => {
     if (method === "mcp.config.get") return { scope: "global", revision: "missing", entries: [] };
-    if (method === "mcp.import.preview") return { entries: ["fixture"], conflicts: [] };
     throw new Error("Unexpected MCP mutation " + method);
   });
   const renderer = await render(t, createElement(McpConfig, { ref, cwd: null, sessionId: null }));
@@ -120,11 +119,16 @@ test("MCP settings reads and import previews do not connect servers and protect 
     api.calls.map((entry) => entry.method),
     ["mcp.config.get"],
   );
-  await act(async () => button(renderer, "Import JSON").props.onClick());
-  await act(async () => button(renderer, "Preview import").props.onClick());
-  assert.equal(
-    api.calls.some((entry) => entry.method === "mcp.probe" || entry.method === "mcp.import.apply"),
-    false,
+  const add = button(renderer, "Add server");
+  assert.equal(add.props.popoverTarget, undefined);
+  assert.equal(button(renderer, "Import JSON"), undefined);
+  assert.equal(renderer.root.findAllByType("details").length, 0);
+  await act(async () => add.props.onClick());
+  const name = renderer.root.findAllByType("input").find((input) => input.props.id?.endsWith("-name"));
+  await act(async () => name.props.onChange({ target: { value: "draft" } }));
+  assert.deepEqual(
+    api.calls.map(({ method }) => method),
+    ["mcp.config.get"],
   );
   await act(async () => ref.current.requestLeave(() => navigated++));
   assert.equal(navigated, 0);
@@ -175,19 +179,44 @@ test("MCP permission UI sends only scoped grants and respects unavailable entry 
   });
 });
 
-test("MCP scope changes capture the requested scope before discard confirmation", async (t) => {
-  api.respond(async (_method, params) => ({ scope: params.scope, revision: "missing", entries: [] }));
-  const renderer = await render(t, createElement(McpConfig, { cwd: "/fixture", sessionId: null }));
-  await act(async () => button(renderer, "Import JSON").props.onClick());
-  const event = { target: { value: "project" } };
-  await act(async () => renderer.root.findByType("select").props.onChange(event));
-  event.target.value = "global";
-  await act(async () => button(renderer, "Discard changes").props.onClick());
-  assert.equal(renderer.root.findByType("select").props.value, "project");
-  assert.equal(api.calls.at(-1).params.scope, "project");
+test("MCP settings add global servers even when a project is open", async (t) => {
+  const snapshot = { scope: "global", revision: "global-revision", entries: [] };
+  api.respond(async (method) => {
+    if (method === "mcp.snapshot") return { adapterActive: true, instances: [], tools: [] };
+    return snapshot;
+  });
+  const renderer = await render(t, createElement(McpConfig, { cwd: "/project", sessionId: "session" }));
+  assert.equal(renderer.root.findAllByType("select").length, 0);
+  await act(async () => button(renderer, "Add server").props.onClick());
+  const name = renderer.root.findAllByType("input").find((input) => input.props.id?.endsWith("-name"));
+  await act(async () => name.props.onChange({ target: { value: "added" } }));
+  const command = renderer.root
+    .findAllByType("label")
+    .find((label) => label.children.includes("Command"))
+    .findByType("input");
+  await act(async () => command.props.onChange({ target: { value: "node" } }));
+  await act(async () => button(renderer, "Save configuration").props.onClick());
+
+  const reads = api.calls.filter(({ method }) => method === "mcp.config.get");
+  assert.ok(reads.length > 0);
+  for (const read of reads) assert.deepEqual(read.params, { scope: "global" });
+  assert.deepEqual(
+    api.calls.filter(({ method }) => method === "mcp.config.upsert"),
+    [
+      {
+        method: "mcp.config.upsert",
+        params: {
+          scope: "global",
+          name: "added",
+          config: { command: "node", args: [], exposure: "codemode" },
+          expectedRevision: "global-revision",
+        },
+      },
+    ],
+  );
 });
 
-test("an old MCP probe cannot update a different project view", async (t) => {
+test("an old MCP probe cannot update settings after the working directory changes", async (t) => {
   let finish;
   api.respond(async (method) => {
     if (method === "mcp.config.get")
@@ -199,6 +228,7 @@ test("an old MCP probe cannot update a different project view", async (t) => {
     if (method === "mcp.probe.cancel") return { ok: true };
   });
   const renderer = await render(t, createElement(McpConfig, { cwd: "/old", sessionId: null }));
+  await act(async () => renderer.root.findByProps({ className: "mcp-row-trigger" }).props.onClick());
   await act(async () => {
     button(renderer, "Test connection").props.onClick();
   });
@@ -212,74 +242,28 @@ test("an old MCP probe cannot update a different project view", async (t) => {
   assert.ok(api.calls.some((entry) => entry.method === "mcp.probe.cancel"));
 });
 
-test("project view edits policy only, and disable and reset never copy inherited transport or secrets", async (t) => {
-  let policy;
-  const mutations = [];
-  const entry = () => ({
-    name: "shared",
-    scope: "global",
-    source: "/agent/mcp.json",
-    secretFields: ["headers.Private"],
-    config: {
-      url: "https://mcp.example.invalid",
-      headers: { Private: "<pi-desktop:saved-secret>" },
-      auth: { provider: "radius" },
-      ...policy,
-    },
-    projectOverride: { source: "/project/.pi/mcp.json", exists: policy !== undefined, config: policy ?? {} },
-  });
-  api.respond(async (method, params) => {
-    if (method === "mcp.config.get")
-      return { scope: params.scope, revision: "both-files", entries: params.scope === "project" ? [entry()] : [] };
+test("a failed MCP switch write restores the previous state", async (t) => {
+  let fail;
+  api.respond(async (method) => {
+    if (method === "mcp.config.get") {
+      return { scope: "global", revision: "fixture", entries: [{ name: "fixture", config: { command: "node" } }] };
+    }
     if (method === "mcp.config.upsert") {
-      policy = params.config;
-      mutations.push(params);
-    } else if (method === "mcp.config.remove") {
-      policy = undefined;
-      mutations.push(params);
-    } else throw new Error("Unexpected mutation " + method);
+      return new Promise((_, reject) => {
+        fail = reject;
+      });
+    }
+    throw new Error("Unexpected MCP request " + method);
   });
-  const renderer = await render(t, createElement(McpConfig, { cwd: "/project", sessionId: null }));
-  await act(async () => renderer.root.findByType("select").props.onChange({ target: { value: "project" } }));
-  assert.equal(button(renderer, "Restore global settings").props.disabled, true);
-  await act(async () => button(renderer, "Disable").props.onClick());
-  assert.deepEqual(mutations[0].config, { enabled: false });
-  assert.equal(mutations[0].scope, "project");
-  assert.equal(mutations[0].expectedRevision, "both-files");
-  await act(async () => button(renderer, "Edit").props.onClick());
-  const editor = renderer.root.findByType(McpProjectOverrideEditor);
-  assert.deepEqual(editor.props.initial.config, { enabled: false });
-  assert.equal(renderer.root.findAllByType(McpServerEditor).length, 0);
-  await act(async () => button(renderer, "Save configuration").props.onClick());
-  assert.deepEqual(mutations[1].config, { enabled: false });
-  await act(async () => button(renderer, "Restore global settings").props.onClick());
-  assert.equal(mutations[2].scope, "project");
-  assert.equal(mutations[2].name, "shared");
-  assert.equal(button(renderer, "Restore global settings").props.disabled, true);
-});
-
-test("project editor preserves inherit versus empty map and rejects malformed JSON", async (t) => {
-  const saved = [];
-  const renderer = await render(
-    t,
-    createElement(McpProjectOverrideEditor, {
-      initial: { name: "fixture", config: { enabled: false, exposure: "hidden", toolExposure: { read: "direct" } } },
-      busy: false,
-      onDirty() {},
-      onCancel() {},
-      onSave: (_name, config) => saved.push(config),
-    }),
-  );
-  await act(async () => renderer.root.findAllByType("select")[0].props.onChange({ target: { value: "" } }));
-  await act(async () => renderer.root.findAllByType("select")[1].props.onChange({ target: { value: "" } }));
-  const textarea = renderer.root.findByType("textarea");
-  await act(async () => textarea.props.onChange({ target: { value: "{broken" } }));
-  await act(async () => button(renderer, "Save configuration").props.onClick());
-  assert.equal(saved.length, 0);
-  await act(async () => textarea.props.onChange({ target: { value: "{}" } }));
-  await act(async () => button(renderer, "Save configuration").props.onClick());
-  assert.deepEqual(saved[0], { toolExposure: {} });
-  await act(async () => textarea.props.onChange({ target: { value: "" } }));
-  await act(async () => button(renderer, "Save configuration").props.onClick());
-  assert.deepEqual(saved[1], {});
+  const renderer = await render(t, createElement(McpConfig, { cwd: null, sessionId: null }));
+  const toggle = () => renderer.root.findByProps({ role: "switch" });
+  await act(async () => toggle().props.onClick());
+  assert.equal(toggle().props["aria-checked"], false);
+  assert.equal(toggle().props["aria-disabled"], true);
+  await act(async () => toggle().props.onClick());
+  assert.equal(api.calls.filter(({ method }) => method === "mcp.config.upsert").length, 1);
+  await act(async () => fail(new Error("Configuration changed")));
+  assert.equal(toggle().props["aria-checked"], true);
+  assert.equal(toggle().props["aria-disabled"], false);
+  assert.equal(renderer.root.findByProps({ role: "alert" }).children.join(""), "Configuration changed");
 });

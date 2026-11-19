@@ -10,7 +10,7 @@ export function initializeMcpService(server: Pick<RpcServer, "emit">): McpServic
     },
     changed: (sessionId, instances) => server.emit("mcp.changed", sessionId, { sessionId, instances }),
     oauth: { updated: (snapshot) => server.emit("mcp.oauth", snapshot.sessionId, snapshot) },
-    settings: (sessionId) => server.emit("mcp.settings", sessionId, { sessionId }),
+    showServers: (sessionId) => server.emit("mcp.showServers", sessionId, { sessionId }),
   });
   return service;
 }

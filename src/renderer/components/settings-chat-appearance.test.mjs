@@ -57,6 +57,14 @@ test("the full-width dock applies the chat width once after reserving the minima
   assert.doesNotMatch(chatInputSource, /maxWidth:\s*"var\(--chat-content-max-width\)"/);
 });
 
+test("the new conversation composer uses a fixed width independent of chat width preferences", () => {
+  assert.match(chatWindowSource, /data-position=\{isEmptyNew \? "welcome" : "conversation"\}/);
+  assert.match(
+    cssSource,
+    /\.chat-input-transition-dock\[data-position="welcome"\] \.chat-content-column\s*\{\s*max-width:\s*760px;/,
+  );
+});
+
 test("the composer dock reserves the same minimap gutter as the message column", () => {
   const minimapWidth = Number(/CHAT_MINIMAP_WIDTH = (\d+)/.exec(chatLayoutSource)?.[1]);
   const columnPadding = Number(/CHAT_COLUMN_PADDING = (\d+)/.exec(chatLayoutSource)?.[1]);

@@ -37,18 +37,25 @@ export function builtinSlashCommands(t: Translate): SlashCommandPaletteItem[] {
   ];
 }
 
-export function localizeSlashCommand(command: SlashCommandInfo, t: Translate): SlashCommandInfo {
-  if (command.source !== "extension") return command;
-  // Only translate app-provided commands; a third-party extension can register the same name.
-  const path = command.sourceInfo?.path;
-  const name = command.name.split(":", 1)[0];
-  if (path === "builtin:mcp" && name === "mcp") {
-    return { ...command, description: t("slashCommandMcp", "Manage MCP servers in Desktop Settings") };
-  }
-  return command;
+export function isDesktopMcpCommand(command: SlashCommandInfo): boolean {
+  return command.source === "extension" && command.sourceInfo?.path === "builtin:mcp" && command.name === "mcp";
 }
 
-export const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
+export function isPackageSlashCommand(command: SlashCommandPaletteItem): boolean {
+  return (command.source === "extension" || command.source === "prompt") && command.sourceInfo?.origin === "package";
+}
+
+const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
+
+export function groupSlashCommands(commands: readonly SlashCommandPaletteItem[], offset = 0) {
+  const groups = new Map<SlashCommandSource, { command: SlashCommandPaletteItem; index: number }[]>(
+    SLASH_SOURCES.map((source) => [source, []]),
+  );
+  commands.forEach((command, index) => {
+    groups.get(command.source)?.push({ command, index: offset + index });
+  });
+  return Array.from(groups, ([source, items]) => ({ source, items })).filter((group) => group.items.length > 0);
+}
 
 export const SLASH_SOURCE_GROUP_LABEL: Record<SlashCommandSource, string> = {
   builtin: "Built-in",

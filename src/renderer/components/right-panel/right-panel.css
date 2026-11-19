@@ -491,22 +491,11 @@
 
 /* Fullscreen presentation: the panel covers the frame under the title bar. */
 .right-panel-container.right-panel-fullscreen {
+  --right-panel-target-width: 100vw;
   position: fixed;
-  top: 44px;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 44px 0 0 auto;
   z-index: 1000;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  border-left: none;
   background: var(--bg);
-}
-
-.right-panel-container.right-panel-fullscreen > * {
-  width: auto !important;
-  min-width: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

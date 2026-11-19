@@ -152,7 +152,7 @@ export async function runMcpUiChecks(window: BrowserWindow, call: Call): Promise
     await call("sessions.rename", { id: sessionId, name: "MCP smoke session" });
     await runSessionToolsUiChecks(window, call, sessionId);
     const configureCode =
-      'async (url) => {\n    const until = async (read) => {\n        const deadline = Date.now() + 12000;\n        while (Date.now() < deadline) {\n            const value = read();\n            if (value)\n                return value;\n            await new Promise((resolve) => setTimeout(resolve, 25));\n        }\n        throw new Error("MCP UI element did not appear: " + document.body.innerText.slice(-3000)+" ROWS:"+Array.from(document.querySelectorAll(".mcp-tool-row")).map(row=>row.textContent+":"+row.querySelector("input")?.checked+":"+row.querySelector("input")?.disabled).join(";"));\n    };\n    const find = (text) => Array.from(document.querySelectorAll("button")).find((button) => [text, ({"Add server":"新增服务器","Save configuration":"保存配置","Test connection":"测试连接"})[text]].includes(button.textContent?.trim()));\n    const set = (element, value) => {\n        if (!element)\n            throw new Error("Missing MCP input");\n        const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;\n        Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value);\n        element.dispatchEvent(new Event("input", { bubbles: true }));\n    };\n    (await until(() => Array.from(document.querySelectorAll("button[aria-label]")).find((button) => button.getAttribute("aria-label")?.includes("MCP smoke session")))).click();\n    (await until(() => document.querySelector(\'button[title="Settings"],button[title="设置"]\'))).click();\n    (await until(() => find("MCP"))).click();\n    (await until(() => find("Add server"))).click();\n    const editor = (await until(() => document.querySelector(".mcp-editor")));\n    set(editor.querySelector(\'input[id$="-name"]\'), "smoke");\n    editor.querySelector(\'input[type="checkbox"]\').click();\n    const textarea = (await until(() => editor.querySelector("textarea")));\n    set(textarea, JSON.stringify({ url, exposure: "codemode" }));\n    (await until(() => find("Save configuration"))).click();\n    await until(() => !document.querySelector(".mcp-editor"));\n    (await until(() => find("Test connection"))).click();\n    await until(() => document.querySelector("[data-mcp-config]")?.textContent?.includes("临时连接") || document.querySelector("[data-mcp-config]")?.textContent?.includes("temporary connection"));\n    return true;\n}';
+      'async (url) => {\n    const until = async (read) => {\n        const deadline = Date.now() + 12000;\n        while (Date.now() < deadline) {\n            const value = read();\n            if (value)\n                return value;\n            await new Promise((resolve) => setTimeout(resolve, 25));\n        }\n        throw new Error("MCP UI element did not appear: " + document.body.innerText.slice(-3000)+" ROWS:"+Array.from(document.querySelectorAll(".mcp-tool-row")).map(row=>row.textContent+":"+row.querySelector("input")?.checked+":"+row.querySelector("input")?.disabled).join(";"));\n    };\n    const find = (text) => Array.from(document.querySelectorAll("button")).find((button) => [text, ({"Add server":"新增服务器","Save configuration":"保存配置","Test connection":"测试连接"})[text]].includes(button.textContent?.trim()));\n    const set = (element, value) => {\n        if (!element)\n            throw new Error("Missing MCP input");\n        const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;\n        Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value);\n        element.dispatchEvent(new Event("input", { bubbles: true }));\n    };\n    (await until(() => Array.from(document.querySelectorAll("button[aria-label]")).find((button) => button.getAttribute("aria-label")?.includes("MCP smoke session")))).click();\n    (await until(() => document.querySelector(\'button[title="Settings"],button[title="设置"]\'))).click();\n    (await until(() => find("MCP"))).click();\n    (await until(() => document.querySelector("[data-mcp-config] .mcp-add-button:not(:disabled)"))).click();\n    const editor = (await until(() => document.querySelector(".mcp-editor")));\n    set(editor.querySelector(\'input[id$="-name"]\'), "smoke");\n    editor.querySelector(\'input[type="checkbox"]\').click();\n    const textarea = (await until(() => editor.querySelector("textarea")));\n    set(textarea, JSON.stringify({ url, exposure: "codemode" }));\n    (await until(() => find("Save configuration"))).click();\n    await until(() => !document.querySelector(".mcp-editor"));\n    (await until(() => find("Test connection"))).click();\n    await until(() => document.querySelector("[data-mcp-config]")?.textContent?.includes("临时连接") || document.querySelector("[data-mcp-config]")?.textContent?.includes("temporary connection"));\n    return true;\n}';
     await window.webContents.executeJavaScript("(" + configureCode + ")(" + JSON.stringify(base + "/mcp") + ")");
     await captureSettingsReferences(window);
     await runMcpPresentationChecks(window);
@@ -240,10 +240,33 @@ export async function runMcpUiChecks(window: BrowserWindow, call: Call): Promise
     await window.webContents.executeJavaScript(`(async () => {
       const deadline = Date.now() + 10000;
       while (Date.now() < deadline) {
-        if (document.querySelector('[role="dialog"] [data-mcp-config] .mcp-tool-row')) return true;
+        const list = document.querySelector('[data-mcp-server-list]');
+        const rows = [...(list?.querySelectorAll('li') ?? [])];
+        if (rows.some(row => row.textContent.includes('smoke') && row.querySelector('.is-connected'))) {
+          if (document.querySelector('[data-mcp-config]')) throw new Error('/mcp opened settings instead of the server list');
+          const composer = list.parentElement.nextElementSibling?.querySelector('.chat-composer-card');
+          if (!composer || list.closest('dialog')) throw new Error('/mcp should render inside the composer column');
+          const panelBounds = list.getBoundingClientRect();
+          const composerBounds = composer.getBoundingClientRect();
+          if (panelBounds.bottom > composerBounds.top || Math.abs(panelBounds.width - composerBounds.width) > 1) {
+            throw new Error('The MCP status panel is not aligned above the composer');
+          }
+          return true;
+        }
         await new Promise(resolve => setTimeout(resolve, 25));
       }
-      throw new Error('/mcp did not open the unified settings page with session tool permissions');
+      throw new Error('/mcp did not list the connected MCP server');
+    })()`);
+    await window.webContents.executeJavaScript(`(async () => {
+      const list = document.querySelector('[data-mcp-server-list]');
+      list.querySelector('header button').click();
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const settings = document.querySelector('[data-mcp-config]');
+        if ([...(settings?.querySelectorAll('.mcp-tool-row') ?? [])].some(row => row.textContent.includes('echo'))) return true;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      throw new Error('The MCP server list did not open settings with session tool permissions');
     })()`);
   } finally {
     if (sessionId) await call("sessions.delete", { id: sessionId, force: true }).catch(() => undefined);

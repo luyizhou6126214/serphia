@@ -24,6 +24,13 @@ test("browser surface keeps its full rectangle when contained and rounds inward 
   });
 });
 
+test("browser surface leaves the panel divider visible when its placeholder overflows the panel", () => {
+  const panel = { left: 1373, top: 44, right: 1893, bottom: 1205 };
+  const surface = { left: 1372, top: 123, right: 1892, bottom: 1182 };
+  const borders = { borderLeftWidth: "1px", borderTopWidth: "1px", borderRightWidth: "1px", borderBottomWidth: "1px" };
+  assert.deepEqual(browserSurfaceBounds(surface, panel, borders), { x: 1374, y: 123, width: 518, height: 1059 });
+});
+
 test("browser surface shrinks to a safe point after leaving the panel", () => {
   const panel = { left: 1205, top: 24, right: 1916, bottom: 980 };
   const surface = { left: 100, top: 135, right: 1100, bottom: 954 };

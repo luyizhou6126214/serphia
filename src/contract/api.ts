@@ -597,7 +597,7 @@ export interface Streams {
   "schedule.changed": Record<string, never>;
   "mcp.changed": { sessionId: string; instances: import("./mcp").McpInstanceSnapshot[] };
   "mcp.oauth": McpOAuthSnapshot;
-  "mcp.settings": { sessionId: string };
+  "mcp.showServers": { sessionId: string };
   "agent.events": AgentEvent;
   "agent.running": RunningStateEvent;
   "auth.login": LoginProgressEvent;

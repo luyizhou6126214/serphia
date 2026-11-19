@@ -35,7 +35,7 @@ import { ChatWidthHandles } from "./ChatWidthHandles";
 import { ContextView } from "./context/ContextView";
 import { TrajectoryView } from "./trajectory/TrajectoryView";
 import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
-import { useMcpSettingsCommand } from "@/hooks/useMcpSettingsRequests";
+import { useMcpServerListCommand } from "@/hooks/useMcpSettingsRequests";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useObservedElementHeight } from "@/hooks/useObservedElementHeight";
@@ -179,6 +179,13 @@ export function ChatWindow({
   const chatRootRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
   const [sessionView, setSessionView] = useState<SessionView>("chat");
+  const [mcpServersOpen, setMcpServersOpen] = useState(false);
+  const openMcpServers = useCallback(() => setMcpServersOpen(true), []);
+  const closeMcpServers = useCallback(() => setMcpServersOpen(false), []);
+  const mcpServerList = useMemo(
+    () => (mcpServersOpen ? { sessionId: session?.id ?? null, onClose: closeMcpServers } : undefined),
+    [mcpServersOpen, session?.id, closeMcpServers],
+  );
   useEffect(() => {
     setSessionView("chat");
   }, [session?.id]);
@@ -267,7 +274,7 @@ export function ChatWindow({
     presentationStore,
     onSessionStatsPanelOpen,
   });
-  useMcpSettingsCommand(currentSessionId);
+  useMcpServerListCommand(currentSessionId, openMcpServers);
   const runningToolCallIds = useMemo(
     () => new Set(agentPhase?.kind === "running_tools" ? agentPhase.tools.map((tool) => tool.id) : []),
     [agentPhase],
@@ -402,6 +409,8 @@ export function ChatWindow({
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
+      onOpenMcpServers={openMcpServers}
+      mcpServerList={mcpServerList}
       onBuiltinCommand={handleBuiltinSlashCommand}
       draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}

@@ -52,9 +52,9 @@ export function desktopMcpExtensions(
       replaceable: true,
       factory: (pi) => {
         pi.registerCommand("mcp", {
-          description: "Manage MCP servers in Desktop Settings",
+          description: "Show MCP server status",
           handler: async (_args, ctx) => {
-            if (ctx.hasUI) service.requestSettings(ctx.sessionManager.getSessionId());
+            if (ctx.hasUI) service.requestServerList(ctx.sessionManager.getSessionId());
           },
         });
         const parameters = Type.Object({ server: Type.Optional(Type.String()), cursor: Type.Optional(Type.String()) });

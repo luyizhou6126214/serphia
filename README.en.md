@@ -133,7 +133,7 @@ Managed background processes support macOS, Linux, and Windows 11 x64. Windows A
 
 ### MCP services and tools
 
-- Add, edit, or import global and project-scoped stdio or Streamable HTTP services in Settings → MCP, inspect connection status, test connections, and reconnect
+- Add or edit global stdio or Streamable HTTP services in Settings → MCP, inspect connection status, test connections, and reconnect. Configure project-scoped services in a trusted project's `.pi/mcp.json`
 - Use MCP OAuth sign-in, cancellation, credential refresh, and provider credential references; browse tools, resources, and resource templates, and preview resource content
 - Project configuration overrides global entries with the same name; extension sources and pending changes are shown separately, and tools still require session authorization after configuration is saved
 - Expose MCP tools directly to the model or discover and call them through tool search or Codemode; original results and complete structured content are retained in execution history

@@ -23,7 +23,8 @@ test("references keep their source text and distinguish skills, MCP and quoted f
     render('/skill:ego-browser check @"my folder/file.ts" '),
     /data-reference-kind="file"[^>]*>.*my folder\/file.ts&quot;/,
   );
-  assert.match(render("/mcp status"), /data-reference-kind="mcp"/);
+  assert.equal(render("/mcp status"), "/mcp status");
+  assert.match(render("/mcp:fixture"), /data-reference-kind="mcp"/);
   assert.doesNotMatch(render("email@example.com @unfinished", true), /chat-reference-tag/);
   assert.match(render("@finished.ts ", true), /data-reference-kind="file"/);
 });
@@ -42,7 +43,7 @@ test("deletion treats rendered references as units without affecting ordinary te
   assert.deepEqual(referenceDeletionRange(file, start, start, "Delete"), { start, end });
   assert.equal(referenceDeletionRange("plain text", 5, 5, "Backspace"), null);
   assert.equal(referenceDeletionRange("@unfinished", 5, 5, "Backspace"), null);
-  assert.deepEqual(referenceDeletionRange("/mcp status", 4, 4, "Backspace"), { start: 0, end: 4 });
+  assert.equal(referenceDeletionRange("/mcp status", 4, 4, "Backspace"), null);
 });
 
 test("arrow movement skips completed references in either direction", () => {
@@ -57,7 +58,7 @@ test("arrow movement skips completed references in either direction", () => {
   assert.equal(referenceCursorDestination(text, fileEnd, "left"), fileStart);
   assert.equal(referenceCursorDestination(text, skillEnd, "right"), null);
   assert.equal(referenceCursorDestination("@unfinished", 0, "right"), null);
-  assert.equal(referenceCursorDestination("/mcp status", 0, "right"), 4);
+  assert.equal(referenceCursorDestination("/mcp status", 0, "right"), null);
 });
 
 test("file references choose icons from the file extension", () => {

@@ -2,7 +2,7 @@ import { importTestBundle } from "#test-bundle";
 import assert from "node:assert/strict";
 import path from "node:path";
 import test, { after } from "node:test";
-import { createElement, createRef } from "react";
+import { createElement, createRef, useState } from "react";
 import { act, create } from "react-test-renderer";
 
 const originals = {
@@ -100,6 +100,11 @@ const { ChatInput, api } = await importTestBundle("src/renderer/components/chat-
       let implementation = defaultImplementation;
       export function use(next) {implementation = next;}
       export async function fileIndex(root, query) {requests.push({root, query}); return implementation(root, query);}
+      export async function call(method) {
+        if (method !== "mcp.config.get") throw new Error("Unexpected composer RPC: " + method);
+        return { entries: [{ name: "docs", scope: "global", config: { enabled: false } }] };
+      }
+      export async function subscribe() { throw new Error("The welcome composer has no MCP session"); }
     `,
         }));
       },
@@ -565,6 +570,150 @@ test("a second slash skill completes at the caret without replacing existing ref
   await act(async () => renderer.root.findByType("textarea").props.onKeyDown(keyboardEvent("Enter")));
   assert.equal(renderer.root.findByType("textarea").props.value, "/skill:first @file.ts /skill:second  existing text");
   await act(async () => renderer.unmount());
+});
+
+test("the slash menu supports browsing, keyboard selection, and search for plugin commands and templates", async (t) => {
+  const textareaNode = {
+    focus() {},
+    setSelectionRange() {},
+    scrollHeight: 24,
+    selectionStart: 0,
+    selectionEnd: 0,
+    style: {},
+    value: "",
+  };
+  const packageSource = { path: "/plugins/package", source: "npm:fixture", scope: "user", origin: "package" };
+  let renderer;
+  await act(async () => {
+    renderer = create(
+      createElement(ChatInput, {
+        welcome: true,
+        isStreaming: false,
+        onSend() {},
+        slashCommands: [
+          {
+            name: "subagents-doctor",
+            description: "Plugin diagnostics",
+            source: "extension",
+            sourceInfo: packageSource,
+          },
+          {
+            name: "parallel-review",
+            description: "Plugin review workflow",
+            source: "prompt",
+            sourceInfo: packageSource,
+          },
+          { name: "my-review", description: "Personal review template", source: "prompt" },
+          { name: "skill:review", description: "Review skill", source: "skill", sourceInfo: packageSource },
+        ],
+      }),
+      { createNodeMock: (element) => (element.type === "textarea" ? textareaNode : null) },
+    );
+  });
+  t.after(() => act(async () => renderer.unmount()));
+
+  const textarea = () => renderer.root.findByType("textarea");
+  const options = () => renderer.root.findAllByType("button").map((button) => button.props.title);
+  const toggle = () =>
+    renderer.root.findAllByType("button").find((button) => renderedText(button) === "Plugin commands and templates");
+  async function type(value) {
+    textareaNode.value = value;
+    textareaNode.selectionStart = textareaNode.selectionEnd = value.length;
+    await act(async () => textarea().props.onChange({ target: textareaNode }));
+  }
+
+  await type("/");
+  assert.ok(options().includes("Copy the last assistant message"));
+  assert.ok(options().includes("Personal review template"));
+  assert.ok(options().includes("Review skill"));
+  assert.ok(!options().includes("Plugin diagnostics"));
+  assert.ok(!options().includes("Plugin review workflow"));
+  assert.equal(toggle()?.props["aria-expanded"], false);
+  await act(async () => toggle().props.onClick());
+  assert.equal(toggle()?.props["aria-expanded"], true);
+  assert.ok(options().includes("Plugin diagnostics"));
+  assert.ok(options().includes("Plugin review workflow"));
+  await act(async () => toggle().props.onClick());
+  assert.equal(toggle()?.props["aria-expanded"], false);
+  assert.ok(!options().includes("Plugin diagnostics"));
+  // The last row stays selected when it collapses, so Enter reopens it from the text field.
+  await act(async () => textarea().props.onKeyDown(keyboardEvent("Enter")));
+  assert.equal(toggle()?.props["aria-expanded"], true);
+  await act(async () => textarea().props.onKeyDown(keyboardEvent("Enter")));
+  assert.equal(textarea().props.value, "/subagents-doctor ");
+  await type("/");
+  assert.equal(toggle()?.props["aria-expanded"], false);
+  await type("/parallel");
+  assert.equal(toggle(), undefined);
+  assert.ok(options().includes("Plugin review workflow"));
+  await type("/subagents-doc");
+  assert.ok(options().includes("Plugin diagnostics"));
+  await act(async () => textarea().props.onKeyDown(keyboardEvent("Enter")));
+  assert.equal(textarea().props.value, "/subagents-doctor ");
+});
+
+test("the welcome composer displays MCP status above the editable input", async (t) => {
+  const onOpenMcpServers = t.mock.fn();
+  const onSend = t.mock.fn();
+  const textareaNode = { focus() {}, scrollHeight: 24, selectionEnd: 0, selectionStart: 0, style: {}, value: "" };
+  function Harness() {
+    const [open, setOpen] = useState(false);
+    return createElement(ChatInput, {
+      welcome: true,
+      isStreaming: false,
+      onSend,
+      onOpenMcpServers() {
+        onOpenMcpServers();
+        setOpen(true);
+      },
+      mcpServerList: open ? { sessionId: null, onClose: () => setOpen(false) } : undefined,
+    });
+  }
+  let renderer;
+  await act(async () => {
+    renderer = create(createElement(Harness), {
+      createNodeMock: (element) => (element.type === "textarea" ? textareaNode : null),
+    });
+  });
+  t.after(() => act(async () => renderer.unmount()));
+
+  const textarea = () => renderer.root.findByType("textarea");
+  async function type(value) {
+    textareaNode.value = value;
+    textareaNode.selectionStart = textareaNode.selectionEnd = value.length;
+    await act(async () => textarea().props.onChange({ target: textareaNode }));
+  }
+
+  await type("/mcp");
+  const option = renderer.root
+    .findAllByType("button")
+    .find((button) => button.props.title === "Show MCP server status");
+  assert.ok(option);
+  assert.match(renderedText(option), /^MCPShow MCP server status$/);
+  await act(async () => textarea().props.onKeyDown(keyboardEvent("Enter")));
+  assert.equal(onOpenMcpServers.mock.callCount(), 1);
+  const panel = renderer.root.findByProps({ "data-mcp-server-list": true });
+  assert.equal(panel.type, "section");
+  assert.match(renderedText(panel), /docsDisabled/);
+  assert.doesNotMatch(renderedText(panel), /Global|Current project/);
+  assert.equal(renderer.root.findAllByType("dialog").length, 0);
+
+  await type("Continue writing");
+  assert.equal(textarea().props.value, "Continue writing");
+  const panelSlot = panel.parent.parent;
+  assert.equal(panelSlot.props.hidden, false);
+  const column = renderer.root.findByProps({ className: "chat-content-column" });
+  assert.equal(panelSlot.parent, column);
+  await act(async () => column.props.onKeyDown(keyboardEvent("Escape")));
+  assert.equal(renderer.root.findAllByProps({ "data-mcp-server-list": true }).length, 0);
+  assert.equal(textarea().props.value, "Continue writing");
+
+  await type("/mcp ");
+  assert.equal(renderer.root.findAllByProps({ "data-reference-kind": "mcp" }).length, 0);
+  await act(async () => renderer.root.findByProps({ "aria-label": "Send" }).props.onClick());
+  assert.equal(onOpenMcpServers.mock.callCount(), 2);
+  assert.equal(onSend.mock.callCount(), 0);
+  assert.equal(textarea().props.value, "");
 });
 
 test("staged messages remain available to send if the current run finishes", async () => {

@@ -4,6 +4,8 @@ dist/
 node_modules/
 out/
 package-lock.json
+# Preserve the distributed Deep Agent UI source and stylesheet.
+examples/deep-agent-composer/DeepAgentComposerEngine.js
 # Preserve imported agent skills as shipped.
 .agents/skills/
 .claude/skills/

@@ -29,6 +29,17 @@ function applyDocumentTheme(theme: Theme): void {
   document.documentElement.style.colorScheme = theme;
 }
 
+function setTheme(next: Theme): void {
+  applyDocumentTheme(next);
+  try {
+    localStorage.setItem("pi-theme", next);
+  } catch {
+    // Storage may be restricted in private mode.
+  }
+  void window.piBridge?.setThemeSource?.(next);
+  listeners.forEach((cb) => cb());
+}
+
 type ToggleOrigin = { x: number; y: number };
 
 export function useTheme() {
@@ -66,17 +77,7 @@ export function useTheme() {
 
   const toggleTheme = useCallback((origin?: ToggleOrigin) => {
     const next: Theme = getSnapshot() === "dark" ? "light" : "dark";
-
-    const apply = () => {
-      applyDocumentTheme(next);
-      try {
-        localStorage.setItem("pi-theme", next);
-      } catch {
-        // ignore storage errors (private mode, quota, etc.)
-      }
-      void window.piBridge?.setThemeSource?.(next);
-      listeners.forEach((cb) => cb());
-    };
+    const apply = () => setTheme(next);
 
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const supportsVT = typeof document.startViewTransition === "function";
@@ -109,5 +110,5 @@ export function useTheme() {
       });
   }, []);
 
-  return { theme, toggleTheme, isDark: theme === "dark" };
+  return { theme, setTheme, toggleTheme, isDark: theme === "dark" };
 }

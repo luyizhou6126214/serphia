@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Blocks,
+  ChevronRight,
   Copy,
   FileText,
   Minimize2,
@@ -21,21 +22,24 @@ import { useComposerSubmission, type ComposerActions } from "@/hooks/useComposer
 import { usePendingComposerFlow } from "@/hooks/usePendingComposerFlow";
 import { PendingMessages } from "./composer/PendingMessages";
 import { QueuedMessageRow } from "./composer/QueuedMessageRow";
+import { McpServerStatusPanel } from "./mcp/McpServerStatusPanel";
+import { openMcpSettings } from "@/hooks/useMcpSettingsRequests";
 import {
   builtinSlashCommands,
-  localizeSlashCommand,
-  SLASH_SOURCES,
+  groupSlashCommands,
+  isDesktopMcpCommand,
+  isPackageSlashCommand,
   SLASH_SOURCE_GROUP_LABEL,
   SLASH_SOURCE_ORDER,
   SLASH_COMMAND_COLLATOR,
   slashMatchRank,
-  type SlashCommandSource,
   type SlashCommandPaletteItem,
 } from "./composer/slash-commands";
 import React, {
   useRef,
   useState,
   useCallback,
+  useMemo,
   useEffect,
   useLayoutEffect,
   useImperativeHandle,
@@ -63,6 +67,8 @@ interface Props extends ComposerActions, ComposerToolbarOptions {
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
   onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
+  onOpenMcpServers?: () => void;
+  mcpServerList?: { sessionId: string | null; onClose(): void };
   draftKey?: string;
   /** Explicit temporary owner to carry forward when this view receives its real session ID. */
   draftPromotionFrom?: string;
@@ -109,6 +115,8 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     slashCommands,
     slashCommandsLoading,
     onLoadSlashCommands,
+    onOpenMcpServers,
+    mcpServerList,
     onBuiltinCommand,
     onPromptWithStreamingBehavior,
     draftKey,
@@ -124,6 +132,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [packageSlashExpanded, setPackageSlashExpanded] = useState(false);
   const [slashCursor, setSlashCursor] = useState<number | null>(null);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState(320);
@@ -266,42 +275,80 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const slashMatch = /(?:^|\s)\/([^\s/]*)$/.exec(slashPrefix);
   const slashStart = slashMatch ? slashPrefix.length - slashMatch[1].length - 1 : null;
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
+  const hasDesktopMcpCommand = Boolean(
+    onOpenMcpServers && !slashCommands?.some((command) => command.name === "mcp" && !isDesktopMcpCommand(command)),
+  );
+  const showMcpServers = useCallback(
+    (text: string) => {
+      if (text.trim() !== "/mcp" || !hasDesktopMcpCommand || attachedImages.length || attachedFiles.length)
+        return false;
+      clearInput();
+      setSlashCursor(null);
+      setSlashMenuOpen(false);
+      setSlashActiveIndex(0);
+      textareaRef.current?.focus();
+      onOpenMcpServers?.();
+      return true;
+    },
+    [attachedFiles.length, attachedImages.length, clearInput, hasDesktopMcpCommand, onOpenMcpServers],
+  );
 
-  const filteredSlashCommands = (() => {
-    if (slashQuery === null) return [];
-    const commands = [
-      ...(isStreaming ? [] : builtinSlashCommands(t)),
-      ...(slashCommands ?? []).map((command) => localizeSlashCommand(command, t)),
-    ];
-    return commands
-      .filter((command) => {
-        if (slashStart !== 0 && command.source !== "skill") return false;
-        const name = command.name.toLowerCase();
-        const description = command.description?.toLowerCase() ?? "";
-        return name.includes(slashQuery) || description.includes(slashQuery);
-      })
-      .sort((a, b) => {
-        const rankDelta = slashMatchRank(a, slashQuery) - slashMatchRank(b, slashQuery);
-        if (rankDelta !== 0) return rankDelta;
-        return (
-          SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source] || SLASH_COMMAND_COLLATOR.compare(a.name, b.name)
-        );
-      });
-  })();
+  const { primarySlashCommandCount, visibleSlashCommands, groupedSlashCommands, packageSlashToggleIndex } =
+    useMemo(() => {
+      if (slashQuery === null) {
+        return {
+          primarySlashCommandCount: 0,
+          visibleSlashCommands: [],
+          groupedSlashCommands: [],
+          packageSlashToggleIndex: -1,
+        };
+      }
+      const commands: SlashCommandPaletteItem[] = [
+        ...(isStreaming ? [] : builtinSlashCommands(t)),
+        ...(slashCommands ?? []).filter((command) => !hasDesktopMcpCommand || !isDesktopMcpCommand(command)),
+      ];
+      if (hasDesktopMcpCommand) {
+        commands.push({ name: "mcp", description: t("slashCommandMcp", "Show MCP server status"), source: "builtin" });
+      }
+      const matches = commands
+        .filter((command) => {
+          if (slashStart !== 0 && command.source !== "skill") return false;
+          const name = command.name.toLowerCase();
+          const description = command.description?.toLowerCase() ?? "";
+          return name.includes(slashQuery) || description.includes(slashQuery);
+        })
+        .sort((a, b) => {
+          const rankDelta = slashMatchRank(a, slashQuery) - slashMatchRank(b, slashQuery);
+          if (rankDelta !== 0) return rankDelta;
+          return (
+            SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source] ||
+            SLASH_COMMAND_COLLATOR.compare(a.name, b.name)
+          );
+        });
+      const packageCommands = slashQuery === "" && slashStart === 0 ? matches.filter(isPackageSlashCommand) : [];
+      const primaryCommands = packageCommands.length
+        ? matches.filter((command) => !isPackageSlashCommand(command))
+        : matches;
+      const visiblePackageCommands = packageSlashExpanded ? packageCommands : [];
+      return {
+        primarySlashCommandCount: primaryCommands.length,
+        visibleSlashCommands: [...primaryCommands, ...visiblePackageCommands],
+        groupedSlashCommands: [
+          ...groupSlashCommands(primaryCommands),
+          ...groupSlashCommands(visiblePackageCommands, primaryCommands.length),
+        ],
+        packageSlashToggleIndex: packageCommands.length ? primaryCommands.length + visiblePackageCommands.length : -1,
+      };
+    }, [hasDesktopMcpCommand, isStreaming, packageSlashExpanded, slashCommands, slashQuery, slashStart, t]);
 
-  const groupedSlashCommands = (() => {
-    const groups = new Map<
-      SlashCommandSource,
-      { source: SlashCommandSource; items: { command: SlashCommandPaletteItem; index: number }[] }
-    >();
-    for (const source of SLASH_SOURCES) {
-      groups.set(source, { source, items: [] });
-    }
-    filteredSlashCommands.forEach((command, index) => {
-      groups.get(command.source)?.items.push({ command, index });
-    });
-    return SLASH_SOURCES.map((source) => groups.get(source)!).filter((group) => group.items.length > 0);
-  })();
+  const slashItemCount = visibleSlashCommands.length + Number(packageSlashToggleIndex !== -1);
+
+  const togglePackageSlashCommands = useCallback(() => {
+    slashKeyboardNavigationRef.current = true;
+    // This index is the first plugin command when expanded, and the toggle when collapsed.
+    setSlashActiveIndex(primarySlashCommandCount);
+    setPackageSlashExpanded((expanded) => !expanded);
+  }, [primarySlashCommandCount]);
 
   const updateAtQuery = useCallback(
     (text: string, cursor: number | null) => {
@@ -392,6 +439,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       const suffix = afterCursor.replace(/^[^\s]*/, "");
       const insert = `/${command.name} `;
       const nextValue = value.slice(0, start) + insert + suffix;
+      if (command.source === "builtin" && command.name === "mcp" && showMcpServers(nextValue)) return;
       const nextCursor = start + insert.length;
       setValue(nextValue);
       setSlashCursor(nextCursor);
@@ -405,16 +453,19 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         resizeComposer(ta);
       });
     },
-    [setValue, slashStart, value],
+    [setValue, showMcpServers, slashStart, value],
   );
 
   const getNextSlashIndex = useCallback(
     (direction: "up" | "down" | "left" | "right") => {
-      const lastIndex = filteredSlashCommands.length - 1;
+      const lastIndex = slashItemCount - 1;
       if (lastIndex < 0) return 0;
 
       if (direction === "left") return Math.max(0, slashActiveIndex - 1);
       if (direction === "right") return Math.min(lastIndex, slashActiveIndex + 1);
+      if (slashActiveIndex === packageSlashToggleIndex) {
+        return direction === "up" ? Math.max(0, lastIndex - 1) : lastIndex;
+      }
 
       const currentNode = slashItemRefs.current[slashActiveIndex];
       if (!currentNode) {
@@ -427,7 +478,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       let bestIndex = -1;
       let bestScore = Number.POSITIVE_INFINITY;
 
-      for (let index = 0; index <= lastIndex; index += 1) {
+      for (let index = 0; index < visibleSlashCommands.length; index += 1) {
         if (index === slashActiveIndex) continue;
         const node = slashItemRefs.current[index];
         if (!node) continue;
@@ -447,7 +498,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       if (bestIndex >= 0) return bestIndex;
       return direction === "down" ? Math.min(lastIndex, slashActiveIndex + 1) : Math.max(0, slashActiveIndex - 1);
     },
-    [filteredSlashCommands.length, slashActiveIndex],
+    [packageSlashToggleIndex, slashActiveIndex, slashItemCount, visibleSlashCommands.length],
   );
 
   const handleKeyDown = useCallback(
@@ -509,9 +560,13 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
           setSlashMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && filteredSlashCommands[slashActiveIndex]) {
+        if (
+          (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) &&
+          (visibleSlashCommands[slashActiveIndex] || slashActiveIndex === packageSlashToggleIndex)
+        ) {
           e.preventDefault();
-          applySlashCommand(filteredSlashCommands[slashActiveIndex]);
+          if (slashActiveIndex === packageSlashToggleIndex) togglePackageSlashCommands();
+          else applySlashCommand(visibleSlashCommands[slashActiveIndex]);
           return;
         }
       }
@@ -592,6 +647,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
 
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        if (showMcpServers(value)) return;
         const textarea = e.currentTarget;
         const blurOnCommit = () => {
           if (textarea && document.activeElement === textarea) textarea.blur();
@@ -612,9 +668,12 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       updateAtQuery,
       slashMenuOpen,
       slashQuery,
-      filteredSlashCommands,
+      visibleSlashCommands,
       slashActiveIndex,
+      packageSlashToggleIndex,
+      togglePackageSlashCommands,
       applySlashCommand,
+      showMcpServers,
       stageMessage,
       handleSend,
       getNextSlashIndex,
@@ -663,6 +722,10 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     }
   }, [slashQuery, onLoadSlashCommands]);
 
+  useEffect(() => {
+    if (!slashMenuOpen || slashQuery !== "") setPackageSlashExpanded(false);
+  }, [slashMenuOpen, slashQuery]);
+
   useLayoutEffect(() => {
     if (!slashMenuOpen && !atMenuOpen) return;
     const anchor = slashAnchorRef.current;
@@ -708,26 +771,26 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   }, [atMenuOpen]);
 
   useEffect(() => {
-    if (slashActiveIndex >= filteredSlashCommands.length) {
-      setSlashActiveIndex(Math.max(0, filteredSlashCommands.length - 1));
+    if (slashActiveIndex >= slashItemCount) {
+      setSlashActiveIndex(Math.max(0, slashItemCount - 1));
     }
-  }, [filteredSlashCommands.length, slashActiveIndex]);
+  }, [slashItemCount, slashActiveIndex]);
 
   useEffect(() => {
-    slashItemRefs.current.length = filteredSlashCommands.length;
-  }, [filteredSlashCommands.length]);
+    slashItemRefs.current.length = slashItemCount;
+  }, [slashItemCount]);
 
   useEffect(() => {
     if (!slashMenuOpen || !slashKeyboardNavigationRef.current) return;
     slashKeyboardNavigationRef.current = false;
     const item = slashItemRefs.current[slashActiveIndex];
     const container = slashScrollRef.current;
-    if (!item || !container) return;
+    if (!item || !container || slashActiveIndex === packageSlashToggleIndex) return;
     const itemRect = item.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
     if (itemRect.top < containerRect.top) container.scrollTop += itemRect.top - containerRect.top;
     else if (itemRect.bottom > containerRect.bottom) container.scrollTop += itemRect.bottom - containerRect.bottom;
-  }, [slashActiveIndex, slashMenuOpen]);
+  }, [packageSlashExpanded, packageSlashToggleIndex, slashActiveIndex, slashMenuOpen]);
 
   const compactSavedTokens = compactResult
     ? Math.max(0, compactResult.tokensBefore - compactResult.estimatedTokensAfter)
@@ -761,7 +824,16 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
           e.target.value = "";
         }}
       />
-      <div className="chat-content-column">
+      <div
+        className="chat-content-column"
+        onKeyDown={(event) => {
+          if (!mcpServerList || event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing)
+            return;
+          event.preventDefault();
+          mcpServerList.onClose();
+          textareaRef.current?.focus();
+        }}
+      >
         <PendingMessages
           pending={pending}
           sending={pendingSending}
@@ -993,6 +1065,22 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             {compactResultText}
           </div>
         )}
+        {mcpServerList && (
+          <div hidden={slashMenuOpen || atMenuOpen}>
+            <McpServerStatusPanel
+              cwd={cwd ?? undefined}
+              sessionId={mcpServerList.sessionId}
+              onClose={() => {
+                mcpServerList.onClose();
+                textareaRef.current?.focus();
+              }}
+              onOpenSettings={() => {
+                mcpServerList.onClose();
+                openMcpSettings(mcpServerList.sessionId);
+              }}
+            />
+          </div>
+        )}
         <ComposerFocusSurface cardRef={slashAnchorRef} streaming={isStreaming}>
           {slashMenuOpen && slashQuery !== null && (
             <div
@@ -1009,30 +1097,39 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                 boxShadow: "0 -6px 20px rgba(0,0,0,0.08)",
                 overflow: "hidden",
                 maxHeight: slashMenuMaxHeight,
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <div
                 ref={slashScrollRef}
                 className="slash-menu-scroll"
-                style={{ maxHeight: slashMenuMaxHeight, overflowY: "auto", padding: "8px" }}
+                style={{
+                  minHeight: 0,
+                  overflowY: "auto",
+                  padding: slashCommandsLoading || visibleSlashCommands.length > 0 || slashItemCount === 0 ? "8px" : 0,
+                }}
               >
                 {slashCommandsLoading && (
                   <div style={{ padding: "6px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
                     {t("loadingCommands", "Loading commands…")}
                   </div>
                 )}
-                {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
+                {!slashCommandsLoading && slashItemCount === 0 ? (
                   <div style={{ padding: "6px", fontSize: scaledChatFont(12), color: "var(--text-dim)" }}>
                     {t("noSlashCommandsFound", "No extension, prompt, or skill commands found")}
                   </div>
                 ) : (
                   groupedSlashCommands.map((group) => (
-                    <section key={group.source} style={{ marginBottom: 6 }}>
-                      {group.source !== "builtin" && group.source !== "extension" && (
-                        <div style={{ padding: "6px 6px 4px", color: "var(--text-dim)", fontSize: scaledChatFont(11) }}>
-                          {SLASH_SOURCE_GROUP_LABEL[group.source]}
-                        </div>
-                      )}
+                    <section key={`${group.source}:${group.items[0].index}`} style={{ marginBottom: 6 }}>
+                      {group.source !== "builtin" &&
+                        (group.source !== "extension" || group.items[0].index >= primarySlashCommandCount) && (
+                          <div
+                            style={{ padding: "6px 6px 4px", color: "var(--text-dim)", fontSize: scaledChatFont(11) }}
+                          >
+                            {SLASH_SOURCE_GROUP_LABEL[group.source]}
+                          </div>
+                        )}
                       {group.items.map(({ command, index }) => {
                         const active = index === slashActiveIndex;
                         const builtinIcons: Record<string, typeof Terminal> = {
@@ -1124,6 +1221,9 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                                 {command.description}
                               </span>
                             )}
+                            {command.source === "builtin" && command.name === "mcp" && (
+                              <ChevronRight size={13} aria-hidden="true" className="ml-auto shrink-0 text-text-dim" />
+                            )}
                             {command.source === "skill" && (
                               <span
                                 style={{
@@ -1143,6 +1243,29 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                   ))
                 )}
               </div>
+              {packageSlashToggleIndex !== -1 && (
+                <button
+                  type="button"
+                  aria-expanded={packageSlashExpanded}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setSlashActiveIndex(packageSlashToggleIndex)}
+                  onFocus={() => setSlashActiveIndex(packageSlashToggleIndex)}
+                  onClick={togglePackageSlashCommands}
+                  className="flex w-full shrink-0 cursor-pointer items-center gap-2 border-t border-border px-3 py-2 text-left text-text"
+                  style={{
+                    background: slashActiveIndex === packageSlashToggleIndex ? "var(--bg-selected)" : "transparent",
+                    fontSize: scaledChatFont(12),
+                  }}
+                >
+                  <Puzzle size={15} aria-hidden="true" className="shrink-0 text-text-dim" />
+                  {t("pluginSlashCommandsAndTemplates", "Plugin commands and templates")}
+                  <ChevronRight
+                    size={14}
+                    aria-hidden="true"
+                    className={`ml-auto shrink-0 text-text-dim${packageSlashExpanded ? " rotate-90" : ""}`}
+                  />
+                </button>
+              )}
             </div>
           )}
 
@@ -1371,7 +1494,9 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             <button
               type="button"
               className="chat-composer-send"
-              onClick={() => void handleSend()}
+              onClick={() => {
+                if (!showMcpServers(value)) void handleSend();
+              }}
               disabled={!value.trim() && !attachedImages.length && !attachedFiles.length}
               aria-label={t("send", "Send")}
               title={t("send", "Send")}

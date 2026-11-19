@@ -1,0 +1,561 @@
+.mcp-config {
+  --mcp-accent: var(--settings-tone, var(--accent));
+  --settings-control-accent: var(--mcp-accent);
+  --settings-control-focus: var(--mcp-accent);
+  --mcp-ease: cubic-bezier(0.2, 0.75, 0.25, 1);
+  --mcp-fast: 140ms;
+  --mcp-enter: 190ms;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 40px var(--settings-gutter, 24px) 36px;
+  color: var(--text);
+  scrollbar-gutter: stable;
+}
+
+.mcp-column {
+  width: 100%;
+  max-width: 860px;
+  margin-inline: auto;
+}
+
+.mcp-config :is(h3, h4, p) {
+  margin: 0;
+}
+
+.mcp-config p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.mcp-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mcp-page-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.mcp-detail-pane,
+.mcp-extension-list,
+.mcp-row-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mcp-config .mcp-empty {
+  padding: 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+
+.mcp-status-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--text-dim);
+}
+
+.mcp-status-dot.is-connected {
+  color: var(--success);
+  background: currentColor;
+}
+
+.mcp-status-dot:is(.is-failed, .is-needs-auth) {
+  color: var(--danger);
+  background: currentColor;
+}
+
+.mcp-status-dot.is-connecting {
+  color: var(--mcp-accent);
+  background: currentColor;
+}
+
+.mcp-server-list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+
+.mcp-server-row + .mcp-server-row {
+  border-top: 1px solid var(--border);
+}
+
+.mcp-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 12px 4px 4px;
+}
+
+.mcp-config .mcp-row-trigger {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-color: transparent;
+  background: transparent;
+  text-align: start;
+}
+
+.mcp-row-trigger > .anticon {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform var(--mcp-fast) var(--mcp-ease);
+}
+
+.mcp-row-trigger[aria-expanded="true"] > .anticon {
+  transform: rotate(90deg);
+}
+
+.mcp-row-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mcp-row-identity strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.mcp-transport-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.mcp-row-detail {
+  padding: 12px 16px 16px 38px;
+  border-top: 1px solid var(--border);
+}
+
+.mcp-extension-list h4 {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-config :is(button, input, select, textarea) {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  transition:
+    background-color var(--mcp-fast) var(--mcp-ease),
+    border-color var(--mcp-fast) var(--mcp-ease),
+    box-shadow var(--mcp-fast) var(--mcp-ease),
+    transform var(--mcp-fast) var(--mcp-ease);
+}
+
+.mcp-config button {
+  min-height: 34px;
+  cursor: pointer;
+}
+
+.mcp-config button:hover:not(:disabled, [aria-disabled="true"]) {
+  border-color: color-mix(in srgb, var(--text) 20%, var(--border));
+  background: var(--bg-hover);
+}
+
+.mcp-config button:active:not(:disabled, [aria-disabled="true"]) {
+  transform: translateY(1px);
+}
+
+.mcp-config button:is(:disabled, [aria-disabled="true"]) {
+  cursor: default;
+}
+
+.mcp-config button:disabled {
+  opacity: 0.55;
+}
+
+.mcp-config .mcp-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding-inline: 12px;
+  background: var(--bg-panel);
+  font-weight: 600;
+}
+
+.mcp-config .mcp-add-button .anticon {
+  color: var(--text-muted);
+}
+
+.mcp-config .mcp-primary {
+  border-color: var(--mcp-accent);
+  background: var(--mcp-accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.mcp-config .mcp-primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--mcp-accent) 88%, var(--bg));
+  background: color-mix(in srgb, var(--mcp-accent) 88%, var(--bg));
+}
+
+.mcp-config .mcp-edit-button {
+  flex: none;
+  background: transparent;
+}
+
+.mcp-config .mcp-switch {
+  position: relative;
+  display: grid;
+  flex: 0 0 40px;
+  place-items: center;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.mcp-switch::before {
+  content: "";
+  width: 34px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, var(--border));
+  border-radius: 12px;
+  background: var(--bg-selected);
+  transition:
+    background-color var(--mcp-fast) var(--mcp-ease),
+    border-color var(--mcp-fast) var(--mcp-ease);
+}
+
+.mcp-switch span {
+  position: absolute;
+  inset-inline-start: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition:
+    transform var(--mcp-enter) var(--mcp-ease),
+    background-color var(--mcp-fast) var(--mcp-ease);
+}
+
+.mcp-switch[aria-checked="true"]::before {
+  border-color: var(--mcp-accent);
+  background: var(--mcp-accent);
+}
+
+.mcp-switch[aria-checked="true"] span {
+  transform: translateX(14px);
+  background: var(--bg);
+}
+
+.mcp-switch[aria-disabled="true"] {
+  opacity: 0.72;
+}
+
+.mcp-action-menu {
+  display: inline-flex;
+}
+
+.mcp-config .mcp-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mcp-menu-chevron {
+  font-size: 10px;
+  transition: transform var(--mcp-fast) var(--mcp-ease);
+}
+
+.mcp-action-menu:has(:popover-open) .mcp-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.mcp-menu {
+  position: fixed;
+  position-area: bottom span-left;
+  position-try-fallbacks:
+    flip-block,
+    flip-inline,
+    flip-block flip-inline;
+  justify-self: end;
+  inset: auto;
+  min-width: 148px;
+  margin: 6px 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 8px 24px #0002;
+  transform: translateY(-4px);
+  opacity: 0;
+  transition:
+    opacity var(--mcp-fast) var(--mcp-ease),
+    transform var(--mcp-fast) var(--mcp-ease),
+    display var(--mcp-fast) allow-discrete,
+    overlay var(--mcp-fast) allow-discrete;
+}
+
+.mcp-menu:popover-open {
+  display: grid;
+  gap: 2px;
+  transform: none;
+  opacity: 1;
+}
+
+.mcp-config .mcp-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  text-align: start;
+}
+
+.mcp-config .mcp-menu button:focus-visible {
+  outline-offset: -2px;
+}
+
+.settings-page .mcp-config select {
+  min-height: 34px;
+}
+
+.settings-page .mcp-config select::picker(select) {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity var(--mcp-fast) var(--mcp-ease),
+    transform var(--mcp-fast) var(--mcp-ease),
+    display var(--mcp-fast) allow-discrete,
+    overlay var(--mcp-fast) allow-discrete;
+}
+
+.settings-page .mcp-config select:open::picker(select) {
+  opacity: 1;
+  transform: none;
+}
+
+.settings-page .mcp-config select option {
+  transition:
+    background-color var(--mcp-fast) var(--mcp-ease),
+    color var(--mcp-fast) var(--mcp-ease);
+}
+
+.settings-page .mcp-config select option:checked {
+  background: color-mix(in srgb, var(--mcp-accent) 12%, var(--bg));
+  color: var(--mcp-accent);
+}
+
+.settings-page .mcp-config select option::checkmark {
+  color: var(--mcp-accent);
+}
+
+@starting-style {
+  .mcp-menu:popover-open,
+  .settings-page .mcp-config select:open::picker(select) {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.mcp-config label {
+  display: block;
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mcp-config :is(input:not([type="checkbox"]), textarea) {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.mcp-config textarea {
+  min-height: 88px;
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+
+.mcp-config pre {
+  overflow: auto;
+  max-height: 320px;
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-config fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-config summary {
+  width: fit-content;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mcp-config :is(button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--mcp-accent);
+  outline-offset: 2px;
+}
+
+.mcp-config .mcp-error {
+  color: var(--danger);
+}
+
+.mcp-editor,
+.mcp-tools,
+.mcp-config [role="alertdialog"] {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+
+.mcp-editor,
+.mcp-row-detail {
+  transition:
+    opacity var(--mcp-enter) var(--mcp-ease),
+    transform var(--mcp-enter) var(--mcp-ease);
+}
+
+@starting-style {
+  .mcp-editor,
+  .mcp-row-detail {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.mcp-editor h4,
+.mcp-tools h4 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mcp-editor :is(label input:not([type="checkbox"]), textarea) {
+  margin-top: 4px;
+}
+
+.mcp-config :is(input:not([type="checkbox"]), textarea):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--mcp-accent) 35%, var(--border));
+}
+
+.settings-page .mcp-config :is(input:not([type="checkbox"]), textarea):focus {
+  border-color: var(--mcp-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mcp-accent) 14%, transparent) !important;
+}
+
+.settings-page .mcp-config :is(input:not([type="checkbox"]), textarea):focus-visible {
+  outline-offset: -1px;
+}
+
+.mcp-editor label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-editor label select {
+  margin-inline-start: 8px;
+}
+
+.mcp-advanced-settings {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.mcp-editor-footer {
+  justify-content: flex-end;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.mcp-tool-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.mcp-tool-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mcp-config [role="alertdialog"] {
+  border-color: var(--mcp-accent);
+}
+
+.mcp-apply-session,
+.mcp-cancel-probe {
+  justify-self: start;
+}
+
+@media (max-width: 960px) {
+  .mcp-config {
+    padding-top: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcp-config
+    :is(button, input, select, textarea, option, .mcp-menu, .mcp-editor, .mcp-row-detail, .anticon, .mcp-switch span),
+  .mcp-config .mcp-switch::before,
+  .settings-page .mcp-config select::picker(select) {
+    transition: none;
+  }
+}
