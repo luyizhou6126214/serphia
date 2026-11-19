@@ -45,17 +45,6 @@ export function localizeSlashCommand(command: SlashCommandInfo, t: Translate): S
   if (path === "builtin:mcp" && name === "mcp") {
     return { ...command, description: t("slashCommandMcp", "Manage MCP servers in Desktop Settings") };
   }
-  if (path === "builtin:serphia-workflow") {
-    if (name === "run_workflow") {
-      return {
-        ...command,
-        description: t("slashCommandRunWorkflow", "Run a task as a workflow with dependent stages"),
-      };
-    }
-    if (name === "swarm") {
-      return { ...command, description: t("slashCommandSwarm", "Split a task across parallel subagents") };
-    }
-  }
   return command;
 }
 

@@ -23,7 +23,7 @@ const { ToolCallRow } = await importTestBundle("tool-progress-ui", {
   ],
 });
 const props = {
-  block: { type: "toolCall", toolCallId: "parallel", toolName: "serphia_workflow", input: { stages: [] } },
+  block: { type: "toolCall", toolCallId: "parallel", toolName: "extension_tool", input: {} },
   expanded: false,
   onToggle() {},
   t: (_key, fallback) => fallback,

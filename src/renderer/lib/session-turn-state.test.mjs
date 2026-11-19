@@ -88,7 +88,7 @@ test("retry state ends independently of the enclosing prompt", () => {
 
 test("live tool progress is transient, stays running, and cannot leak across settled turns", () => {
   let state = event(createSessionTurnState(), "agent_start");
-  state = event(state, "tool_execution_start", { toolCallId: "parallel", toolName: "serphia_workflow" });
+  state = event(state, "tool_execution_start", { toolCallId: "parallel", toolName: "extension_tool" });
   state = event(state, "tool_execution_update", {
     toolCallId: "parallel",
     partialResult: { content: [{ type: "text", text: "cover: done\ndata: running" }] },

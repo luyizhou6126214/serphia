@@ -10,19 +10,12 @@ import { isOrchestrationTool } from "../shared/orchestration-tools";
 import { requiresSessionDirectory } from "../shared/session-workspace";
 import { DESKTOP_WINDOW_PROTOTYPE_TOOL } from "../contract/desktop-window-prototype";
 
-export const WORKFLOW_TOOL_NAME = "serphia_workflow";
-
 /** A Desktop grant is independent from SDK declaration/callable membership. */
 export class SessionToolPolicy {
   private session?: AgentSessionLike;
   private initialActive = new Set<string>();
   private availability?: (name: string) => boolean;
   private resourceReady?: () => boolean;
-  private workflowRequested = false;
-
-  setWorkflowRequested(requested: boolean): void {
-    this.workflowRequested = requested;
-  }
 
   setResourceReady(check: () => boolean): void {
     this.resourceReady = check;
@@ -61,9 +54,6 @@ export class SessionToolPolicy {
       session.setActiveToolsByName(session.getActiveToolNames().filter((name) => name !== "powershell"));
     this.initialActive = new Set(session.getActiveToolNames());
   }
-  getBoundSession(): AgentSessionLike | undefined {
-    return this.session;
-  }
   setRequested(names: string[]): void {
     const wasEmpty = this.requested?.length === 0;
     this.requested = [...names];
@@ -100,8 +90,6 @@ export class SessionToolPolicy {
     const tool =
       this.session.getToolDefinition?.(name) ?? this.session.getAllTools().find((entry) => entry.name === name);
     if (!tool || tool.exposure === "hidden") return false;
-    if (name === WORKFLOW_TOOL_NAME)
-      return source === "local" && this.workflowRequested && this.session.getActiveToolNames().includes(name);
     if (source === "local" && isOrchestrationTool(name)) return this.session.getActiveToolNames().includes(name);
     if (isOrchestrationTool(name))
       return (
