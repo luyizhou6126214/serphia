@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { access, chmod, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { HERDR_AGENT_CLI_CATALOG } from "../../shared/herdr/agent-cli-catalog.ts";
+import { HERDR_AGENT_CLI_CATALOG, type AgentCliCatalogEntry } from "../../shared/herdr/agent-cli-catalog.ts";
 import type { HerdrAgentCliDiagnostic, HerdrAgentCliSource, HerdrStartableAgentKind } from "../../contract/herdr.ts";
 import { readWindowsPersistentPath } from "./windows-persistent-path.ts";
 
@@ -275,11 +275,11 @@ function launchForm(executable: string, platform: NodeJS.Platform): HerdrAgentCl
   return platform === "win32" ? "native" : "posix-script";
 }
 
-async function inspectCandidate<K extends string>(
-  entry: { kind: K; command: string },
+async function inspectCandidate(
+  entry: AgentCliCatalogEntry,
   seed: DirectorySeed,
   platform: NodeJS.Platform,
-): Promise<(Omit<HerdrAgentCliCandidate, "kind"> & { kind: K }) | undefined> {
+): Promise<HerdrAgentCliCandidate | undefined> {
   const pathApi = platformPath(platform);
   for (const name of candidateNames(entry.command, platform)) {
     const executable = pathApi.join(seed.directory, name);
@@ -306,63 +306,6 @@ async function inspectCandidate<K extends string>(
     }
   }
   return undefined;
-}
-
-/** Resolve built-in local runtimes without requiring a Herdr server or writing its PATH overlay. */
-export async function discoverSuperAgentCliPaths(
-  options: Omit<HerdrAgentCliDiscoveryOptions, "userDataDir">,
-): Promise<Partial<Record<"claude" | "codex" | "dsh" | "node", string>>> {
-  const platform = options.platform ?? process.platform;
-  const pathApi = platformPath(platform);
-  const seeds = [...(await collectAgentCliDirectorySeeds(options))];
-  const local = envValue(options.env ?? process.env, "LOCALAPPDATA", platform);
-  const entries = await Promise.all(
-    (["claude", "codex", "dsh", "node"] as const).map(async (kind) => {
-      const entry = HERDR_AGENT_CLI_CATALOG.find((candidate) => candidate.kind === kind);
-      const extra: DirectorySeed[] = [];
-      const seen = new Set<string>();
-      for (const override of entry?.environmentDirectories ?? []) {
-        addDirectorySeed(
-          extra,
-          seen,
-          envValue(options.env ?? process.env, override.key, platform),
-          "custom",
-          0,
-          platform,
-        );
-      }
-      const homeParts =
-        platform === "win32" ? entry?.windowsHomeRelativeDirectories : entry?.posixHomeRelativeDirectories;
-      for (const parts of homeParts ?? [[".local", "bin"]]) {
-        addDirectorySeed(extra, seen, pathApi.join(options.homeDir, ...parts), "official", 1_000, platform);
-      }
-      if (local && platform === "win32") {
-        for (const parts of entry?.windowsLocalAppDataRelativeDirectories ?? []) {
-          addDirectorySeed(extra, seen, pathApi.join(local, ...parts), "official", 1_000, platform);
-        }
-      }
-      if (kind === "node" && platform === "win32") {
-        const programFiles = envValue(options.env ?? process.env, "ProgramFiles", platform);
-        addDirectorySeed(
-          extra,
-          seen,
-          programFiles && pathApi.join(programFiles, "nodejs"),
-          "official",
-          1_000,
-          platform,
-        );
-      }
-      const candidates = [...seeds, ...extra].sort((a, b) => a.precedence - b.precedence);
-      const results = await Promise.all(
-        candidates.map((seed) => inspectCandidate({ kind, command: kind }, seed, platform)),
-      );
-      return [
-        kind,
-        results.find((result) => result && (kind !== "node" || result.launchForm !== "windows-cmd"))?.executable,
-      ] as const;
-    }),
-  );
-  return Object.fromEntries(entries.filter(([, executable]) => executable));
 }
 
 function shellQuote(value: string): string {

@@ -1,14 +1,6 @@
 import type { AgentShell, AgentShellSettings } from "../shared/agent-shell";
 import type { AdvancedModelSettings, AutoRoutingConfig, CatalogModel, ModelSettingsSnapshot } from "./model-settings";
 import type {
-  ReviewActivityPage,
-  ReviewConfigSnapshot,
-  ReviewHistoryDetail,
-  ReviewHistoryRef,
-  ReviewHistoryRow,
-  ReviewEngineStatus,
-} from "./code-review";
-import type {
   AgentCommand,
   AgentEvent,
   ApiKeyProviderStatus,
@@ -85,35 +77,7 @@ import type {
 import type { PiRuntimeProbeResult } from "./runtime";
 import type { CredentialMutationOptions } from "./auth";
 import type { ExecutionHistoryPage, ExecutionQuery, ExecutionContentChunk } from "./executions";
-import type {
-  ReviewCommand,
-  ReviewCommandOutput,
-  ReviewDiff,
-  ReviewDiffRequest,
-  ReviewModelSelection,
-  ReviewBranches,
-  ReviewMcpSnapshot,
-  ReviewPreview,
-  ReviewReply,
-  ReviewRequest,
-  ReviewRun,
-} from "./code-review";
 import type { ScheduleSave, ScheduleTask } from "./schedule";
-import type { AgentSlide, Outline, OutlineRequest, PageRequest } from "./presentations";
-import type {
-  SuperAgentCli,
-  SuperAgentPermissionMode,
-  SuperAgentRole,
-  SuperAgentCreateRoom,
-  SuperAgentRoom,
-  SuperAgentRoomInfo,
-  SuperAgentRuntime,
-  SuperAgentTask,
-  SuperAgentTaskArtifact,
-  SuperAgentTaskDraft,
-  SuperAgentTaskInfo,
-  SuperAgentTaskReview,
-} from "./superagent";
 import type {
   McpConfigurationSnapshot,
   McpScope,
@@ -126,99 +90,6 @@ import type {
 
 /** Request/response API surface (replaces HTTP routes). */
 export interface Api {
-  "presentations.outline": { params: OutlineRequest; result: Outline };
-  "presentations.page": { params: PageRequest; result: AgentSlide };
-  "presentations.stop": { params: { id: string }; result: void };
-  "presentations.prepare": {
-    params: {
-      cwd: string | null;
-      model?: { provider: string; modelId: string };
-      modelSelectionExplicit?: boolean;
-      toolNames?: string[];
-      thinkingLevel?: string;
-    };
-    result: import("./presentations").PresentationWorkflow;
-  };
-  "presentations.artifacts": {
-    params: { sessionId: string };
-    result: import("./presentations").PresentationArtifactSnapshot;
-  };
-  "presentations.saveFile": {
-    params: { sessionId: string; path: string; base64: string; expectedHash: string };
-    result: { hash: string; updatedAt: number };
-  };
-  "presentations.workflow": { params: { sessionId: string }; result: import("./presentations").PresentationWorkflow };
-  "superagent.runtimes": { params: { probe?: SuperAgentCli }; result: SuperAgentRuntime[] };
-  "superagent.roles.list": { params: void; result: SuperAgentRole[] };
-  "superagent.roles.save": { params: Omit<SuperAgentRole, "id"> & { id?: string }; result: SuperAgentRole };
-  "superagent.roles.delete": { params: { id: string }; result: void };
-  "superagent.rooms.list": { params: void; result: SuperAgentRoomInfo[] };
-  "superagent.rooms.get": { params: { id: string }; result: SuperAgentRoom };
-  "superagent.rooms.create": { params: SuperAgentCreateRoom; result: SuperAgentRoom };
-  "superagent.rooms.send": { params: { id: string; text: string; targetId?: string }; result: SuperAgentRoom };
-  "superagent.rooms.stop": { params: { id: string }; result: SuperAgentRoom };
-  "superagent.rooms.resume": { params: { id: string }; result: SuperAgentRoom };
-  "superagent.rooms.approval": { params: { id: string; approvalId: string; choice: string }; result: SuperAgentRoom };
-  "superagent.rooms.permissionMode": {
-    params: { id: string; mode: SuperAgentPermissionMode };
-    result: SuperAgentRoom;
-  };
-  "superagent.rooms.artifact": {
-    params: { id: string; memberId: string };
-    result: { status: GitStatusResult; diff: string; truncated: boolean };
-  };
-  "superagent.rooms.handoff": { params: { id: string; memberId: string; close?: boolean }; result: SuperAgentRoom };
-  "superagent.tasks.create": { params: SuperAgentTaskDraft; result: SuperAgentTask };
-  "superagent.tasks.list": { params: { roomId: string }; result: SuperAgentTaskInfo[] };
-  "superagent.tasks.get": { params: { id: string }; result: SuperAgentTask };
-  "superagent.tasks.artifact": { params: { id: string; runId: string }; result: SuperAgentTaskArtifact };
-  "superagent.tasks.answer": { params: { id: string; runId: string; text: string }; result: SuperAgentTask };
-  "superagent.tasks.approval": {
-    params: { id: string; runId: string; approvalId: string; choice: string };
-    result: SuperAgentTask;
-  };
-  "superagent.tasks.pause": { params: { id: string }; result: SuperAgentTask };
-  "superagent.tasks.resume": { params: { id: string }; result: SuperAgentTask };
-  "superagent.tasks.retry": { params: { id: string; runId: string }; result: SuperAgentTask };
-  "superagent.tasks.cancel": { params: { id: string }; result: SuperAgentTask };
-  "superagent.tasks.review": { params: { id: string; review: SuperAgentTaskReview }; result: SuperAgentTask };
-  "codeReview.preview": { params: ReviewRequest; result: ReviewReply<ReviewPreview> };
-  "codeReview.branches": { params: { cwd: string }; result: ReviewReply<ReviewBranches> };
-  "codeReview.config.get": { params: void; result: ReviewReply<ReviewConfigSnapshot> };
-  "codeReview.config.status": { params: void; result: ReviewReply<ReviewEngineStatus> };
-  "codeReview.config.save": {
-    params: ReviewConfigSnapshot;
-    result: ReviewReply<ReviewConfigSnapshot & { status: ReviewEngineStatus }>;
-  };
-  "codeReview.mcp.get": { params: void; result: ReviewReply<ReviewMcpSnapshot> };
-  "codeReview.mcp.save": { params: ReviewMcpSnapshot; result: ReviewReply<ReviewMcpSnapshot> };
-  "codeReview.start": {
-    params: { previewId: string; model: ReviewModelSelection };
-    result: ReviewReply<ReviewRun>;
-  };
-  "codeReview.getRun": { params: { id?: string }; result: ReviewRun | null };
-  "codeReview.activity": { params: { id: string; after?: number }; result: ReviewActivityPage | null };
-  "codeReview.history.list": {
-    params: { cwd?: string; limit?: number; offset?: number };
-    result: ReviewReply<ReviewHistoryRow[]>;
-  };
-  "codeReview.history.open": { params: ReviewHistoryRef; result: ReviewReply<ReviewHistoryDetail> };
-  "codeReview.history.diff": {
-    params: { ref: ReviewHistoryRef; path: string };
-    result: ReviewReply<ReviewDiff | null>;
-  };
-  "codeReview.history.activity": {
-    params: { ref: ReviewHistoryRef; after?: number };
-    result: ReviewReply<ReviewActivityPage>;
-  };
-  "codeReview.cancel": { params: { id: string }; result: ReviewRun | null };
-  "codeReview.locateFinding": {
-    params: { id: string; findingId: number };
-    result: ReviewReply<{ path: string; root: string; line: number | null; stale: boolean }>;
-  };
-  "codeReview.diff": { params: ReviewDiffRequest; result: ReviewReply<ReviewDiff> };
-  "codeReview.command": { params: ReviewCommand; result: ReviewReply<ReviewCommandOutput> };
-  "codeReview.testModel": { params: { cwd: string; model: ReviewModelSelection }; result: ReviewReply<null> };
   "schedule.list": { params: void; result: ScheduleTask[] };
   "schedule.save": { params: ScheduleSave; result: ScheduleTask };
   "schedule.pause": { params: { id: string; revision: number; paused: boolean }; result: ScheduleTask };
@@ -723,9 +594,6 @@ export interface Api {
 
 /** Server-push streams delivered over MessagePort RPC. */
 export interface Streams {
-  "presentations.events": import("./presentations").PresentationEvent;
-  "superagent.changed": { roomId?: string };
-  "superagent.tasks.changed": { roomId: string; taskId: string };
   "schedule.changed": Record<string, never>;
   "mcp.changed": { sessionId: string; instances: import("./mcp").McpInstanceSnapshot[] };
   "mcp.oauth": McpOAuthSnapshot;

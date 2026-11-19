@@ -12,12 +12,9 @@ temp/
 .env
 .env.*
 .artifacts/
-.serphia/presentations/
 __pycache__/
 *.pyc
 build/toolchains/.core-cache/
 build/toolchains/core/
-build/ppt-master/
 build/herdr/bin/
-build/ocr/bin/
 native/**/target/

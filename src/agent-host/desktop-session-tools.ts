@@ -7,7 +7,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { toolchainRuntime, type ToolchainRuntime } from "./toolchain-runtime";
 import { createToolchainBashOptions } from "./toolchain-bash";
-import { presentationWorkflowContext } from "./presentation-workflow-context";
 import { createDesktopPowerShellTool } from "./toolchain-powershell";
 import { codingToolAvailability } from "../shared/tool-presets";
 import type { AgentSessionWrapper } from "./rpc-manager";
@@ -56,21 +55,22 @@ export async function createDesktopSessionTools(
       throw new Error("TOOL_PERMISSION_DENIED: powershell is not authorized for this session/source");
   };
   const definitions = (context: ToolExecutionContext) => {
-    // A new Studio session gets its workflow entry after these tools are constructed.
-    const sessionEnv = () => (presentationWorkflowContext(manager) ? { SERPHIA_PPT_STUDIO: "1" } : undefined);
-    const guardCommand = (command: string) => browserAgentRuntime.guardBash(manager.getSessionId(), command);
-    const bashOptions = createToolchainBashOptions(
-      context,
-      runtime,
-      settings.getShellCommandPrefix(),
-      guardCommand,
-      sessionEnv,
+    const bashOptions = createToolchainBashOptions(context, runtime, settings.getShellCommandPrefix(), (command) =>
+      browserAgentRuntime.guardBash(manager.getSessionId(), command),
     );
     return [
       history.tool(),
       createBashToolDefinition(cwd, bashOptions),
       ...(platform === "win32"
-        ? [createDesktopPowerShellTool(cwd, context, runtime, guardCommand, assertPowerShellAuthorized, sessionEnv)]
+        ? [
+            createDesktopPowerShellTool(
+              cwd,
+              context,
+              runtime,
+              (command) => browserAgentRuntime.guardBash(manager.getSessionId(), command),
+              assertPowerShellAuthorized,
+            ),
+          ]
         : []),
       ...createDesktopSearchToolDefinitions(cwd, context, runtime),
       ...createBrowserToolDefinitions(),

@@ -123,7 +123,6 @@ test("Windows SBOM is deterministic and distinguishes shipped, native-build, and
     "windows-link",
     "ripgrep",
     "fd",
-    "Open Code Review",
   ]) {
     assert.ok(names.includes(name), name);
   }

@@ -113,7 +113,7 @@ test("PowerShell rechecks its grant after a pending browser approval before spaw
   };
   const tools = await createDesktopSessionTools(
     root,
-    { getSessionId: () => "approval", getEntries: () => [] },
+    { getSessionId: () => "approval" },
     { isProjectTrusted: () => true, getShellCommandPrefix: () => undefined },
     { tool: () => ({ name: "history", execute: async () => ({ content: [] }) }) },
     { runtime, platform: "win32" },
@@ -368,7 +368,7 @@ test("a failed tool-definition rebuild retains both the previous availability an
   const runtime = { createExecutionContext: async () => context, requireFromContext: () => {} };
   const tools = await createDesktopSessionTools(
     root,
-    { getSessionId: () => "atomic", getEntries: () => [] },
+    { getSessionId: () => "atomic" },
     settings,
     { tool: () => ({ name: "history", execute: async () => ({ content: [] }) }) },
     { runtime, platform: "win32" },

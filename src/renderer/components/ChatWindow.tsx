@@ -34,7 +34,7 @@ import { SessionViewTabs, type SessionView } from "./SessionViewTabs";
 import { ChatWidthHandles } from "./ChatWidthHandles";
 import { ContextView } from "./context/ContextView";
 import { TrajectoryView } from "./trajectory/TrajectoryView";
-import { useAgentSession, type UseAgentSessionOptions, type NoticeItem } from "@/hooks/useAgentSession";
+import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
 import { useMcpSettingsCommand } from "@/hooks/useMcpSettingsRequests";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -70,9 +70,6 @@ interface Props {
   thinkingExpansionStore: ThinkingExpansionStore;
   processDetailsExpansionStore: ThinkingExpansionStore;
   workStepDisplay: WorkStepDisplay;
-  showSessionViewTabs?: boolean;
-  createSession?: UseAgentSessionOptions["createSession"];
-  newDraftKey?: string;
 }
 
 function toMinimapMessage(message: AgentMessage | Partial<AgentMessage>): ChatMinimapMessage | null {
@@ -176,9 +173,6 @@ export function ChatWindow({
   thinkingExpansionStore,
   processDetailsExpansionStore,
   workStepDisplay,
-  showSessionViewTabs = true,
-  createSession,
-  newDraftKey,
 }: Props) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
@@ -190,7 +184,7 @@ export function ChatWindow({
   }, [session?.id]);
   // Promotion keeps this view mounted; selecting another session remounts it.
   const [draftPromotionFrom] = useState(() =>
-    !session && newSessionCwd !== null ? (newDraftKey ?? `new:${newSessionCwd}`) : undefined,
+    !session && newSessionCwd !== null ? `new:${newSessionCwd}` : undefined,
   );
   const messageRenderKeys = useRef(new MessageRenderKeyRegistry()).current;
   const assistantRenderParts = useRef(new WeakMap<AssistantMessage, AssistantRenderParts>()).current;
@@ -261,7 +255,6 @@ export function ChatWindow({
     loadOlder,
     loadDeferredContent,
   } = useAgentSession({
-    createSession,
     session,
     newSessionCwd,
     onAgentEnd,
@@ -330,7 +323,7 @@ export function ChatWindow({
   }, [hasOlder, loadOlder, loadingOlder, messages.length, scrollContainerRef]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
-  const showSessionViews = showSessionViewTabs && !isEmptyNew && messages.length > 0;
+  const showSessionViews = !isEmptyNew && messages.length > 0;
   const activeSessionView: SessionView = showSessionViews ? sessionView : "chat";
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   const turnFooters = useTurnChangeFooters(messages, messageCwd, workspace?.homeDir, onOpenFile);
@@ -410,7 +403,7 @@ export function ChatWindow({
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
       onBuiltinCommand={handleBuiltinSlashCommand}
-      draftKey={session?.id ?? newDraftKey ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
+      draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}
       cwd={session?.cwd ?? newSessionCwd}
       sessionStats={sessionStats}

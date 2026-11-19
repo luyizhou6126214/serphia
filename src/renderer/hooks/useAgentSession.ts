@@ -61,7 +61,6 @@ export type BuiltinSlashCommandResult =
   { handled: false } | { handled: true; message?: string; error?: string; action?: "openSessionStats" };
 
 export interface UseAgentSessionOptions {
-  createSession?: typeof newAgent;
   session: SessionInfo | null;
   newSessionCwd: string | null;
   onAgentEnd?: (aborted: boolean) => void;
@@ -153,7 +152,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session,
     newSessionCwd,
-    createSession = newAgent,
     onAgentEnd,
     onSessionCreated,
     onSessionForked,
@@ -422,7 +420,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const selectedModel = newSessionModel ?? newSessionDefaultModel;
       if (selectedModel) setPendingModel(selectedModel);
       const toolNames = await initialToolNames();
-      const result = await createSession({
+      const result = await newAgent({
         cwd: newSessionCwd,
         type: "ensure_session",
         toolNames,
@@ -447,7 +445,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [createSession, isNew, newSessionCwd, newSessionModel, newSessionDefaultModel, initialToolNames, thinkingLevel]);
+  }, [isNew, newSessionCwd, newSessionModel, newSessionDefaultModel, initialToolNames, thinkingLevel]);
 
   const loadSlashCommands = useCallback(async () => {
     const ownsView = captureCommandView(),

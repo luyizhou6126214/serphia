@@ -276,34 +276,11 @@ function ContextMeter({ usage }: { usage: ContextUsage & { percent: number } }) 
 }
 
 export interface ComposerStatsProps {
-  sessionStats:
-    | Partial<
-        Pick<
-          SessionStatsInfo,
-          | "tokens"
-          | "userMessages"
-          | "assistantMessages"
-          | "tokensPerSecond"
-          | "llmDurationMs"
-          | "toolDurationMs"
-          | "contextUsage"
-        >
-      >
-    | null
-    | undefined;
+  sessionStats: SessionStatsInfo | null | undefined;
   contextUsage: ContextUsage | null | undefined;
-  activityLabel?: string;
-  cacheUsageKnown?: boolean;
-  showContextCapacity?: boolean;
 }
 
-export function ComposerStats({
-  sessionStats,
-  contextUsage,
-  activityLabel: activityOverride,
-  cacheUsageKnown = true,
-  showContextCapacity,
-}: ComposerStatsProps) {
+export function ComposerStats({ sessionStats, contextUsage }: ComposerStatsProps) {
   const { t, language } = useI18n();
   const tokens = sessionStats?.tokens;
   const turns = sessionStats?.userMessages ?? 0;
@@ -311,15 +288,14 @@ export function ComposerStats({
   const speed = sessionStats?.tokensPerSecond;
   const total = tokens?.total ?? 0;
   const promptTokens = tokens === undefined ? 0 : tokens.input + tokens.cacheRead + tokens.cacheWrite;
-  const cacheHit = tokens === undefined || !cacheUsageKnown ? null : formatStatCacheHit(tokens.cacheRead, promptTokens);
+  const cacheHit = tokens === undefined ? null : formatStatCacheHit(tokens.cacheRead, promptTokens);
 
   const activityLabel =
-    activityOverride ??
-    (turns > 0
+    turns > 0
       ? t("composerTurnsSteps", "{turns} turns {steps} steps")
           .replace("{turns}", String(turns))
           .replace("{steps}", String(steps))
-      : null);
+      : null;
   const speedLabel =
     speed !== undefined
       ? t("composerTokensPerSecond", "{tps} tok/s").replace("{tps}", formatStatTokensPerSecond(speed))
@@ -339,10 +315,8 @@ export function ComposerStats({
     (usageReading?.tokens != null && contextWindow > 0 ? (usageReading.tokens / contextWindow) * 100 : null);
   const context =
     rawPercent === null ? null : ({ ...usageReading, percent: rawPercent } as ContextUsage & { percent: number });
-  const capacity =
-    showContextCapacity && context === null && contextWindow > 0 ? formatStatTokens(contextWindow) : null;
 
-  if (activity === null && usage === null && context === null && capacity === null) return null;
+  if (activity === null && usage === null && context === null) return null;
 
   const exact = (value: number): string => formatNumber(value, language);
   const llmTime = formatTurnDuration(sessionStats?.llmDurationMs, language);
@@ -390,14 +364,6 @@ export function ComposerStats({
         </StatReading>
       )}
       {context !== null && <ContextMeter usage={context} />}
-      {capacity !== null && (
-        <span className="composer-context" title={t("contextWindow", "Context window")}>
-          <ContextRing percent={0} />
-          <span>
-            {t("contextWindow", "Context window")} {capacity}
-          </span>
-        </span>
-      )}
     </div>
   );
 }

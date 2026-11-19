@@ -32,8 +32,6 @@ import type {
 import { ReasoningRow } from "./ReasoningRow";
 import { ToolCallRow, browserResultSummary, browserTabIdFromResult, isBrowserToolName } from "./ToolCallRow";
 
-type RawToolPresentation = { missingResultLabel: string };
-
 interface Props {
   message: AgentMessage;
   isStreaming?: boolean;
@@ -52,7 +50,6 @@ interface Props {
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
-  rawToolPresentation?: RawToolPresentation;
   hideCopy?: boolean;
   /** Rendered inside the assistant body, above the action row. */
   footer?: ReactNode;
@@ -76,7 +73,6 @@ export const HerdrMessage = memo(function HerdrMessage({
   onLoadDeferredContent,
   thinkingExpansionStore,
   workStepDisplay,
-  rawToolPresentation,
   hideCopy,
   footer,
 }: Props) {
@@ -111,7 +107,6 @@ export const HerdrMessage = memo(function HerdrMessage({
         entryId={entryId}
         thinkingExpansionStore={thinkingExpansionStore}
         workStepDisplay={workStepDisplay}
-        rawToolPresentation={rawToolPresentation}
         hideCopy={hideCopy}
         footer={footer}
       />
@@ -423,7 +418,6 @@ function AssistantMessageView({
   entryId,
   thinkingExpansionStore,
   workStepDisplay,
-  rawToolPresentation,
   hideCopy,
   footer,
 }: {
@@ -439,7 +433,6 @@ function AssistantMessageView({
   entryId?: string;
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
-  rawToolPresentation?: RawToolPresentation;
   hideCopy?: boolean;
   footer?: ReactNode;
 }) {
@@ -481,7 +474,6 @@ function AssistantMessageView({
               blockIndex={originalIndex}
               thinkingExpansionStore={thinkingExpansionStore}
               settledReasoningPreview={policy.settledReasoningPreview}
-              rawToolPresentation={rawToolPresentation}
               t={t}
             />
           ))}
@@ -531,7 +523,6 @@ function BlockView({
   thinkingExpansionStore,
   settledReasoningPreview,
   t,
-  rawToolPresentation,
 }: {
   block: AssistantContentBlock;
   toolResults?: ReadonlyMap<string, ToolResultMessage>;
@@ -546,7 +537,6 @@ function BlockView({
   thinkingExpansionStore?: ThinkingExpansionStore;
   settledReasoningPreview: boolean;
   t: (key: string, fallback: string) => string;
-  rawToolPresentation?: RawToolPresentation;
 }) {
   if (block.type === "text") {
     return (
@@ -589,7 +579,6 @@ function BlockView({
         cwd={cwd}
         home={home}
         t={t}
-        rawToolPresentation={rawToolPresentation}
       />
     );
   }
@@ -634,7 +623,6 @@ function ToolBlock({
   cwd,
   home,
   t,
-  rawToolPresentation,
 }: {
   block: ToolCallContent;
   result?: ToolResultMessage;
@@ -644,7 +632,6 @@ function ToolBlock({
   cwd?: string;
   home?: string;
   t: (key: string, fallback: string) => string;
-  rawToolPresentation?: RawToolPresentation;
 }) {
   const { expanded, toggle } = useStoredDisclosure(store, stateKey);
   // The projection replaces a persisted payload the session never stored; that
@@ -656,9 +643,9 @@ function ToolBlock({
           .filter((item) => item.type === "text")
           .map((item) => item.text)
           .join("\n");
-  const resultText = rawToolPresentation ? rawResultText : getToolResultDisplayText(block.toolName, result, t);
+  const resultText = getToolResultDisplayText(block.toolName, result, t);
   const historyNotice = resultText !== null && rawResultText !== null && resultText !== rawResultText;
-  const browserTool = !rawToolPresentation && isBrowserToolName(block.toolName);
+  const browserTool = isBrowserToolName(block.toolName);
   const browserTabId = browserTool ? browserTabIdFromResult(resultText) : null;
   const browserSummary = browserTool && resultText && !result?.isError ? browserResultSummary(resultText, t) : null;
   return (
@@ -677,11 +664,7 @@ function ToolBlock({
       inputLabel={t("toolRowInput", "IN")}
       outputLabel={t("toolRowOutput", "OUT")}
       stoppedLabel={t("rowStopped", "Stopped")}
-      showFullInput={Boolean(rawToolPresentation)}
-      missingResultLabel={
-        rawToolPresentation?.missingResultLabel ??
-        t("executionResultMissing", "Result was not recorded in the conversation.")
-      }
+      missingResultLabel={t("executionResultMissing", "Result was not recorded in the conversation.")}
       browserTabId={browserTabId}
       browserSummary={browserSummary}
       historyNotice={historyNotice}

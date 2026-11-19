@@ -150,10 +150,6 @@ export async function call<M extends ApiMethod>(
   ...args: ApiParams<M> extends void ? [] | [void] : [ApiParams<M>]
 ): Promise<ApiResult<M>> {
   const client = await ensureRpc();
-  if (method.startsWith("codeReview.")) return client.callWithTimeout(method, 0, ...(args as never));
-  if (method.startsWith("superagent.")) return client.callWithTimeout(method, 120_000, ...(args as never));
-  if (method === "presentations.outline" || method === "presentations.page")
-    return client.callWithTimeout(method, 130_000, ...(args as never));
   return client.call(method, ...(args as never));
 }
 

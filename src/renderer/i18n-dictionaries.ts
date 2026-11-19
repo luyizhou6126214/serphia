@@ -1,4 +1,3 @@
-import { enUS as reviewEnUS, zhCN as reviewZhCN, zhTW as reviewZhTW } from "./i18n/code-review.ts";
 import { enUS as routingEnUS, zhCN as routingZhCN, zhTW as routingZhTW } from "./i18n/model-routing.ts";
 import type { AppLanguage } from "../shared/app-language.ts";
 import { mergeDictionaries } from "./i18n/merge-dictionaries.ts";
@@ -19,7 +18,6 @@ import { enUS as scheduleEnUS, zhCN as scheduleZhCN, zhTW as scheduleZhTW } from
 import { enUS as sessionEnUS, zhCN as sessionZhCN, zhTW as sessionZhTW } from "./i18n/session.ts";
 import { enUS as settingsEnUS, zhCN as settingsZhCN, zhTW as settingsZhTW } from "./i18n/settings.ts";
 import { enUS as trajectoryEnUS, zhCN as trajectoryZhCN, zhTW as trajectoryZhTW } from "./i18n/trajectory.ts";
-import { enUS as pptEnUS, zhCN as pptZhCN, zhTW as pptZhTW } from "./i18n/presentations.ts";
 
 export const enUS = mergeDictionaries(
   routingEnUS,
@@ -37,11 +35,9 @@ export const enUS = mergeDictionaries(
   rightPanelEnUS,
   resourcesEnUS,
   scheduleEnUS,
-  reviewEnUS,
   sessionEnUS,
   settingsEnUS,
   trajectoryEnUS,
-  pptEnUS,
 );
 export const zhCN = mergeDictionaries(
   routingZhCN,
@@ -59,11 +55,9 @@ export const zhCN = mergeDictionaries(
   rightPanelZhCN,
   resourcesZhCN,
   scheduleZhCN,
-  reviewZhCN,
   sessionZhCN,
   settingsZhCN,
   trajectoryZhCN,
-  pptZhCN,
 );
 export const zhTW = mergeDictionaries(
   routingZhTW,
@@ -81,11 +75,9 @@ export const zhTW = mergeDictionaries(
   rightPanelZhTW,
   resourcesZhTW,
   scheduleZhTW,
-  reviewZhTW,
   sessionZhTW,
   settingsZhTW,
   trajectoryZhTW,
-  pptZhTW,
 );
 
 export const dictionaries = { "en-US": enUS, "zh-CN": zhCN, "zh-TW": zhTW } satisfies Record<

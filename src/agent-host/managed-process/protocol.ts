@@ -1,18 +1,14 @@
 import type { CommandDescriptor } from "../../shared/toolchains/types.ts";
 import type { ManagedProcessStopMode } from "../../contract/processes.ts";
 
-type WorkerIdentity = {
+export interface ManagedProcessWorkerBootstrap {
   type: "bootstrap";
   processId: string;
   runId: string;
   cwd: string;
-};
-
-export type ManagedProcessWorkerBootstrap = WorkerIdentity &
-  (
-    | { command: string; shell: Pick<CommandDescriptor, "executable" | "argvPrefix" | "cwdSemantics"> }
-    | { executable: string; args: string[] }
-  );
+  command: string;
+  shell: Pick<CommandDescriptor, "executable" | "argvPrefix" | "cwdSemantics">;
+}
 
 export type ManagedProcessWorkerRequest =
   | ManagedProcessWorkerBootstrap

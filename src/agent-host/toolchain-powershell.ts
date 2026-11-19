@@ -154,7 +154,6 @@ export function createToolchainPowerShellOptions(
   runtime: ToolchainRuntime = toolchainRuntime,
   beforeExec?: (command: string) => Promise<void>,
   assertAuthorized?: () => void,
-  sessionEnv?: () => NodeJS.ProcessEnv | undefined,
 ): PowerShellToolOptions {
   return {
     spawnHook(spawnContext) {
@@ -165,7 +164,7 @@ export function createToolchainPowerShellOptions(
         delete env[key];
         if (spawnContext.env[key] !== undefined) env[key] = spawnContext.env[key];
       }
-      return { ...spawnContext, env: sanitizeToolEnvironment({ ...env, ...sessionEnv?.() }) };
+      return { ...spawnContext, env: sanitizeToolEnvironment(env) };
     },
     operations: {
       async exec(command, cwd, { onData, signal, timeout, env }) {
@@ -234,11 +233,10 @@ export function createDesktopPowerShellTool(
   runtime: ToolchainRuntime = toolchainRuntime,
   beforeExec?: (command: string) => Promise<void>,
   assertAuthorized?: () => void,
-  sessionEnv?: () => NodeJS.ProcessEnv | undefined,
 ) {
   const definition = createPowerShellToolDefinition(
     cwd,
-    createToolchainPowerShellOptions(context, runtime, beforeExec, assertAuthorized, sessionEnv),
+    createToolchainPowerShellOptions(context, runtime, beforeExec, assertAuthorized),
   );
   return {
     ...definition,

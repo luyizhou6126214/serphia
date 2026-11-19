@@ -15,7 +15,6 @@ export const HERDR_V20_METHODS = {
   tabClose: "tab.close",
   paneSplit: "pane.split",
   paneRead: "pane.read",
-  paneSendInput: "pane.send_input",
   paneProcessInfo: "pane.process_info",
   paneWaitForOutput: "pane.wait_for_output",
   paneFocus: "pane.focus",

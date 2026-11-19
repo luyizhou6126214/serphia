@@ -272,63 +272,7 @@ function sanitizeBranchForDir(branch: string): string {
   return branch.replace(/[\/\\:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export async function findWorktreeBase(cwd: string): Promise<string | null> {
-  try {
-    return await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  } catch (error) {
-    const { code } = error as { code?: unknown };
-    if (
-      code === 1 ||
-      code === "ENOENT" ||
-      code === "TOOLCHAIN_GIT_REQUIRED" ||
-      /not a git repository/i.test(extractGitError(error))
-    ) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export async function diffWorktree(cwd: string, base: string): Promise<string> {
-  if (!/^(?:[a-f\d]{40}|[a-f\d]{64})$/u.test(base)) throw new Error("Invalid Git base");
-  const flags = ["--no-pager", "diff", "--no-ext-diff", "--no-textconv"];
-  const [tracked, untracked] = await Promise.all([
-    gitRaw(cwd, [...flags, base, "--"]),
-    gitRaw(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]),
-  ]);
-  let preview = tracked;
-  // --no-index treats a changed file as exit 1; keep its stdout without altering either index.
-  for (const file of untracked.split("\0").filter(Boolean).slice(0, 24)) {
-    if (preview.length > 180_000) break;
-    try {
-      preview += await gitRaw(cwd, [...flags, "--no-index", "--", "/dev/null", file]);
-    } catch (error) {
-      const exit = error as { code?: unknown; stdout?: unknown };
-      if (exit.code === 1 && typeof exit.stdout === "string") preview += exit.stdout;
-    }
-  }
-  return preview;
-}
-
-export async function listWorktreeChanges(cwd: string, base: string) {
-  if (!/^(?:[a-f\d]{40}|[a-f\d]{64})$/u.test(base)) throw new Error("Invalid Git base");
-  const [tracked, untracked] = await Promise.all([
-    gitRaw(cwd, ["diff", "--name-only", "--no-renames", "-z", base, "--"]),
-    gitRaw(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]),
-  ]);
-  const newPaths = untracked.split("\0").filter(Boolean);
-  return {
-    paths: [...new Set([...tracked.split("\0").filter(Boolean), ...newPaths])].sort(),
-    untrackedCount: newPaths.length,
-  };
-}
-
-export async function addWorktree(
-  cwd: string,
-  branch: string,
-  base?: string,
-): Promise<{ path: string; branch: string }> {
-  if (base && !/^(?:[a-f\d]{40}|[a-f\d]{64})$/u.test(base)) throw new Error("Invalid Git base");
+export async function addWorktree(cwd: string, branch: string): Promise<{ path: string; branch: string }> {
   const trimmed = branch.trim();
   if (!trimmed) throw new Error("Branch name is required");
 
@@ -353,11 +297,10 @@ export async function addWorktree(
   }
 
   try {
-    if (branchExists && base) throw new Error("The requested branch already exists");
     if (branchExists) {
       await git(repoRoot, ["worktree", "add", "--", worktreePath, trimmed]);
     } else {
-      await git(repoRoot, ["worktree", "add", "-b", trimmed, "--", worktreePath, ...(base ? [base] : [])]);
+      await git(repoRoot, ["worktree", "add", "-b", trimmed, "--", worktreePath]);
     }
   } catch (error) {
     throw new Error(extractGitError(error));

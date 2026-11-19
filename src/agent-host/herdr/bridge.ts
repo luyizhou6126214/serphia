@@ -921,50 +921,6 @@ export class HerdrBridge {
   }
 
   async startAgent(paneId: string, kind: unknown): Promise<{ paneId: string; state: HerdrAgentState }> {
-    return this.launchAgent(paneId, kind, []);
-  }
-
-  async resumeAgent(
-    paneId: string,
-    kind: "claude" | "codex",
-    sessionId: string,
-    command: { executable: string; prefix: readonly string[] },
-  ): Promise<{ paneId: string; state: HerdrAgentState }> {
-    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(sessionId)) {
-      throw new HerdrBridgeError("HERDR_INVALID_REQUEST", "The Agent session ID is invalid.");
-    }
-    const args = [kind === "claude" ? "--resume" : "resume", sessionId];
-    if (process.platform !== "win32") return this.launchAgent(paneId, kind, args, `${kind}-${sessionId.slice(0, 8)}`);
-
-    const pane = this.requirePane(paneId);
-    const cwd = pane.foregroundCwd ?? pane.cwd;
-    if (!cwd || pane.agent)
-      throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "The Herdr pane is not ready for a new Agent.");
-    await this.assertCwdAllowed(cwd);
-    // Protocol 20's Windows agent.start uses Start-Process with a bare name. Launch the
-    // already resolved executable directly so npm's extensionless shims cannot intercept it.
-    const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
-    const script = `& ${[command.executable, ...command.prefix, ...args].map(quote).join(" ")}`;
-    const encoded = Buffer.from(script, "utf16le").toString("base64");
-    const result = await this.requireReady().request<JsonRecord>({
-      method: HERDR_V20_METHODS.paneSendInput,
-      params: {
-        pane_id: pane.id,
-        text: `powershell.exe -NoLogo -NoProfile -EncodedCommand ${encoded}`,
-        keys: ["enter"],
-      },
-    });
-    if (result.type !== "ok")
-      throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr did not accept the resume command.");
-    return { paneId, state: "unknown" };
-  }
-
-  private async launchAgent(
-    paneId: string,
-    kind: unknown,
-    args: string[],
-    name?: string,
-  ): Promise<{ paneId: string; state: HerdrAgentState }> {
     const pane = this.requirePane(paneId);
     if (!isHerdrAgentKind(kind) || !isHerdrStartableAgentKind(kind))
       throw new HerdrBridgeError("HERDR_AGENT_KIND_UNSUPPORTED", "Agent kind is unsupported.");
@@ -976,7 +932,7 @@ export class HerdrBridge {
     }
     const result = await this.requireReady().request<JsonRecord>({
       method: HERDR_V20_METHODS.agentStart,
-      params: { name: name ?? kind, kind, pane_id: paneId, args, timeout_ms: 60_000 },
+      params: { name: kind, kind, pane_id: paneId, args: [], timeout_ms: 60_000 },
       timeoutMs: 65_000,
     });
     if (result.type !== "agent_started" || !isRecord(result.agent)) {

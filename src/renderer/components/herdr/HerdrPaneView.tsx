@@ -24,7 +24,7 @@ import { useI18n } from "@/i18n";
 import { HerdrChatInput } from "./conversation/HerdrChatInput";
 import { HerdrConversationView } from "./conversation/HerdrConversationView";
 import type { WorkStepDisplay } from "@shared/work-step-display";
-import { SuperAgentTerminal } from "../superagent/SuperAgentTerminal";
+import { HerdrTerminal } from "./HerdrTerminal";
 import { herdrErrorLabel } from "./herdr-ui-copy";
 
 interface Props {
@@ -264,7 +264,7 @@ export function HerdrPaneView({
                     {control ? t("hdObserve", "Observe mode") : t("hdControl", "Keyboard control")}
                   </button>
                 </div>
-                <SuperAgentTerminal
+                <HerdrTerminal
                   key={String(control)}
                   paneId={pane.id}
                   mode={control ? "control" : "observe"}

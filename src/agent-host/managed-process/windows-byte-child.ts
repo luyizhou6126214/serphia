@@ -4,11 +4,8 @@ import { EventEmitter } from "node:events";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import type { ManagedProcessCapability, WindowsManagedProcessReaperRecord } from "../../contract/processes";
-import type {
-  WindowsManagedProcessHelperDescriptor,
-  WindowsManagedProcessHelperResolution,
-} from "../../shared/windows-managed-process-helper";
+import type { WindowsManagedProcessReaperRecord } from "../../contract/processes";
+import type { WindowsManagedProcessHelperDescriptor } from "../../shared/windows-managed-process-helper";
 import { callMain } from "../parent-rpc";
 import { getManagedProcessOwnerIdentity } from "./owner-identity";
 import {
@@ -26,11 +23,9 @@ const INPUT_CHUNK_BYTES = 32 * 1024;
 
 type HelperSettings = {
   reaperReady?: boolean;
-  capability?: Pick<ManagedProcessCapability, "backend" | "ready" | "errorCode">;
+  capability?: { backend?: string; ready?: boolean };
   containmentCapability?: HelperSettings["capability"];
   windowsHelper?: WindowsManagedProcessHelperDescriptor;
-  windowsHelperError?: Extract<WindowsManagedProcessHelperResolution, { ok: false }>["errorCode"];
-  reaperError?: string;
 };
 
 function deferred<T>() {
@@ -82,7 +77,6 @@ export class WindowsByteProcessChild extends EventEmitter {
   readonly stdin: Writable;
   pid: number | undefined;
   exitCode: number | null = null;
-  targetExitCode: number | null = null;
   signalCode: NodeJS.Signals | null = null;
   private helper: ChildProcessWithoutNullStreams | null = null;
   private readonly decoder = new WindowsHelperFrameDecoder();
@@ -106,7 +100,6 @@ export class WindowsByteProcessChild extends EventEmitter {
       env?: Record<string, string>;
       processPrefix?: string;
       capabilityScope?: "managed" | "transport";
-      retryWindowsContainment?: boolean;
       electronNodeMode?: boolean;
     } = {},
   ) {
@@ -123,12 +116,7 @@ export class WindowsByteProcessChild extends EventEmitter {
   }
 
   private async start(): Promise<void> {
-    const retry = this.options.retryWindowsContainment;
-    const settings = await callMain<HelperSettings>(
-      "managedProcesses.getSettings",
-      retry ? { retryWindowsContainment: true } : undefined,
-      retry ? 25_000 : 5_000,
-    );
+    const settings = await callMain<HelperSettings>("managedProcesses.getSettings", undefined, 5_000);
     const owner = getManagedProcessOwnerIdentity();
     const descriptor = settings.windowsHelper;
     const capability =
@@ -137,10 +125,6 @@ export class WindowsByteProcessChild extends EventEmitter {
         : settings.capability;
     if (this.stopRequested) throw new Error("Owned byte process start was cancelled");
     if (!settings.reaperReady || capability?.backend !== "windows-job" || !capability.ready || !descriptor || !owner) {
-      if (retry) {
-        const reason = settings.windowsHelperError ?? settings.reaperError ?? capability?.errorCode ?? "NOT_READY";
-        throw new Error(`Windows CLI process isolation could not start (${reason}). Continue to retry.`);
-      }
       throw new Error("Windows terminal containment is unavailable");
     }
     const canonical = await realpath(descriptor.path);
@@ -293,8 +277,6 @@ export class WindowsByteProcessChild extends EventEmitter {
         } else if (frame.kind === WINDOWS_HELPER_KIND.activeZero) {
           this.activeZero = true;
         } else if (frame.kind === WINDOWS_HELPER_KIND.exit) {
-          const exit = parseWindowsHelperJson(frame);
-          this.targetExitCode = typeof exit.code === "number" ? exit.code : null;
           this.cleanExit = true;
         } else if (frame.kind === WINDOWS_HELPER_KIND.error) {
           throw new Error(`Windows process helper failed: ${describeWindowsHelperError(frame)}`);

@@ -5,12 +5,6 @@ identify the upstream terms that apply to each component; Pi Agent Desktop does 
 A reference-only entry records project lineage and does not mean that the referenced project is bundled with the
 application.
 
-## Presentation workspace
-
-PPT Master 6.9.0, copyright © 2025–2026 Hugo He, is distributed with its original MIT license, attribution files, scripts and templates. Serphia adapts the three interactive server launchers to keep Studio workflows inside the app. [Upstream revision](https://github.com/hugohe3/ppt-master/tree/7e0df6705de0cd24345210d31f07fcb5a32b6900/skills/ppt-master)
-
-The editable PowerPoint canvas uses @diceui/pptx 0.6.0 and @diceui/pptx-core 0.5.0 under the Apache-2.0 license. [Source and notices](https://github.com/sadmann7/pptx)
-
 ## Application and runtime components
 
 | Component                              | Version          | Use in Pi Agent Desktop                              | License                                                                                                                          | Attribution / source                                                                                                      |
@@ -39,8 +33,6 @@ The editable PowerPoint canvas uses @diceui/pptx 0.6.0 and @diceui/pptx-core 0.5
 | Microsoft Visual C++ runtime           | Per release SBOM | Statically linked into the Windows helper            | [Microsoft software license terms](https://go.microsoft.com/fwlink/?LinkId=2086102)                                              | The authoritative native toolset version is recorded in the Windows CycloneDX SBOM                                        |
 
 The foreground workflow scheduler bundles [@quintinshaw/pi-dynamic-workflows 3.15.2](https://github.com/QuintinShaw/pi-dynamic-workflows) under the [MIT license](https://github.com/QuintinShaw/pi-dynamic-workflows/blob/main/LICENSE). Copyright © 2026 QuintinShaw and Michael Livs (original pi-dynamic-workflows).
-
-The PPT workspace uses [PptxGenJS 4.0.1](https://github.com/gitbrent/PptxGenJS/tree/v4.0.1) by Brent Ely under the [MIT license](https://github.com/gitbrent/PptxGenJS/blob/v4.0.1/LICENSE).
 
 ## Pi 1.4.0 runtime dependencies
 
@@ -122,11 +114,3 @@ contain additional components and notices; those upstream files remain authorita
 
 Where an upstream version-specific license link and a canonical reference differ, the upstream component's bundled
 license and notices are authoritative.
-
-### Open Code Review
-
-Serphia builds Open Code Review v1.13.7 from
-[Alibaba's source](https://github.com/alibaba/open-code-review/releases/tag/v1.13.7)
-with the timeout changes in `build/ocr/no-deadlines.patch`. The first bundled-tools
-build for each target uses Go 1.26.10. Set `SERPHIA_OCR_GO` to select the Go executable.
-The upstream Apache-2.0 license accompanies the executable in the application resources.

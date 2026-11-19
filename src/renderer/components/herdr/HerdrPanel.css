@@ -698,7 +698,7 @@
   font-size: 11px;
   padding: 4px;
 }
-.hd-window .superagent-terminal {
+.hd-window .hd-terminal {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -708,7 +708,7 @@
   overflow: hidden;
   padding: 7px;
 }
-.hd-window .superagent-terminal-screen {
+.hd-window .hd-terminal-screen {
   flex: 1;
   min-height: 0;
   background: #18191b;

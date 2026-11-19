@@ -5,8 +5,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertSuccessfulSpawn, resolvePackageFile } from "./process-utils.mjs";
-import { preparePresentationSkill } from "./prepare-presentation-skill.mjs";
-import { prepareOcrSdk } from "./prepare-ocr-sdk.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -16,8 +14,6 @@ export function cleanMainBuildOutputs(projectRoot = root) {
 }
 
 function prepareMainBuild(projectRoot) {
-  preparePresentationSkill(projectRoot);
-  prepareOcrSdk(projectRoot);
   if (process.platform === "win32" && process.arch === "x64")
     assertSuccessfulSpawn(
       spawnSync(process.execPath, [path.join(projectRoot, "scripts", "prepare-desktop-window-driver.mjs")], {

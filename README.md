@@ -151,12 +151,6 @@ Windows x64 版内置桌面应用控制。在本地聊天里直接指明 App 和
 - Agent 回复和 Markdown 文件支持代码高亮、Mermaid、KaTeX，并可预览 Word（`.docx`）文档
 - 文件变更监听与 Git 状态感知，让会话始终贴近当前项目
 
-### PPT 工作台
-
-- 直接在右侧 Serphia 会话输入框描述演示文稿，可选择模型、附加资料并通过 `/skill:名称` 调用技能。工具调用与思考记录沿用标准模式的折叠规则。
-- PPT 生成使用随应用分发的 [ppt-master 6.9.0](https://github.com/hugohe3/ppt-master/tree/7e0df6705de0cd24345210d31f07fcb5a32b6900/skills/ppt-master)。在右侧会话描述需求，在左侧设计表单修改内容、选择模板并确认方案。生成后左侧会切换为可编辑的 PPTX。执行脚本需要 Python 和该 Skill 的相应依赖。
-- 生成的 PPTX 位于会话工作目录的 `.serphia/presentations/` 下，导出后自动在左侧打开。双击文字可修改内容，选中对象可移动和缩放。编辑自动保存至当前文件，也可导出副本。「本地文稿」可打开此前保存的作品。
-
 ### 模型与扩展统一管理
 
 - main 中的 Windows 新会话默认 Shell 为 PowerShell，可在“设置 → 通用 → Agent 默认 Shell”改为 Bash。

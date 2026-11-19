@@ -160,8 +160,7 @@ export function createSessionHandlers({
 
         const resolveStartedAt = performance.now();
         const persistedPath = await resolveSessionPath(id);
-        // A prepared skill session has no transcript file until its first user message.
-        // Let the standard ChatWindow subscribe and render it before generation begins.
+        // A newly opened session may have no transcript file before its first user message.
         const pendingSession = !persistedPath ? getRpcSession(id) : undefined;
         const pendingManager = pendingSession?.isAlive() ? pendingSession.inner.sessionManager : undefined;
         const filePath = persistedPath ?? pendingManager?.getSessionFile();

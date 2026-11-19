@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRuntimeCatalog } from "../src/shared/toolchains/catalog-schema.ts";
@@ -19,7 +17,6 @@ import {
 import { extractRuntimeArchive } from "../src/main/toolchains/secure-extractor.ts";
 import { darwinCodeDigest } from "../src/main/toolchains/darwin-binary-integrity.ts";
 import { parseBundledToolTargets } from "./bundled-tools-targets.mjs";
-import { assertSuccessfulSpawn } from "./process-utils.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const catalogPath = path.join(root, "build", "toolchains", "core-catalog.json");
@@ -81,8 +78,7 @@ async function downloadFixedFile(definition, destination) {
   const timer = setTimeout(() => controller.abort(), 60_000);
   const temporary = `${destination}.${randomUUID()}.partial`;
   try {
-    const ocrSource = /^https:\/\/codeload\.github\.com\/alibaba\/open-code-review\/tar\.gz\/[a-f0-9]{40}$/u;
-    let current = ocrSource.test(definition.url) ? new URL(definition.url) : assertRuntimeRedirectUrl(definition.url);
+    let current = assertRuntimeRedirectUrl(definition.url);
     let response;
     for (let redirects = 0; redirects <= MAX_RUNTIME_REDIRECTS; redirects += 1) {
       response = await globalThis.fetch(current, {
@@ -321,130 +317,9 @@ async function prepareHerdrTarget(catalog, target) {
   }
 }
 
-async function buildOcr(catalog, target, destination) {
-  const source = catalog.source;
-  const patch = path.join(root, "build", "ocr", "no-deadlines.patch");
-  const archive = path.join(path.dirname(destination), `${source.commit}.tar.gz`);
-  await downloadFixedFile({ ...source, name: "Open Code Review source" }, archive);
-  const staging = fs.mkdtempSync(path.join(tmpdir(), "serphia-ocr-build-"));
-  const temporary = `${destination}.${randomUUID()}.partial`;
-  try {
-    await extractRuntimeArchive(archive, staging, "tar.gz", { maxExtractedBytes: 64 * 1024 * 1024 });
-    const cwd = path.join(staging, `open-code-review-${source.commit}`);
-    assertSuccessfulSpawn(spawnSync("git", ["apply", patch], { cwd, stdio: "inherit" }), "apply OCR patch");
-    const [platform, arch] = target.split("-");
-    const env = {
-      ...process.env,
-      CGO_ENABLED: "0",
-      GOENV: "off",
-      GOFLAGS: "",
-      GOEXPERIMENT: "",
-      GOTOOLCHAIN: source.go,
-      GOWORK: "off",
-      GOOS: platform === "win32" ? "windows" : platform,
-      GOARCH: arch === "x64" ? "amd64" : arch,
-      GOAMD64: "v1",
-      GOARM64: "v8.0",
-    };
-    delete env.GOROOT;
-    const go = process.env.SERPHIA_OCR_GO || "go";
-    const version = assertSuccessfulSpawn(
-      spawnSync(go, ["version"], { cwd, env, encoding: "utf8" }),
-      "OCR Go toolchain",
-    );
-    if (version.stdout.split(/\s+/u)[2] !== source.go) fail(`Building OCR requires ${source.go}`);
-    const binary = path.join(staging, `ocr-${target}`);
-    assertSuccessfulSpawn(
-      spawnSync(
-        go,
-        [
-          "build",
-          "-mod=readonly",
-          "-trimpath",
-          "-buildvcs=false",
-          "-ldflags",
-          `-s -w -buildid= -X main.Version=${catalog.version} -X main.GitCommit=${source.commit}`,
-          "-o",
-          binary,
-          "./cmd/opencodereview",
-        ],
-        { cwd, env, stdio: "inherit" },
-      ),
-      `build OCR for ${target}`,
-    );
-    const artifact = catalog.artifacts[target];
-    if (!(await verifyDownloadedArtifact(binary, { downloadBytes: artifact.bytes, sha256: artifact.sha256 }))) {
-      fail(`Built OCR ${target} does not match the pinned artifact`);
-    }
-    fs.copyFileSync(binary, temporary, fs.constants.COPYFILE_EXCL);
-    fs.renameSync(temporary, destination);
-  } finally {
-    fs.rmSync(temporary, { force: true });
-    fs.rmSync(staging, { recursive: true, force: true });
-  }
-}
-
-async function prepareOcrTarget(catalog, target) {
-  const artifact = catalog.artifacts[target];
-  if (!artifact) fail(`Missing OCR asset for ${target}`);
-  const base = path.join(root, "build", "ocr");
-  const output = path.join(base, "bin");
-  const cache = path.join(base, ".cache");
-  const executable = target.startsWith("win32-") ? "ocr.exe" : "ocr";
-  const binary = path.join(cache, `${catalog.version}-${target}-${artifact.sha256}`);
-  const license = path.join(cache, `${catalog.version}-LICENSE`);
-  await Promise.all([
-    verifyDownloadedArtifact(binary, { downloadBytes: artifact.bytes, sha256: artifact.sha256 }).then(
-      (valid) => valid || buildOcr(catalog, target, binary),
-    ),
-    downloadFixedFile({ ...catalog.license, name: "Open Code Review LICENSE" }, license),
-  ]);
-  fs.mkdirSync(output, { recursive: true });
-  const staging = fs.mkdtempSync(path.join(output, `.${target}-staging-`));
-  const destination = path.join(output, target);
-  const previous = `${destination}.previous-${randomUUID()}`;
-  try {
-    const file = path.join(staging, executable);
-    fs.copyFileSync(binary, file);
-    if (!target.startsWith("win32-")) fs.chmodSync(file, 0o755);
-    fs.copyFileSync(license, path.join(staging, "LICENSE"));
-    const expectedCode = artifact.darwinCode;
-    if (expectedCode && darwinCodeDigest(fs.readFileSync(file), expectedCode.bytes)?.sha256 !== expectedCode.sha256) {
-      fail(`Invalid OCR Mach-O for ${target}`);
-    }
-    fs.writeFileSync(
-      path.join(staging, "manifest.json"),
-      JSON.stringify(
-        {
-          schemaVersion: 1,
-          version: catalog.version,
-          target,
-          executable,
-          ...artifact,
-        },
-        null,
-        2,
-      ) + "\n",
-    );
-    if (fs.existsSync(destination)) fs.renameSync(destination, previous);
-    try {
-      fs.renameSync(staging, destination);
-    } catch (error) {
-      if (fs.existsSync(previous)) fs.renameSync(previous, destination);
-      throw error;
-    }
-    fs.rmSync(previous, { recursive: true, force: true });
-    console.log(`[bundled-tools] prepared ${target}: OCR ${catalog.version}`);
-  } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
-  }
-}
-
 const catalog = parseRuntimeCatalog(JSON.parse(fs.readFileSync(catalogPath, "utf8")));
 const herdrCatalog = parseHerdrRuntimeCatalog(JSON.parse(fs.readFileSync(herdrCatalogPath, "utf8")));
-const ocrCatalog = JSON.parse(fs.readFileSync(path.join(root, "build", "ocr", "runtime-catalog.json"), "utf8"));
 for (const target of parseBundledToolTargets(process.argv.slice(2))) {
-  await prepareOcrTarget(ocrCatalog, target);
   await prepareTarget(catalog, target);
   await prepareHerdrTarget(herdrCatalog, target);
 }

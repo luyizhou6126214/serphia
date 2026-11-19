@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
@@ -15,7 +13,6 @@ import { THINKING_LEVELS } from "../shared/thinking-levels";
 import { getAgentSessionSource } from "./session-source";
 import { WORKFLOW_TOOL_NAME, type SessionToolPolicy } from "./session-tool-policy";
 import { CODING_TOOL_NAMES } from "./tool-activation";
-import { presentationWorkflowContext, presentationWorkflowInstructions } from "./presentation-workflow-context";
 
 const concurrency = 4;
 const maxStages = 3;
@@ -156,17 +153,11 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
           parameters: planSchema,
           async execute(_callId, { stages }, signal, onUpdate, ctx) {
             const parent = getParent();
-            const presentation = presentationWorkflowContext(ctx.sessionManager);
-            if (
-              (!presentation && (!request || request.used)) ||
-              !parent ||
-              !signal ||
-              getAgentSessionSource(ctx.sessionManager) !== "local"
-            )
+            if (!request || request.used || !parent || !signal)
               throw new Error("Start a workflow with /run_workflow or /swarm.");
-            if (request?.command === "swarm" && (stages.length !== 1 || stages[0].tasks.length < 2))
+            if (request.command === "swarm" && (stages.length !== 1 || stages[0].tasks.length < 2))
               throw new Error("/swarm requires one stage with at least two parallel tasks.");
-            if (request) request.used = true;
+            request.used = true;
             const { runWorkflow } = await import("@quintinshaw/pi-dynamic-workflows");
             signal.throwIfAborted();
             const services = await createAgentSessionServices({
@@ -209,9 +200,7 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
                       parent,
                       ctx,
                       policy,
-                      presentation
-                        ? `${presentationWorkflowInstructions(presentation)}\n\nYou are a delegated page designer. Follow the delegated instructions and read the reference documents supplied by the coordinator. The coordinator owns gates, shared specs and final export. Perform only this assigned task:\n${prompt}`
-                        : prompt,
+                      prompt,
                       childSignal,
                       options?.thinking ?? parent.thinkingLevel,
                     );
@@ -279,35 +268,15 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
         });
       }
 
-      pi.on("before_agent_start", async (event, ctx) => {
-        let systemPrompt = event.systemPrompt;
-        const presentation = presentationWorkflowContext(ctx.sessionManager);
-        if (presentation && getAgentSessionSource(ctx.sessionManager) === "local") {
-          if (!policy.isEmpty() && !request) {
-            policy.setWorkflowRequested(true);
-            pi.setActiveTools([...new Set([...pi.getActiveTools(), WORKFLOW_TOOL_NAME])]);
-          }
-          const skillDir = process.env.PI_DESKTOP_PPT_MASTER_DIR;
-          if (!skillDir) throw new Error("The bundled PPT Master skill directory is unavailable.");
-          const skill = await readFile(path.join(skillDir, "SKILL.md"), "utf8");
-          systemPrompt += `\n\n${skill}\n\n${presentationWorkflowInstructions(presentation)}`;
-        }
-        if (!request || request.used) return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
+      pi.on("before_agent_start", (event) => {
+        if (!request || request.used) return;
         const plan =
           request.command === "swarm"
             ? "Use exactly one stage with two to four independent parallel tasks."
             : "Use up to three sequential stages. Separate dependent work into stages and parallelize only independent tasks.";
         return {
-          systemPrompt: `${systemPrompt}\n\nThe user explicitly requested /${request.command}. Call ${WORKFLOW_TOOL_NAME} once to run their task. ${plan} Give each subagent a concrete prompt and avoid overlapping writes. After the tool returns, synthesize its results and report any failures.`,
+          systemPrompt: `${event.systemPrompt}\n\nThe user explicitly requested /${request.command}. Call ${WORKFLOW_TOOL_NAME} once to run their task. ${plan} Give each subagent a concrete prompt and avoid overlapping writes. After the tool returns, synthesize its results and report any failures.`,
         };
-      });
-      // agent_end also fires before automatic provider retries. Keep the grant until
-      // the complete user turn settles, or the retried request loses its tools.
-      pi.on("agent_settled", (_event, ctx) => {
-        if (presentationWorkflowContext(ctx.sessionManager) && !request) {
-          policy.setWorkflowRequested(false);
-          pi.setActiveTools(pi.getActiveTools().filter((name) => name !== WORKFLOW_TOOL_NAME));
-        }
       });
     },
   };

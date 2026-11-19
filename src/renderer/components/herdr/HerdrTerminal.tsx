@@ -6,7 +6,7 @@ import { useI18n } from "@/i18n";
 import { call, subscribe } from "@/lib/api-client";
 import "@xterm/xterm/css/xterm.css";
 
-export function SuperAgentTerminal({
+export function HerdrTerminal({
   paneId,
   mode = "control",
   releaseOnClose = true,
@@ -121,13 +121,13 @@ export function SuperAgentTerminal({
   }, [paneId, mode, releaseOnClose]);
 
   return (
-    <div className="superagent-terminal">
+    <div className="hd-terminal">
       {error ? (
         <p role="alert">{error}</p>
       ) : (
         !ready && <p role="status">{language.startsWith("zh") ? "正在连接终端…" : "Connecting to terminal…"}</p>
       )}
-      <div className="superagent-terminal-screen" ref={element} />
+      <div className="hd-terminal-screen" ref={element} />
     </div>
   );
 }

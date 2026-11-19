@@ -4,8 +4,6 @@ import type { HostManager } from "../main/host-manager";
 import { appendMainLog } from "../main/logger";
 import { runMcpUiChecks } from "./mcp-ui-checks";
 import { runExecutionRecoveryChecks } from "./execution-recovery-checks";
-import { runSuperAgentSmoke } from "./superagent-checks";
-import { runSuperAgentTaskSmoke } from "./superagent-task-checks";
 
 export async function runSmokeHostChecks(
   manager: HostManager,
@@ -111,16 +109,6 @@ export async function runSmokeHostChecks(
     if (acknowledgedRevision < 0) throw new Error("Agent Host did not acknowledge its toolchain snapshot");
     if (process.platform === "win32" && !manager.getManagedProcessOwnerState().ready)
       throw new Error("Agent Host did not acknowledge its Windows process owner identity");
-    if (process.env.PI_DESKTOP_SUPERAGENT_TASKS_SMOKE === "1" || process.env.PI_DESKTOP_SUPERAGENT_SMOKE === "1") {
-      const window = createWindow(() => undefined);
-      try {
-        if (process.env.PI_DESKTOP_SUPERAGENT_TASKS_SMOKE === "1") await runSuperAgentTaskSmoke(call, window);
-        else await runSuperAgentSmoke(call, window);
-      } finally {
-        if (!window.isDestroyed()) window.destroy();
-      }
-      return;
-    }
     const runtime = await call<{
       openaiOAuthLoaded?: boolean;
       mcpLoaded?: boolean;

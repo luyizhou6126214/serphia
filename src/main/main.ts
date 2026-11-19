@@ -45,12 +45,7 @@ import { runPackagedCleanupFaultValidation } from "./packaged-cleanup-fault-vali
 import { HerdrRuntimeManager } from "./herdr/runtime-manager";
 import { resolveBundledHerdrRoot, resolveHerdrCatalogPath } from "./herdr/catalog";
 import { isHerdrSettings } from "../contract/herdr";
-import { resolveOcrRuntime } from "./ocr-runtime";
-import {
-  discoverHerdrAgentClis,
-  discoverSuperAgentCliPaths,
-  type HerdrAgentCliDiscoverySnapshot,
-} from "./herdr/agent-cli-discovery";
+import { discoverHerdrAgentClis, type HerdrAgentCliDiscoverySnapshot } from "./herdr/agent-cli-discovery";
 
 handleClosedStdioPipes();
 
@@ -84,8 +79,6 @@ let toolchainManager: ToolchainManager | null = null;
 let browserService: BrowserService | null = null;
 let managedProcessReaper: ManagedProcessReaper | null = null;
 let windowsManagedProcessHelper: WindowsManagedProcessHelperResolution | null = null;
-let retryWindowsContainment = false;
-let containmentRecovery: Promise<void> | undefined;
 let herdrRuntimeManager: HerdrRuntimeManager | null = null;
 let herdrAgentCliDiscovery: HerdrAgentCliDiscoverySnapshot | null = null;
 let isQuitting = false;
@@ -129,21 +122,9 @@ async function initializeProcessContainment(): Promise<void> {
   });
   const status = await reaper.initialize();
   managedProcessReaper = reaper;
-  retryWindowsContainment =
-    process.platform === "win32" && process.arch === "x64" && !windowsHelper && status.errorCode === "REAP_FAILED";
   appendMainLog(
     `managed process reaper ready=${status.ready} records=${status.records} revision=${status.revision}${status.errorCode ? ` error=${status.errorCode}` : ""}`,
   );
-}
-
-function recoverWindowsContainment(): Promise<void> | undefined {
-  if (!retryWindowsContainment || isQuitting) return;
-  // This path is only available when startup could not install a reaper backend,
-  // so no Windows job could have been registered against the old instance.
-  containmentRecovery ??= initializeProcessContainment().finally(() => {
-    containmentRecovery = undefined;
-  });
-  return containmentRecovery;
 }
 
 async function refreshHerdrAgentCliDiscovery(): Promise<void> {
@@ -207,7 +188,6 @@ async function cleanupManagedProcesses(deadline: number, requireConfirmedEmpty: 
 
 let startupPiRuntimeProbe: PiRuntimeProbeResult | undefined;
 let startupPiRuntimeProbeStarted = false;
-let startupOcrVersion: string | undefined;
 
 function finishPackagedStartupValidation(error?: string): void {
   if (!packagedStartupValidation || startupCheckFinished) return;
@@ -228,7 +208,7 @@ function finishPackagedStartupValidation(error?: string): void {
         startupPiRuntimeProbeStarted = true;
         void hostManager
           .call<PiRuntimeProbeResult>("host.runtimeProbe")
-          .then(async (probe) => {
+          .then((probe) => {
             if (
               probe.piVersion !== expectedPiVersion ||
               !probe.openaiOAuthLoaded ||
@@ -239,7 +219,6 @@ function finishPackagedStartupValidation(error?: string): void {
             ) {
               throw new Error("Packaged Pi lazy runtime modules did not load");
             }
-            startupOcrVersion = (await resolveOcrRuntime(process.resourcesPath)).version;
             startupPiRuntimeProbe = probe;
             finishPackagedStartupValidation();
           })
@@ -261,7 +240,6 @@ function finishPackagedStartupValidation(error?: string): void {
           appVersion: app.getVersion(),
           piVersion: hostManager?.getPiVersion(),
           runtimeModules: startupPiRuntimeProbe,
-          ocrVersion: startupOcrVersion,
           platformArch: `${process.platform}-${process.arch}`,
           revision: startupToolchainSnapshot?.revision,
           rendererReady: startupRendererReady,
@@ -781,10 +759,6 @@ function startMainProcess(): void {
     app.on("before-quit", () => desktopWindowPrototype?.stop());
     hostManager.setRequestHandler(async (method, params) => {
       if (method === "desktopWindow" && desktopWindowPrototype) return desktopWindowPrototype.handle(params);
-      if (method === "superagent.discoverClis") return discoverSuperAgentCliPaths({ homeDir: os.homedir() });
-      if (method === "ocr.runtime") {
-        return resolveOcrRuntime(app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), "build"));
-      }
       if (method.startsWith("channelSecrets.")) return credentialRequestHandler(method, params);
       if (method === "toolchain.getSnapshot") return toolchainManager!.getSnapshot();
       if (method === "toolchain.resolve") {
@@ -802,9 +776,6 @@ function startMainProcess(): void {
         return toolchainManager!.resolveForProject(body.cwd, { intent: body.intent, trusted: body.trusted });
       }
       if (method === "managedProcesses.getSettings") {
-        if ((params as { retryWindowsContainment?: unknown } | undefined)?.retryWindowsContainment === true) {
-          await recoverWindowsContainment();
-        }
         const status = managedProcessReaper?.status();
         const capability = getManagedProcessCapability();
         return {
@@ -813,9 +784,6 @@ function startMainProcess(): void {
           capability,
           containmentCapability: projectProcessContainmentCapability(getProcessCapabilityInput()),
           ...(windowsManagedProcessHelper?.ok ? { windowsHelper: windowsManagedProcessHelper.descriptor } : {}),
-          windowsHelperError:
-            windowsManagedProcessHelper?.ok === false ? windowsManagedProcessHelper.errorCode : undefined,
-          reaperError: status?.errorCode,
         };
       }
       if (method === "herdr.configure") {
