@@ -328,9 +328,10 @@ test("toolchain reload replaces future executions while the running PowerShell k
     createExecutionContext: async () => next,
     requireFromContext: (_capability, ctx) => ctx.commands["shell.powershell"],
   };
+  const entries = [];
   const tools = await createDesktopSessionTools(
     root,
-    { getSessionId: () => "fixture" },
+    { getSessionId: () => "fixture", getEntries: () => entries },
     { isProjectTrusted: () => false, getShellCommandPrefix: () => undefined },
     { tool: () => ({ name: "history", execute: async () => ({ content: [] }) }) },
     { runtime, platform: "win32" },
@@ -348,8 +349,13 @@ test("toolchain reload replaces future executions while the running PowerShell k
   next = { ...context, inventoryRevision: 2, nativeEnv: { ...context.nativeEnv, SAFE: "new" } };
   await wrapper.refreshToolchain();
   const second = await powershell.execute("two", { command: "two" });
-  assert.equal(JSON.parse((await first).structuredContent.output).env.SAFE, "kept");
+  const originalEnv = JSON.parse((await first).structuredContent.output).env;
+  assert.equal(originalEnv.SAFE, "kept");
+  assert.equal(originalEnv.SERPHIA_PPT_STUDIO, undefined);
   assert.equal(JSON.parse(second.structuredContent.output).env.SAFE, "new");
+  entries.push({ type: "custom", customType: "serphia-presentation-workflow", data: { cwd: root, directory: root } });
+  const studio = await powershell.execute("studio", { command: "studio" });
+  assert.equal(JSON.parse(studio.structuredContent.output).env.SERPHIA_PPT_STUDIO, "1");
   assert.equal(check("powershell"), true);
   next = { ...next, commands: {} };
   await wrapper.refreshToolchain();

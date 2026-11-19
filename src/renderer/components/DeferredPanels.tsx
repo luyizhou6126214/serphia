@@ -29,6 +29,8 @@ export function scheduleSettingsConfigPreload(): () => void {
   return () => window.cancelIdleCallback(handle);
 }
 
+const LazyHerdrPanel = lazy(() => import("./herdr/HerdrPanel"));
+
 const LazySettingsConfig = lazy(preloadSettingsConfig);
 const LazyTerminalPanel = lazy(() =>
   import("./terminal/TerminalPanel").then((module) => ({ default: module.TerminalPanel })),
@@ -146,6 +148,14 @@ export function SuperAgentPage(props: ComponentProps<typeof LazySuperAgentPage>)
   return (
     <Suspense fallback={<PanelLoading />}>
       <LazySuperAgentPage {...props} />
+    </Suspense>
+  );
+}
+
+export function HerdrPanel(props: ComponentProps<typeof LazyHerdrPanel>) {
+  return (
+    <Suspense fallback={<PanelLoading />}>
+      <LazyHerdrPanel {...props} />
     </Suspense>
   );
 }

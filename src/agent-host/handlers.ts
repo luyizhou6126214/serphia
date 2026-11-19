@@ -175,6 +175,7 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
   server.handle({
     "presentations.prepare": guard(presentationWorkflows.prepare),
     "presentations.workflow": guard(presentationWorkflows.workflow),
+    "presentations.saveFile": guard(presentationWorkflows.saveFile),
     "presentations.artifacts": guard(presentationWorkflows.artifacts),
     "presentations.outline": guard(presentations.outline),
     "presentations.page": guard(presentations.page),
@@ -247,7 +248,10 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     "herdr.pane.split": guard(herdrHandlers.paneSplit),
 
     "herdr.pane.read": guard(herdrHandlers.paneRead),
+    "herdr.pane.conversation": guard(herdrHandlers.conversation),
     "herdr.tab.focus": guard(herdrHandlers.tabFocus),
+    "herdr.tab.rename": guard(herdrHandlers.tabRename),
+    "herdr.tab.create": guard(herdrHandlers.tabCreate),
     "herdr.tab.close": guard(herdrHandlers.tabClose),
     "herdr.pane.focus": guard(herdrHandlers.paneFocus),
     "herdr.pane.close": guard(herdrHandlers.paneClose),
@@ -255,6 +259,7 @@ export function registerHandlers(server: RpcServer): () => Promise<void> {
     "herdr.agent.start": guard(herdrHandlers.agentStart),
 
     "herdr.agent.prompt": guard(herdrHandlers.agentPrompt),
+    "herdr.pane.chat": guard(herdrHandlers.paneChat),
 
     "herdr.agent.sendKeys": guard(herdrHandlers.agentSendKeys),
 

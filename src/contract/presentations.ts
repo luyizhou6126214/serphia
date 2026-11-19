@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 
+export const PRESENTATION_WORKFLOW_SKILL = "ppt-master";
 export const SLIDE_WIDTH = 1280;
 export const SLIDE_HEIGHT = 720;
 export const MAX_SLIDES = 40;
@@ -156,9 +157,10 @@ export type PresentationWorkflow = {
   sessionId: string;
   cwd: string;
   directory: string;
-  prompt: string;
 };
+export type PresentationFile = { name: string; path: string; updatedAt: number };
 export type PresentationArtifactSnapshot = {
-  pages: { name: string; path: string; revision: string; image: string; updatedAt: number }[];
-  exports: { name: string; path: string; updatedAt: number }[];
+  exports: PresentationFile[];
+  confirmationPort?: number;
+  designConfirmed?: boolean;
 };

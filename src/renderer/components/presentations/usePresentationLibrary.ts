@@ -4,7 +4,7 @@ import { createPresentationSaveQueue, type SaveStatus } from "./presentation-sav
 
 type OpenDeck = {
   deck: Presentation;
-  queue: ReturnType<typeof createPresentationSaveQueue>;
+  queue: ReturnType<typeof createPresentationSaveQueue<Presentation, number>>;
   undo: Presentation[];
   redo: Presentation[];
 };

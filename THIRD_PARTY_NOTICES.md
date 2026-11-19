@@ -5,6 +5,12 @@ identify the upstream terms that apply to each component; Pi Agent Desktop does 
 A reference-only entry records project lineage and does not mean that the referenced project is bundled with the
 application.
 
+## Presentation workspace
+
+PPT Master 6.9.0, copyright © 2025–2026 Hugo He, is distributed with its original MIT license, attribution files, scripts and templates. Serphia adapts the three interactive server launchers to keep Studio workflows inside the app. [Upstream revision](https://github.com/hugohe3/ppt-master/tree/7e0df6705de0cd24345210d31f07fcb5a32b6900/skills/ppt-master)
+
+The editable PowerPoint canvas uses @diceui/pptx 0.6.0 and @diceui/pptx-core 0.5.0 under the Apache-2.0 license. [Source and notices](https://github.com/sadmann7/pptx)
+
 ## Application and runtime components
 
 | Component                              | Version          | Use in Pi Agent Desktop                              | License                                                                                                                          | Attribution / source                                                                                                      |

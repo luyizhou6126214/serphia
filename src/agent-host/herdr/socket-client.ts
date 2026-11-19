@@ -3,7 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type { HerdrV20Method, JsonRecord } from "./protocol-v20";
 import { isRecord } from "./protocol-v20";
-import { HerdrBridgeError } from "./errors";
+import { HerdrBridgeError, HerdrPromptNotReadyError } from "./errors";
 
 const MAX_LINE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -34,6 +34,7 @@ function upstreamError(code: string, message: string): HerdrBridgeError {
   if (code === "timeout" || code === "agent_prompt_stalled") {
     return new HerdrBridgeError("HERDR_REQUEST_TIMEOUT", "The Herdr request timed out.", true);
   }
+  if (code === "agent_not_ready") return new HerdrPromptNotReadyError();
   if (code === "agent_not_running" || code === "agent_not_found" || code === "agent_explain_unavailable") {
     return new HerdrBridgeError("HERDR_AGENT_NOT_READY", "The Herdr agent is not ready.", false);
   }

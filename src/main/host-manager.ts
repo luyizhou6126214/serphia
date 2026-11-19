@@ -254,6 +254,10 @@ export class HostManager {
     if (this.desktopWindowAvailable) env[DESKTOP_WINDOW_AVAILABLE_ENV] = "1";
     else delete env[DESKTOP_WINDOW_AVAILABLE_ENV];
     env.PI_AGENT_HOST = "1";
+    env.PI_DESKTOP_PPT_MASTER_DIR = path.join(
+      app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), "build"),
+      "ppt-master",
+    );
     env.PI_DESKTOP_USER_DATA = app.getPath("userData");
     env.PI_DESKTOP_DOCUMENTS = app.getPath("documents");
     env.PI_DESKTOP_VERSION = app.getVersion();

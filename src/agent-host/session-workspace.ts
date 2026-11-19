@@ -103,6 +103,9 @@ export function sessionWorkspaceOptions(cwd: string, agentDir: string, extension
     ...(!cwd ? { settingsManager: createGlobalSessionSettings(agentDir) } : {}),
     resourceLoaderOptions: {
       ...(!cwd ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noContextFiles: true } : {}),
+      ...(cwd && process.env.PI_DESKTOP_PPT_MASTER_DIR
+        ? { additionalSkillPaths: [process.env.PI_DESKTOP_PPT_MASTER_DIR] }
+        : {}),
       extensionFactories,
     },
   };

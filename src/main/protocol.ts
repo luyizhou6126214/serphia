@@ -19,7 +19,7 @@ const CSP =
   "media-src 'self' app: blob: data:; " +
   "connect-src 'self' app:; " +
   "worker-src 'self' app: blob:; " +
-  "frame-src 'self' app: blob:; " +
+  "frame-src 'self' app: blob: http://127.0.0.1:*; " +
   "object-src 'none'; " +
   "base-uri 'none'; " +
   "frame-ancestors 'none'";

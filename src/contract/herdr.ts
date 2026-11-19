@@ -135,6 +135,7 @@ export type HerdrErrorCode =
   | "HERDR_AGENT_KIND_UNSUPPORTED"
   | "HERDR_AGENT_BLOCKED"
   | "HERDR_AGENT_NOT_READY"
+  | "HERDR_AGENT_INPUT_REQUIRES_PASTE"
   | "HERDR_AGENT_BINARY_MISSING"
   | "HERDR_PANE_NOT_FOUND"
   | "HERDR_SESSION_NOT_FOUND"
@@ -246,6 +247,7 @@ export interface HerdrTab {
 }
 
 export interface HerdrPane {
+  rect?: { x: number; y: number; width: number; height: number };
   id: string;
   terminalId: string;
   workspaceId: string;
@@ -267,6 +269,21 @@ export interface HerdrAgent {
   launchPending?: boolean;
   interactiveReady?: boolean;
   stateChangeSeq?: number;
+}
+
+export interface HerdrConversationMessage {
+  source?: "pane";
+  role: "user" | "assistant" | "tool" | "toolResult" | "thinking" | "error";
+  text: string;
+  toolCallId?: string;
+  isError?: boolean;
+  timestamp?: number;
+}
+
+export interface HerdrConversation {
+  messages: HerdrConversationMessage[];
+  truncated: boolean;
+  needsChoice?: boolean;
 }
 
 export interface HerdrAgentExplanation {

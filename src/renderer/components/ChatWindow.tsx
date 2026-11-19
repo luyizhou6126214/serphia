@@ -34,7 +34,7 @@ import { SessionViewTabs, type SessionView } from "./SessionViewTabs";
 import { ChatWidthHandles } from "./ChatWidthHandles";
 import { ContextView } from "./context/ContextView";
 import { TrajectoryView } from "./trajectory/TrajectoryView";
-import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
+import { useAgentSession, type UseAgentSessionOptions, type NoticeItem } from "@/hooks/useAgentSession";
 import { useMcpSettingsCommand } from "@/hooks/useMcpSettingsRequests";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -70,8 +70,9 @@ interface Props {
   thinkingExpansionStore: ThinkingExpansionStore;
   processDetailsExpansionStore: ThinkingExpansionStore;
   workStepDisplay: WorkStepDisplay;
-  /** Start a prepared workflow through the same subscribed send path as the composer. */
-  initialPrompt?: string;
+  showSessionViewTabs?: boolean;
+  createSession?: UseAgentSessionOptions["createSession"];
+  newDraftKey?: string;
 }
 
 function toMinimapMessage(message: AgentMessage | Partial<AgentMessage>): ChatMinimapMessage | null {
@@ -175,7 +176,9 @@ export function ChatWindow({
   thinkingExpansionStore,
   processDetailsExpansionStore,
   workStepDisplay,
-  initialPrompt,
+  showSessionViewTabs = true,
+  createSession,
+  newDraftKey,
 }: Props) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
@@ -187,7 +190,7 @@ export function ChatWindow({
   }, [session?.id]);
   // Promotion keeps this view mounted; selecting another session remounts it.
   const [draftPromotionFrom] = useState(() =>
-    !session && newSessionCwd !== null ? `new:${newSessionCwd}` : undefined,
+    !session && newSessionCwd !== null ? (newDraftKey ?? `new:${newSessionCwd}`) : undefined,
   );
   const messageRenderKeys = useRef(new MessageRenderKeyRegistry()).current;
   const assistantRenderParts = useRef(new WeakMap<AssistantMessage, AssistantRenderParts>()).current;
@@ -258,6 +261,7 @@ export function ChatWindow({
     loadOlder,
     loadDeferredContent,
   } = useAgentSession({
+    createSession,
     session,
     newSessionCwd,
     onAgentEnd,
@@ -270,15 +274,6 @@ export function ChatWindow({
     presentationStore,
     onSessionStatsPanelOpen,
   });
-  const startedPrompt = useRef<string | null>(null);
-  useEffect(() => {
-    if (!session || !initialPrompt || loading || error || startedPrompt.current === session.id) return;
-    startedPrompt.current = session.id;
-    void handleSend(initialPrompt).catch(() => {
-      // handleSend displays the normal failure notice; retain the brief for retry.
-      chatInputRef?.current?.insertIfEmpty(initialPrompt);
-    });
-  }, [session, initialPrompt, loading, error, handleSend, chatInputRef]);
   useMcpSettingsCommand(currentSessionId);
   const runningToolCallIds = useMemo(
     () => new Set(agentPhase?.kind === "running_tools" ? agentPhase.tools.map((tool) => tool.id) : []),
@@ -335,7 +330,7 @@ export function ChatWindow({
   }, [hasOlder, loadOlder, loadingOlder, messages.length, scrollContainerRef]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
-  const showSessionViews = !isEmptyNew && messages.length > 0;
+  const showSessionViews = showSessionViewTabs && !isEmptyNew && messages.length > 0;
   const activeSessionView: SessionView = showSessionViews ? sessionView : "chat";
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   const turnFooters = useTurnChangeFooters(messages, messageCwd, workspace?.homeDir, onOpenFile);
@@ -415,7 +410,7 @@ export function ChatWindow({
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
       onBuiltinCommand={handleBuiltinSlashCommand}
-      draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
+      draftKey={session?.id ?? newDraftKey ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}
       cwd={session?.cwd ?? newSessionCwd}
       sessionStats={sessionStats}
@@ -551,9 +546,9 @@ export function ChatWindow({
       ) : (
         <>
           <div
-            id="session-view-chat"
+            id={showSessionViews ? "session-view-chat" : undefined}
             className="chat-conversation-enter relative z-[1] flex min-h-0 flex-[1_1_0] overflow-hidden"
-            role="tabpanel"
+            role={showSessionViews ? "tabpanel" : "region"}
             aria-label={t("sessionViewChat", "Chat")}
             aria-hidden={activeSessionView !== "chat" || undefined}
             inert={activeSessionView !== "chat" || undefined}

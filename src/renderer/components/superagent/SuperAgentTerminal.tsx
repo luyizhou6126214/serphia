@@ -6,7 +6,15 @@ import { useI18n } from "@/i18n";
 import { call, subscribe } from "@/lib/api-client";
 import "@xterm/xterm/css/xterm.css";
 
-export function SuperAgentTerminal({ paneId }: { paneId: string }) {
+export function SuperAgentTerminal({
+  paneId,
+  mode = "control",
+  releaseOnClose = true,
+}: {
+  paneId: string;
+  mode?: "observe" | "control";
+  releaseOnClose?: boolean;
+}) {
   const { language } = useI18n();
   const element = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string>();
@@ -24,7 +32,8 @@ export function SuperAgentTerminal({ paneId }: { paneId: string }) {
     let pendingBytes = 0;
     const colors = getComputedStyle(host);
     const terminal = new Terminal({
-      cursorBlink: true,
+      cursorBlink: mode === "control",
+      disableStdin: mode === "observe",
       scrollback: 3_000,
       fontSize: 13,
       minimumContrastRatio: 4.5,
@@ -83,9 +92,12 @@ export function SuperAgentTerminal({ paneId }: { paneId: string }) {
         offStatus();
         return;
       }
-      const opened = await call("herdr.terminal.open", { paneId, mode: "control", ...dimensions() });
+      const opened = await call("herdr.terminal.open", { paneId, mode, ...dimensions() });
       if (disposed) {
-        await call("herdr.terminal.close", { terminalId: opened.terminalId, release: true });
+        await call("herdr.terminal.close", {
+          terminalId: opened.terminalId,
+          release: mode === "control" && releaseOnClose,
+        });
         return;
       }
       terminalId = opened.terminalId;
@@ -101,9 +113,12 @@ export function SuperAgentTerminal({ paneId }: { paneId: string }) {
       offFrame?.();
       offStatus?.();
       terminal.dispose();
-      if (terminalId) void call("herdr.terminal.close", { terminalId, release: true }).catch(() => undefined);
+      if (terminalId)
+        void call("herdr.terminal.close", { terminalId, release: mode === "control" && releaseOnClose }).catch(
+          () => undefined,
+        );
     };
-  }, [paneId]);
+  }, [paneId, mode, releaseOnClose]);
 
   return (
     <div className="superagent-terminal">

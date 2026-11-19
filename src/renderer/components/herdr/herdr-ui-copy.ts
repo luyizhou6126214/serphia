@@ -33,6 +33,13 @@ export function herdrErrorLabel(error: unknown, t: Translate): string {
   if (code === "HERDR_REQUEST_CANCELLED") return t("herdrErrorCancelled", "The Herdr operation was cancelled.");
   if (code === "HERDR_CONFIRMATION_REQUIRED")
     return t("herdrErrorConfirmationRequired", "This Herdr operation requires an interactive local confirmation.");
+  if (code === "HERDR_AGENT_NOT_READY")
+    return t("hdAgentNotReady", "The agent is not ready for input yet. Your draft is available to retry.");
+  if (code === "HERDR_AGENT_INPUT_REQUIRES_PASTE")
+    return t(
+      "hdPasteInTerminal",
+      "pi is still starting. Paste this draft in the terminal to preserve its special whitespace.",
+    );
   if (code === "HERDR_AGENT_BLOCKED")
     return t("herdrErrorAgentBlocked", "The Agent needs attention before it can continue.");
   if (code === "HERDR_CONTROLLER_LOST")

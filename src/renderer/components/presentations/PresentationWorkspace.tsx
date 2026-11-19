@@ -12,7 +12,6 @@ import {
   Plus,
   Presentation as PresentationIcon,
   Redo2,
-  Sparkles,
   Square,
   Trash2,
   Type,
@@ -32,7 +31,6 @@ import {
 } from "@contract/presentations";
 import { useI18n } from "@/i18n";
 import { SlideCanvas } from "./SlideCanvas";
-import { PresentationAgentPanel } from "./PresentationAgentPanel";
 import { PresentationInspector } from "./PresentationInspector";
 import {
   copySlide,
@@ -43,9 +41,7 @@ import {
   updateElement,
   type SlideLayout,
 } from "./presentation-editor";
-import { usePresentationAgent } from "./usePresentationAgent";
 import { usePresentationLibrary } from "./usePresentationLibrary";
-import { PresentationLiveCanvas } from "./PresentationLiveCanvas";
 import { PresentationSkillWorkspace } from "./PresentationSkillWorkspace";
 import "./PresentationWorkspace.css";
 
@@ -129,23 +125,18 @@ function slideImageSize(slide: Slide): number {
 function NativePresentationWorkspace({
   cwd,
   hidden,
-  openModels,
   openSkill,
 }: {
   cwd: string | null;
   hidden: boolean;
-  openModels: () => void;
   openSkill: () => void;
 }) {
   const { t } = useI18n();
   const library = usePresentationLibrary(cwd);
-  const agent = usePresentationAgent();
   const { deck } = library;
   const [slideSelection, setSlideSelection] = useState<{ deckId: string; slideId: string } | null>(null);
   const [elementId, setElementId] = useState<string | null>(null);
   const [layout, setLayout] = useState<SlideLayout>("blank");
-  const [panel, setPanel] = useState<"properties" | "agent">("properties");
-  const [draftIndex, setDraftIndex] = useState<number | null>(null);
   const [preview, setPreview] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState("");
@@ -153,15 +144,12 @@ function NativePresentationWorkspace({
   const [panelClosed, setPanelClosed] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const imageTarget = useRef<{ deckId: string; slideId: string } | null>(null);
-  const isDraft = draftIndex !== null;
-  const editing = !isDraft && !library.busy;
-  const showAgent = !deck || isDraft || panel === "agent";
+  const editing = !library.busy;
   const activeSlide =
     deck?.slides.find(({ id }) => slideSelection?.deckId === deck.id && slideSelection.slideId === id) ??
     deck?.slides[0];
-  const canvasSlide = isDraft ? agent.slides[draftIndex] : activeSlide;
-  const visibleSlides = isDraft ? agent.slides : (deck?.slides ?? []);
-  const activeIndex = canvasSlide ? visibleSlides.findIndex(({ id }) => id === canvasSlide.id) : -1;
+  const visibleSlides = deck?.slides ?? [];
+  const activeIndex = activeSlide ? visibleSlides.findIndex(({ id }) => id === activeSlide.id) : -1;
   const activeElement = activeSlide?.elements.find(({ id }) => id === elementId);
   const canInsert = editing && !!activeSlide && activeSlide.elements.length < MAX_ELEMENTS;
   const layouts = [
@@ -188,9 +176,7 @@ function NativePresentationWorkspace({
   function createBlank() {
     setError("");
     setExported("");
-    setDraftIndex(null);
     setElementId(null);
-    setPanel("properties");
     void library.create(createDeck(untitled, [createSlide("blank", t("pptBlank", "Blank"), "")]));
   }
 
@@ -232,7 +218,6 @@ function NativePresentationWorkspace({
     const element = createElement(kind, label);
     patchSlide((slide) => ({ ...slide, elements: [...slide.elements, element] }));
     setElementId(element.id);
-    setPanel("properties");
   }
 
   async function insertImage(event: ChangeEvent<HTMLInputElement>) {
@@ -257,7 +242,6 @@ function NativePresentationWorkspace({
         };
       });
       setElementId(image.id);
-      setPanel("properties");
     } catch (error) {
       setError(
         error instanceof Error && error.message
@@ -278,35 +262,6 @@ function NativePresentationWorkspace({
     if (!activeElement) return;
     patchSlide((slide) => ({ ...slide, elements: slide.elements.filter(({ id }) => id !== activeElement.id) }));
     setElementId(null);
-  }
-
-  function startPages() {
-    setDraftIndex(
-      Math.max(
-        0,
-        agent.pageStates.findIndex((state) => state !== "complete"),
-      ),
-    );
-    void agent.generatePages();
-  }
-
-  async function acceptDraft(append: boolean) {
-    if (agent.phase !== "idle" || !agent.outline || !agent.completedCount) return;
-    setError("");
-    setExported("");
-    const slides = agent.slides.filter((_, index) => agent.pageStates[index] === "complete");
-    if (append && deck) {
-      if (deck.slides.length + slides.length > MAX_SLIDES) {
-        setError(t("pptDraftLimit", "The draft exceeds the remaining slide capacity. Save it as a new deck."));
-        return;
-      }
-      library.change((current) => ({ ...current, slides: [...current.slides, ...slides] }));
-      selectSlide(slides[0].id);
-    } else if (!(await library.create(createDeck(agent.outline.title.trim(), slides)))) return;
-    agent.reset(true);
-    setDraftIndex(null);
-    setElementId(null);
-    setPanel("properties");
   }
 
   async function exportDeck() {
@@ -336,14 +291,9 @@ function NativePresentationWorkspace({
   return (
     <section className="ppt-workspace" hidden={hidden} aria-label={t("pptTitle", "PPT Studio")} onKeyDown={keyboard}>
       <header className="ppt-header">
-        <div className="ppt-workspace-name">
+        <div className="ppt-workspace-name" title={cwd ?? undefined}>
           <PresentationIcon aria-hidden="true" />
-          <div>
-            <h1>{t("pptTitle", "PPT Studio")}</h1>
-            <span title={cwd ?? undefined}>
-              {cwd ? t("pptProject", "Project decks") : t("pptLocal", "Local decks")}
-            </span>
-          </div>
+          <h1>{t("pptTitle", "PPT Studio")}</h1>
         </div>
         <div className="ppt-controls ppt-deck-controls">
           {library.summaries.length > 0 && (
@@ -352,7 +302,6 @@ function NativePresentationWorkspace({
               aria-label={t("pptProject", "Project decks")}
               disabled={library.busy}
               onChange={(event) => {
-                setDraftIndex(null);
                 setElementId(null);
                 setExported("");
                 void library.selectDeck(event.currentTarget.value);
@@ -376,8 +325,8 @@ function NativePresentationWorkspace({
           </button>
         </div>
         <div className="ppt-controls ppt-header-actions">
-          <button className="ppt-button" type="button" disabled={agent.phase !== "idle"} onClick={openSkill}>
-            {t("pptSkillWorkflow", "Skill workflow")}
+          <button className="ppt-button" type="button" onClick={openSkill}>
+            {t("pptSkillWorkflow", "Presentation workspace")}
           </button>
           <button
             className="ppt-icon"
@@ -408,7 +357,7 @@ function NativePresentationWorkspace({
                 type="button"
                 className="ppt-button is-primary"
                 onClick={() => void exportDeck()}
-                disabled={exporting || library.busy || isDraft}
+                disabled={exporting || library.busy}
               >
                 <Download />
                 {exporting ? t("pptExporting", "Exporting…") : t("pptExport", "Export PPTX")}
@@ -468,11 +417,11 @@ function NativePresentationWorkspace({
           )}
         </div>
       )}
-      <div className={`ppt-editor${!deck && !isDraft ? " is-empty" : ""}${panelClosed ? " panel-closed" : ""}`}>
-        {(deck || isDraft) && (
+      <div className={`ppt-editor${!deck ? " is-empty" : ""}${panelClosed || !deck ? " panel-closed" : ""}`}>
+        {deck && (
           <nav className="ppt-slide-list" aria-label={t("pptSlides", "Slides")}>
             <div className="ppt-column-heading">
-              <h2>{isDraft ? t("pptDraft", "Agent draft") : t("pptSlides", "Slides")}</h2>
+              <h2>{t("pptSlides", "Slides")}</h2>
               <span>{visibleSlides.length}</span>
             </div>
             <ol className="ppt-thumbnails">
@@ -481,25 +430,14 @@ function NativePresentationWorkspace({
                   <button
                     type="button"
                     className="ppt-thumbnail"
-                    aria-current={slide.id === canvasSlide?.id ? "page" : undefined}
-                    onClick={() => (isDraft ? setDraftIndex(index) : selectSlide(slide.id))}
+                    aria-current={slide.id === activeSlide?.id ? "page" : undefined}
+                    onClick={() => selectSlide(slide.id)}
                   >
                     <div className="ppt-thumb-canvas" aria-hidden="true">
                       <SlideCanvas slide={slide} />
                     </div>
                     <span>{String(index + 1).padStart(2, "0")}</span>
                     <span>{slide.title}</span>
-                    {isDraft && (
-                      <span className={`ppt-thumb-status is-${agent.pageStates[index]}`}>
-                        {agent.pageStates[index] === "complete"
-                          ? t("pptDone", "Complete")
-                          : agent.pageStates[index] === "running"
-                            ? t("pptLiveRender", "Live rendering")
-                            : agent.pageStates[index] === "error"
-                              ? t("pptFailed", "Failed")
-                              : t("pptQueued", "Queued")}
-                      </span>
-                    )}
                   </button>
                 </li>
               ))}
@@ -546,194 +484,152 @@ function NativePresentationWorkspace({
           </nav>
         )}
         <main className="ppt-center">
-          {canvasSlide || isDraft ? (
+          {activeSlide ? (
             <>
               <div className="ppt-toolbar">
-                {isDraft ? (
-                  <div className="ppt-controls">
-                    <button type="button" className="ppt-button" onClick={() => setDraftIndex(null)}>
-                      <ArrowLeft />
-                      {t("pptBackToDeck", "Back to deck")}
-                    </button>
+                <div className="ppt-controls ppt-slide-history">
+                  <button
+                    className="ppt-icon"
+                    type="button"
+                    disabled={!library.canUndo || !editing}
+                    title={t("pptUndo", "Undo")}
+                    aria-label={t("pptUndo", "Undo")}
+                    onClick={library.undo}
+                  >
+                    <Undo2 />
+                  </button>
+                  <button
+                    className="ppt-icon"
+                    type="button"
+                    disabled={!library.canRedo || !editing}
+                    title={t("pptRedo", "Redo")}
+                    aria-label={t("pptRedo", "Redo")}
+                    onClick={library.redo}
+                  >
+                    <Redo2 />
+                  </button>
+                </div>
+                <div className="ppt-controls">
+                  {(
+                    [
+                      ["text", t("pptInsertText", "Text"), Type],
+                      ["rect", t("pptInsertRect", "Rectangle"), Square],
+                      ["ellipse", t("pptInsertEllipse", "Ellipse"), Circle],
+                      ["chart", t("pptInsertChart", "Bar chart"), ChartNoAxesColumn],
+                    ] as const
+                  ).map(([kind, label, Icon]) => (
                     <button
+                      key={kind}
+                      className="ppt-icon"
                       type="button"
-                      className="ppt-button is-primary"
-                      onClick={() => void acceptDraft(false)}
-                      disabled={!agent.completedCount || agent.phase !== "idle" || library.busy}
+                      disabled={!canInsert}
+                      title={label}
+                      aria-label={label}
+                      onClick={() => addElement(kind, label)}
                     >
-                      {t("pptSaveDraft", "Save as new deck")}
+                      <Icon />
                     </button>
-                    {deck && (
-                      <button
-                        type="button"
-                        className="ppt-button"
-                        onClick={() => void acceptDraft(true)}
-                        disabled={!agent.completedCount || agent.phase !== "idle" || library.busy}
-                      >
-                        {t("pptAppendDraft", "Append to deck")}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="ppt-controls ppt-slide-history">
-                      <button
-                        className="ppt-icon"
-                        type="button"
-                        disabled={!library.canUndo || !editing}
-                        title={t("pptUndo", "Undo")}
-                        aria-label={t("pptUndo", "Undo")}
-                        onClick={library.undo}
-                      >
-                        <Undo2 />
-                      </button>
-                      <button
-                        className="ppt-icon"
-                        type="button"
-                        disabled={!library.canRedo || !editing}
-                        title={t("pptRedo", "Redo")}
-                        aria-label={t("pptRedo", "Redo")}
-                        onClick={library.redo}
-                      >
-                        <Redo2 />
-                      </button>
-                    </div>
-                    <div className="ppt-controls">
-                      {(
-                        [
-                          ["text", t("pptInsertText", "Text"), Type],
-                          ["rect", t("pptInsertRect", "Rectangle"), Square],
-                          ["ellipse", t("pptInsertEllipse", "Ellipse"), Circle],
-                          ["chart", t("pptInsertChart", "Bar chart"), ChartNoAxesColumn],
-                        ] as const
-                      ).map(([kind, label, Icon]) => (
-                        <button
-                          key={kind}
-                          className="ppt-icon"
-                          type="button"
-                          disabled={!canInsert}
-                          title={label}
-                          aria-label={label}
-                          onClick={() => addElement(kind, label)}
-                        >
-                          <Icon />
-                        </button>
-                      ))}
-                      <button
-                        className="ppt-icon"
-                        type="button"
-                        disabled={!canInsert}
-                        title={t("pptInsertImage", "Image")}
-                        aria-label={t("pptInsertImage", "Image")}
-                        onClick={() => {
-                          if (deck && activeSlide) imageTarget.current = { deckId: deck.id, slideId: activeSlide.id };
-                          imageInput.current?.click();
-                        }}
-                      >
-                        <ImagePlus />
-                      </button>
-                      <input
-                        ref={imageInput}
-                        type="file"
-                        accept="image/png,image/jpeg"
-                        hidden
-                        onChange={(event) => void insertImage(event)}
-                      />
-                    </div>
-                    <div className="ppt-controls ppt-page-controls">
-                      <button
-                        className="ppt-icon"
-                        type="button"
-                        disabled={!deck || deck.slides.length >= MAX_SLIDES || !editing}
-                        title={t("pptDuplicate", "Duplicate slide")}
-                        aria-label={t("pptDuplicate", "Duplicate slide")}
-                        onClick={() => activeSlide && appendSlide(copySlide(activeSlide))}
-                      >
-                        <Copy />
-                      </button>
-                      <button
-                        className="ppt-icon"
-                        type="button"
-                        disabled={activeIndex <= 0 || !editing}
-                        title={t("pptMoveUp", "Move up")}
-                        aria-label={t("pptMoveUp", "Move up")}
-                        onClick={() =>
-                          library.change((current) => ({
-                            ...current,
-                            slides: moveItem(current.slides, activeIndex, -1),
-                          }))
-                        }
-                      >
-                        <ArrowUp />
-                      </button>
-                      <button
-                        className="ppt-icon"
-                        type="button"
-                        disabled={!deck || activeIndex >= deck.slides.length - 1 || !editing}
-                        title={t("pptMoveDown", "Move down")}
-                        aria-label={t("pptMoveDown", "Move down")}
-                        onClick={() =>
-                          library.change((current) => ({
-                            ...current,
-                            slides: moveItem(current.slides, activeIndex, 1),
-                          }))
-                        }
-                      >
-                        <ArrowDown />
-                      </button>
-                      <button
-                        className="ppt-icon ppt-delete"
-                        type="button"
-                        disabled={!deck || deck.slides.length <= 1 || !editing}
-                        title={t("pptDeleteSlide", "Delete slide")}
-                        aria-label={t("pptDeleteSlide", "Delete slide")}
-                        onClick={removeSlide}
-                      >
-                        <Trash2 />
-                      </button>
-                    </div>
-                  </>
-                )}
+                  ))}
+                  <button
+                    className="ppt-icon"
+                    type="button"
+                    disabled={!canInsert}
+                    title={t("pptInsertImage", "Image")}
+                    aria-label={t("pptInsertImage", "Image")}
+                    onClick={() => {
+                      if (deck && activeSlide) imageTarget.current = { deckId: deck.id, slideId: activeSlide.id };
+                      imageInput.current?.click();
+                    }}
+                  >
+                    <ImagePlus />
+                  </button>
+                  <input
+                    ref={imageInput}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    hidden
+                    onChange={(event) => void insertImage(event)}
+                  />
+                </div>
+                <div className="ppt-controls ppt-page-controls">
+                  <button
+                    className="ppt-icon"
+                    type="button"
+                    disabled={!deck || deck.slides.length >= MAX_SLIDES || !editing}
+                    title={t("pptDuplicate", "Duplicate slide")}
+                    aria-label={t("pptDuplicate", "Duplicate slide")}
+                    onClick={() => activeSlide && appendSlide(copySlide(activeSlide))}
+                  >
+                    <Copy />
+                  </button>
+                  <button
+                    className="ppt-icon"
+                    type="button"
+                    disabled={activeIndex <= 0 || !editing}
+                    title={t("pptMoveUp", "Move up")}
+                    aria-label={t("pptMoveUp", "Move up")}
+                    onClick={() =>
+                      library.change((current) => ({
+                        ...current,
+                        slides: moveItem(current.slides, activeIndex, -1),
+                      }))
+                    }
+                  >
+                    <ArrowUp />
+                  </button>
+                  <button
+                    className="ppt-icon"
+                    type="button"
+                    disabled={!deck || activeIndex >= deck.slides.length - 1 || !editing}
+                    title={t("pptMoveDown", "Move down")}
+                    aria-label={t("pptMoveDown", "Move down")}
+                    onClick={() =>
+                      library.change((current) => ({
+                        ...current,
+                        slides: moveItem(current.slides, activeIndex, 1),
+                      }))
+                    }
+                  >
+                    <ArrowDown />
+                  </button>
+                  <button
+                    className="ppt-icon ppt-delete"
+                    type="button"
+                    disabled={!deck || deck.slides.length <= 1 || !editing}
+                    title={t("pptDeleteSlide", "Delete slide")}
+                    aria-label={t("pptDeleteSlide", "Delete slide")}
+                    onClick={removeSlide}
+                  >
+                    <Trash2 />
+                  </button>
+                </div>
               </div>
               <div className="ppt-stage">
-                {canvasSlide && isDraft ? (
-                  <PresentationLiveCanvas
-                    key={canvasSlide.id}
-                    slide={canvasSlide}
-                    running={agent.pageStates[activeIndex] === "running"}
+                <div className="ppt-paper">
+                  <SlideCanvas
+                    key={activeSlide.id}
+                    slide={activeSlide}
+                    edit={
+                      editing
+                        ? {
+                            selected: activeElement?.id ?? null,
+                            select: (id) => {
+                              setElementId(id);
+                            },
+                            change: (element) => changeElement(element.id, () => element),
+                            remove: removeElement,
+                          }
+                        : undefined
+                    }
                   />
-                ) : canvasSlide ? (
-                  <div className="ppt-paper">
-                    <SlideCanvas
-                      key={canvasSlide.id}
-                      slide={canvasSlide}
-                      edit={
-                        editing
-                          ? {
-                              selected: activeElement?.id ?? null,
-                              select: (id) => {
-                                setElementId(id);
-                                setPanel("properties");
-                              },
-                              change: (element) => changeElement(element.id, () => element),
-                              remove: removeElement,
-                            }
-                          : undefined
-                      }
-                    />
-                  </div>
-                ) : (
-                  <p className="ppt-muted" role="status">
-                    {t("pptEmptyDraft", "Generated pages appear here.")}
-                  </p>
-                )}
+                </div>
               </div>
               <footer className="ppt-stage-footer">
                 <span>
                   {activeIndex >= 0 ? `${activeIndex + 1} / ${visibleSlides.length}` : "0"}
                   <span className="ppt-footer-divider">·</span>16:9
                 </span>
-                {!isDraft && deck && (
+                {deck && (
                   <input
                     className="ppt-title-input"
                     key={deck.id + deck.title}
@@ -763,7 +659,7 @@ function NativePresentationWorkspace({
               </h2>
               {!library.busy && (
                 <>
-                  <p>{t("pptWelcomeHint", "Start with an empty slide or have Pi draft your presentation.")}</p>
+                  <p>{t("pptWelcomeHint", "Create a blank deck or open a saved presentation.")}</p>
                   <button className="ppt-button" type="button" onClick={createBlank}>
                     <Plus />
                     {t("pptNew", "New deck")}
@@ -773,32 +669,11 @@ function NativePresentationWorkspace({
             </div>
           )}
         </main>
-        <aside
-          hidden={panelClosed}
-          className="ppt-sidepanel"
-          aria-label={t("pptProperties", "Properties") + " / " + t("pptAgent", "Pi Agent")}
-        >
-          <div className="ppt-panel-tabs">
-            {deck && !isDraft && (
-              <button type="button" aria-pressed={!showAgent} onClick={() => setPanel("properties")}>
-                {t("pptProperties", "Properties")}
-              </button>
-            )}
-            <button type="button" aria-pressed={showAgent} onClick={() => setPanel("agent")}>
-              <Sparkles />
-              {t("pptAgent", "Pi Agent")}
-            </button>
+        <aside hidden={panelClosed || !deck} className="ppt-sidepanel" aria-label={t("pptProperties", "Properties")}>
+          <div className="ppt-column-heading">
+            <h2>{t("pptProperties", "Properties")}</h2>
           </div>
-          <div className="ppt-panel-content" hidden={!showAgent}>
-            <PresentationAgentPanel
-              cwd={cwd}
-              agent={agent}
-              startPages={startPages}
-              review={() => setDraftIndex(0)}
-              openModels={openModels}
-            />
-          </div>
-          {!showAgent && activeSlide && (
+          {activeSlide && (
             <div className="ppt-panel-content">
               <PresentationInspector
                 key={activeElement?.id ?? activeSlide.id}
@@ -833,7 +708,7 @@ function NativePresentationWorkspace({
   );
 }
 
-export function PresentationWorkspace(props: { cwd: string | null; hidden: boolean; openModels: () => void }) {
+export function PresentationWorkspace(props: { cwd: string | null; hidden: boolean }) {
   const [engine, setEngine] = useState<"skill" | "native">("skill");
   return engine === "skill" ? (
     <PresentationSkillWorkspace

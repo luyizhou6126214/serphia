@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
@@ -277,20 +279,26 @@ export function createSessionWorkflowExtension(policy: SessionToolPolicy): Inlin
         });
       }
 
-      pi.on("before_agent_start", (event, ctx) => {
+      pi.on("before_agent_start", async (event, ctx) => {
+        let systemPrompt = event.systemPrompt;
         const presentation = presentationWorkflowContext(ctx.sessionManager);
-        if (presentation && getAgentSessionSource(ctx.sessionManager) === "local" && !policy.isEmpty() && !request) {
-          policy.setWorkflowRequested(true);
-          pi.setActiveTools([...new Set([...pi.getActiveTools(), WORKFLOW_TOOL_NAME])]);
-          return { systemPrompt: `${event.systemPrompt}\n\n${presentationWorkflowInstructions(presentation)}` };
+        if (presentation && getAgentSessionSource(ctx.sessionManager) === "local") {
+          if (!policy.isEmpty() && !request) {
+            policy.setWorkflowRequested(true);
+            pi.setActiveTools([...new Set([...pi.getActiveTools(), WORKFLOW_TOOL_NAME])]);
+          }
+          const skillDir = process.env.PI_DESKTOP_PPT_MASTER_DIR;
+          if (!skillDir) throw new Error("The bundled PPT Master skill directory is unavailable.");
+          const skill = await readFile(path.join(skillDir, "SKILL.md"), "utf8");
+          systemPrompt += `\n\n${skill}\n\n${presentationWorkflowInstructions(presentation)}`;
         }
-        if (!request || request.used) return;
+        if (!request || request.used) return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
         const plan =
           request.command === "swarm"
             ? "Use exactly one stage with two to four independent parallel tasks."
             : "Use up to three sequential stages. Separate dependent work into stages and parallelize only independent tasks.";
         return {
-          systemPrompt: `${event.systemPrompt}\n\nThe user explicitly requested /${request.command}. Call ${WORKFLOW_TOOL_NAME} once to run their task. ${plan} Give each subagent a concrete prompt and avoid overlapping writes. After the tool returns, synthesize its results and report any failures.`,
+          systemPrompt: `${systemPrompt}\n\nThe user explicitly requested /${request.command}. Call ${WORKFLOW_TOOL_NAME} once to run their task. ${plan} Give each subagent a concrete prompt and avoid overlapping writes. After the tool returns, synthesize its results and report any failures.`,
         };
       });
       // agent_end also fires before automatic provider retries. Keep the grant until

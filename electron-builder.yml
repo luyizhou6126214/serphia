@@ -52,6 +52,9 @@ npmRebuild: false
 # Signed runtime catalogs plus the current target's small core search tools.
 # Managed Node/Python/Git archives remain download-on-consent and are never shipped.
 extraResources:
+  - from: build/ppt-master
+    to: ppt-master
+    filter: ["**/*", "**/.env.example"]
   - from: THIRD_PARTY_NOTICES.md
     to: THIRD_PARTY_NOTICES.md
   - from: build/toolchains/runtime-catalog.json

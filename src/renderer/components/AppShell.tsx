@@ -1,5 +1,15 @@
 import { getRecentProjects, useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
-import { CalendarClock, Moon, PanelLeft, PanelRight, Presentation, ShieldCheck, Sun, Workflow } from "lucide-react";
+import {
+  CalendarClock,
+  Layers3,
+  Moon,
+  PanelLeft,
+  PanelRight,
+  Presentation,
+  ShieldCheck,
+  Sun,
+  Workflow,
+} from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
@@ -29,6 +39,7 @@ import { SessionPresentationStore } from "@/lib/session-presentation-store";
 import { FileViewer } from "./FileViewer";
 import type { SettingsTab } from "./SettingsConfig";
 import {
+  HerdrPanel,
   preloadSettingsConfig,
   scheduleSettingsConfigPreload,
   PresentationWorkspace,
@@ -103,7 +114,7 @@ import { readTerminalShellChoice, selectTerminalShell, writeTerminalShellChoice 
 import type { TerminalShellInfo } from "@contract/terminal";
 
 const TERMINAL_PANEL_RATIO = 0.55;
-type PrimaryView = "sessions" | "schedule" | "review" | "superagent" | "ppt";
+type PrimaryView = "sessions" | "schedule" | "review" | "superagent" | "ppt" | "herdr";
 type NavigationView = { session: SessionInfo | null; draftCwd: string | null; settings: boolean; primary: PrimaryView };
 const sameNavigationView = (a: NavigationView, b: NavigationView) =>
   a.settings === b.settings && a.primary === b.primary && a.session?.id === b.session?.id && a.draftCwd === b.draftCwd;
@@ -245,7 +256,8 @@ export function AppShell({
   const panelWidthKind = rightPanelWidthKind(activePanelTab);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
-  const primaryViewAllowsRightPanel = !scheduledOpen && !superAgentOpen && primaryView !== "ppt";
+  const primaryViewAllowsRightPanel =
+    !scheduledOpen && !superAgentOpen && primaryView !== "herdr" && primaryView !== "ppt";
   const rightPanelVisible = rightPanelOpen && primaryViewAllowsRightPanel;
   const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && primaryViewAllowsRightPanel;
   const canResizeRightPanel = showRightPanelContent && !isMobile && !rightPanelFullscreen;
@@ -1083,7 +1095,7 @@ export function AppShell({
     else navigate();
   };
   const openModels = () => openSidebarSettings("models");
-  const ppt = { cwd: workspace.selectedProject, hidden: settingsOpen || primaryView !== "ppt", openModels };
+  const ppt = { cwd: workspace.selectedProject, hidden: settingsOpen || primaryView !== "ppt" };
   const sidebarRail = (
     <div className="sidebar-rail" aria-label={t("navigation", "Navigation")}>
       <div className="sidebar-rail-top">
@@ -1096,6 +1108,7 @@ export function AppShell({
               <CalendarClock size={18} strokeWidth={1.7} aria-hidden="true" />,
             ],
             ["superagent", t("superAgent", "SuperAgent"), <Workflow size={18} strokeWidth={1.7} aria-hidden="true" />],
+            ["herdr", "Herdr", <Layers3 size={18} strokeWidth={1.7} aria-hidden="true" />],
             ["ppt", t("pptTitle", "PPT Studio"), <Presentation size={18} strokeWidth={1.7} aria-hidden="true" />],
             ["review", t("codeReview", "Code review"), <ShieldCheck size={18} strokeWidth={1.7} aria-hidden="true" />],
           ] as const
@@ -1364,6 +1377,9 @@ export function AppShell({
               />
             )}
             {superAgentOpen && !settingsOpen && <SuperAgentPage cwd={workspaceCwd} />}
+            {primaryView === "herdr" && !settingsOpen && (
+              <HerdrPanel onSettings={openSidebarSettings} workStepDisplay={chatAppearance.workStepDisplay} />
+            )}
             {presentationVisited && <PresentationWorkspace key={ppt.cwd} {...ppt} />}
             {(reviewVisible || reviewVisited) && (
               <CodeReviewPage

@@ -30,7 +30,7 @@ import {
 } from "../../contract/herdr";
 import { callMain } from "../parent-rpc";
 import { herdrRuntimeController } from "./runtime-controller";
-import { asHerdrError, HerdrBridgeError } from "./errors";
+import { asHerdrError, HerdrBridgeError, HerdrPromptNotReadyError } from "./errors";
 import {
   HERDR_V20_EVENT_SUBSCRIPTIONS,
   HERDR_V20_METHODS,
@@ -42,7 +42,9 @@ import {
   stringField,
   type JsonRecord,
 } from "./protocol-v20";
-import { agentKind, agentState, mapFleet, safeSessionDisplay } from "./fleet-projection";
+import { agentKind, agentState, getPaneSessionReference, mapFleet, safeSessionDisplay } from "./fleet-projection";
+import { readHerdrConversation } from "./conversation";
+import { PaneChat, piNeedsChoice } from "./pane-chat";
 import { HerdrSocketClient } from "./socket-client";
 import { HerdrTerminalRegistry } from "./terminal-session";
 
@@ -57,6 +59,23 @@ const EMPTY_FLEET: HerdrFleetSnapshot = {
 const MAX_PROCESS_INFO_ENTRIES = 128;
 const MAX_PUBLIC_PROCESS_ENTRIES = 32;
 const AGENT_STATUS_REFRESH_MS = 2_000;
+
+function piEditorKeys(prompt: string): string[] {
+  const keys: string[] = [];
+  for (const char of prompt.replace(/\r\n?/g, "\n")) {
+    if (char === "\n") keys.push("shift+enter");
+    else if (char === " ") keys.push("space");
+    else if (char === "+") keys.push("plus");
+    else if (/\s|\p{Cc}/u.test(char))
+      throw new HerdrBridgeError(
+        "HERDR_AGENT_INPUT_REQUIRES_PASTE",
+        "The pi editor needs a paste for this whitespace or control character.",
+      );
+    else keys.push(char);
+  }
+  keys.push("enter");
+  return keys;
+}
 
 function requireId(value: unknown, label: string): string {
   if (!isId(value)) throw new HerdrBridgeError("HERDR_INVALID_REQUEST", `${label} is invalid.`);
@@ -95,6 +114,16 @@ type HerdrBridgeOptions = {
 };
 
 export class HerdrBridge {
+  private paneChats = new Map<
+    string,
+    {
+      terminalId: string;
+      kind: HerdrAgentKindDisplay;
+      reference?: string;
+      chat: PaneChat;
+      sending: boolean;
+    }
+  >();
   private descriptor = herdrRuntimeController.get();
   private runtimeRevision = 0;
   private runtime: HerdrRuntimeSnapshot = this.runtimeFromDescriptor(this.descriptor);
@@ -135,6 +164,27 @@ export class HerdrBridge {
 
   getFleet(): HerdrFleetSnapshot {
     return structuredClone(this.fleet);
+  }
+
+  private acceptSnapshot(result: JsonRecord) {
+    this.fleet = mapFleet(result, this.fleet.revision, this.descriptor.hostGeneration ?? 0);
+    if (!this.paneChats.size) return;
+    const panes = new Map(this.fleet.panes.map((pane) => [pane.id, pane]));
+    for (const [id, entry] of this.paneChats) {
+      const pane = panes.get(id);
+      const reference = pane && getPaneSessionReference(pane);
+      if (
+        !pane?.alive ||
+        pane.terminalId !== entry.terminalId ||
+        pane.agent?.kind !== entry.kind ||
+        (entry.reference && reference && entry.reference !== reference)
+      ) {
+        this.paneChats.delete(id);
+      } else if (reference) {
+        // Agents may publish their session reference after accepting the first GUI message.
+        entry.reference = reference;
+      }
+    }
   }
 
   private agentCliDiagnostics(): HerdrAgentCliDiagnostic[] {
@@ -290,7 +340,7 @@ export class HerdrBridge {
       const result = await client.request<JsonRecord>({ method: HERDR_V20_METHODS.snapshot, params: {} });
       this.snapshotInFlight = false;
       if (generation !== this.generation) return this.getRuntime();
-      this.fleet = mapFleet(result, this.fleet.revision, this.descriptor.hostGeneration ?? 0);
+      this.acceptSnapshot(result);
       this.server.emit("herdr.fleet", "*", this.getFleet());
       this.reconnectAttempt = 0;
       if (process.platform === "win32") {
@@ -363,6 +413,7 @@ export class HerdrBridge {
   }
 
   private teardownConnection(): Promise<void> {
+    this.paneChats.clear();
     this.generation += 1;
     this.windowsTerminalReady = false;
     this.connectPromise = null;
@@ -410,7 +461,7 @@ export class HerdrBridge {
     const result = await client.request<JsonRecord>({ method: HERDR_V20_METHODS.snapshot, params: {} });
     if (generation !== this.generation || client !== this.client) return this.getFleet();
     try {
-      this.fleet = mapFleet(result, this.fleet.revision, this.descriptor.hostGeneration ?? 0);
+      this.acceptSnapshot(result);
     } catch (error) {
       const mapped = asHerdrError(error);
       if (mapped.code === "HERDR_PROTOCOL_LIMIT_EXCEEDED") this.handleConnectionLoss(mapped);
@@ -627,6 +678,78 @@ export class HerdrBridge {
       text: bytes.length > maxBytes ? bytes.subarray(bytes.length - maxBytes).toString("utf8") : result.read.text,
       truncated: result.read.truncated === true || bytes.length > maxBytes,
     };
+  }
+
+  async readConversation(paneId: string) {
+    this.requireReady();
+    const pane = this.requirePane(paneId);
+    const entry = this.paneChats.get(paneId);
+    const native = await readHerdrConversation(pane, getPaneSessionReference(pane) ?? entry?.reference);
+    if (!entry && pane.agent?.kind !== "pi") return native;
+    const screen = await this.readPane(paneId);
+    if (this.paneChats.get(paneId) !== entry) return null;
+    const history = entry ? entry.chat.snapshot(screen.text, native) : native;
+    return pane.agent?.kind === "pi" && piNeedsChoice(screen.text)
+      ? { ...(history ?? { messages: [], truncated: false }), needsChoice: true }
+      : history;
+  }
+
+  async sendChatPrompt(paneId: string, prompt: unknown) {
+    const pane = this.requirePane(paneId);
+    if (!pane.agent || typeof prompt !== "string")
+      throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "Select an agent to chat.");
+    let entry = this.paneChats.get(paneId);
+    if (entry?.sending) throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "A prompt is being submitted.");
+    if (!entry) {
+      if (this.paneChats.size >= 128) {
+        const oldest = Array.from(this.paneChats).find(([, item]) => !item.sending);
+        if (!oldest) throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "All chat windows are submitting prompts.");
+        this.paneChats.delete(oldest[0]);
+      }
+      entry = {
+        terminalId: pane.terminalId,
+        kind: pane.agent.kind,
+        reference: getPaneSessionReference(pane),
+        chat: new PaneChat(),
+        sending: false,
+      };
+    }
+    this.paneChats.delete(paneId);
+    this.paneChats.set(paneId, entry);
+    entry.sending = true;
+    try {
+      const [screen, native] = await Promise.all([
+        this.readPane(paneId),
+        readHerdrConversation(pane, getPaneSessionReference(pane) ?? entry.reference),
+      ]);
+      if (this.paneChats.get(paneId) !== entry)
+        throw new HerdrBridgeError("HERDR_AGENT_NOT_READY", "The selected agent changed.");
+      if (pane.agent.kind === "pi" && piNeedsChoice(screen.text))
+        throw new HerdrBridgeError("HERDR_AGENT_BLOCKED", "pi is waiting for an interactive selection.");
+      let result: { accepted: true };
+      try {
+        result = await this.promptAgent(paneId, prompt);
+      } catch (error) {
+        // v20 can leave a live Windows pi in launch_pending. agent.send_keys still
+        // checks the foreground process inside Herdr before writing any input.
+        const current = this.requirePane(paneId);
+        if (
+          process.platform !== "win32" ||
+          !(error instanceof HerdrPromptNotReadyError) ||
+          this.paneChats.get(paneId) !== entry ||
+          current.agent?.kind !== "pi" ||
+          current.agent.state !== "idle" ||
+          !current.agent.launchPending
+        )
+          throw error;
+        const keys = piEditorKeys(prompt);
+        result = await this.writeAgentKeys(paneId, keys);
+      }
+      entry.chat.accept(prompt, screen.text, native);
+      return result;
+    } finally {
+      entry.sending = false;
+    }
   }
 
   async getPaneProcessInfo(paneId: string): Promise<HerdrPaneProcessSummary> {
@@ -1058,13 +1181,21 @@ export class HerdrBridge {
     ) {
       throw new HerdrBridgeError("HERDR_INVALID_REQUEST", "Agent keys are invalid.");
     }
+    return this.writeAgentKeys(paneId, keys);
+  }
+
+  private async writeAgentKeys(paneId: string, keys: string[]): Promise<{ accepted: true }> {
     const result = await this.requireReady().request<JsonRecord>({
       method: HERDR_V20_METHODS.agentSendKeys,
       params: { target: paneId, keys },
     });
-    if (result.type !== "agent_info" || !isRecord(result.agent) || idField(result.agent, "pane_id") !== paneId) {
+    if (
+      result.type !== "ok" &&
+      !(result.type === "agent_info" && isRecord(result.agent) && idField(result.agent, "pane_id") === paneId)
+    ) {
       throw new HerdrBridgeError("HERDR_SCHEMA_INVALID", "Herdr agent key response is invalid.");
     }
+    this.scheduleSnapshotRefresh();
     return { accepted: true };
   }
 

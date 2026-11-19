@@ -19,16 +19,20 @@ function setScrollMagnetEngaged(value: boolean): void {
 }
 const PROGRAMMATIC_SCROLL_IGNORE_MS = 700;
 const USER_SCROLL_INTENT_MS = 1200;
+const CHAT_BOTTOM_REATTACH_PX = 2;
 
 /** Near-bottom check that ignores the full-viewport run spacer. */
-function isNearBottomExcludingSpacer(container: HTMLElement): boolean {
+function isNearBottomExcludingSpacer(container: HTMLElement, threshold?: number): boolean {
   const spacer = container.querySelector<HTMLElement>("[data-run-spacer]");
-  return isNearChatBottom({
-    scrollTop: container.scrollTop,
-    scrollHeight: container.scrollHeight,
-    clientHeight: container.clientHeight,
-    spacerHeight: spacer ? spacer.offsetHeight : 0,
-  });
+  return isNearChatBottom(
+    {
+      scrollTop: container.scrollTop,
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+      spacerHeight: spacer ? spacer.offsetHeight : 0,
+    },
+    threshold,
+  );
 }
 const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Space", "Spacebar"]);
 
@@ -72,7 +76,7 @@ export function useChatViewport({
   // long answer stays visible without the reader scrolling after every burst.
   const localFollowPendingRef = useRef(false);
   // Set when the user explicitly re-attaches the viewport to the newest
-  // content (clicks "scroll to bottom"); live-follow then stays engaged until
+  // content (scrolls to the bottom); live-follow then stays engaged until
   // the user scrolls away again or the run ends.
   // Restored from the module flag so the magnet survives session switches that
   // remount ChatWindow (key={sessionKey}).
@@ -155,6 +159,7 @@ export function useChatViewport({
         return;
       ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
       element.scrollTop = top + element.scrollHeight - height;
+      lastScrollTopRef.current = element.scrollTop;
     };
   }, []);
   const scrollToBottom = useCallback(
@@ -281,12 +286,12 @@ export function useChatViewport({
     const currentScrollTop = container.scrollTop;
     lastScrollTopRef.current = currentScrollTop;
     updateScrollPresence();
+    const now = Date.now();
     if (!agentRunningRef.current) {
       // Idle upward movement normally disengages the magnet so the next run
       // does not unexpectedly resume auto-follow. During session transitions,
       // the policy filters synthetic movement but still accepts explicit user
       // input. Scrolling back to the bottom re-engages the magnet.
-      const now = Date.now();
       if (
         shouldDisengageScrollMagnet({
           previousScrollTop,
@@ -304,7 +309,19 @@ export function useChatViewport({
       }
       return;
     }
-    const now = Date.now();
+    // A downward scroll to the live tail resumes a paused stream immediately,
+    // even if the last follow frame's guard is still active during user input.
+    if (
+      !completionScrollAllowedRef.current &&
+      currentScrollTop > previousScrollTop &&
+      (now <= userScrollIntentUntilRef.current ||
+        now >= Math.max(ignoreProgrammaticScrollUntilRef.current, sessionChangeIgnoreScrollUntilRef.current)) &&
+      isNearBottomExcludingSpacer(container, CHAT_BOTTOM_REATTACH_PX)
+    ) {
+      reattachAutoFollow();
+      return;
+    }
+
     // Local prompts deliberately move the user's message to the top; retain
     // the old programmatic-scroll guard for that path. During external
     // auto-follow, explicit upward input must win even while follow frames are
@@ -326,7 +343,7 @@ export function useChatViewport({
       autoFollowMagnetRef.current = false;
       setScrollMagnetEngaged(false);
     }
-  }, [agentRunningRef, updateScrollPresence]);
+  }, [agentRunningRef, reattachAutoFollow, updateScrollPresence]);
 
   useEffect(() => {
     window.addEventListener("keydown", markUserScrollIntent);

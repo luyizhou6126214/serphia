@@ -72,6 +72,7 @@ import type {
 import type {
   HerdrAgentState,
   HerdrAgentKey,
+  HerdrConversation,
   HerdrFleetSnapshot,
   HerdrRuntimeConfigureRequest,
   HerdrRuntimeSnapshot,
@@ -131,11 +132,9 @@ export interface Api {
   "presentations.prepare": {
     params: {
       cwd: string | null;
-      brief: string;
-      source: string;
-      count: number;
-      language: string;
       model?: { provider: string; modelId: string };
+      modelSelectionExplicit?: boolean;
+      toolNames?: string[];
       thinkingLevel?: string;
     };
     result: import("./presentations").PresentationWorkflow;
@@ -143,6 +142,10 @@ export interface Api {
   "presentations.artifacts": {
     params: { sessionId: string };
     result: import("./presentations").PresentationArtifactSnapshot;
+  };
+  "presentations.saveFile": {
+    params: { sessionId: string; path: string; base64: string; expectedHash: string };
+    result: { hash: string; updatedAt: number };
   };
   "presentations.workflow": { params: { sessionId: string }; result: import("./presentations").PresentationWorkflow };
   "superagent.runtimes": { params: { probe?: SuperAgentCli }; result: SuperAgentRuntime[] };
@@ -298,7 +301,16 @@ export interface Api {
     params: { paneId: string; maxBytes?: number };
     result: { text: string; truncated: boolean };
   };
+  "herdr.pane.conversation": { params: { paneId: string }; result: HerdrConversation | null };
+  "herdr.tab.create": {
+    params: { workspaceId: string; cwd: string };
+    result: { workspaceId: string; tabId: string; rootPaneId: string };
+  };
   "herdr.tab.focus": { params: { tabId: string }; result: { workspaceId: string; tabId: string } };
+  "herdr.tab.rename": {
+    params: { tabId: string; name: string };
+    result: { workspaceId: string; tabId: string; name: string };
+  };
   "herdr.tab.close": { params: { tabId: string }; result: { workspaceId: string; tabId: string; closed: true } };
   "herdr.pane.focus": { params: { paneId: string }; result: { paneId: string; workspaceId: string; tabId: string } };
   "herdr.pane.close": {
@@ -310,6 +322,7 @@ export interface Api {
     result: { paneId: string; state: HerdrAgentState };
   };
   "herdr.agent.prompt": { params: { paneId: string; prompt: string }; result: { accepted: true } };
+  "herdr.pane.chat": { params: { paneId: string; prompt: string }; result: { accepted: true } };
   "herdr.agent.sendKeys": { params: { paneId: string; keys: HerdrAgentKey[] }; result: { accepted: true } };
   "herdr.agent.wait": {
     params: { paneId: string; states: HerdrAgentState[]; timeoutMs: number; requestId: string };

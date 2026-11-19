@@ -39,3 +39,11 @@ export function asHerdrError(error: unknown): HerdrBridgeError {
   if (error instanceof HerdrBridgeError) return error;
   return new HerdrBridgeError("HERDR_INTERNAL", "Unexpected Herdr integration error");
 }
+
+// Only this upstream rejection establishes that agent.prompt wrote no input
+// and the target still exists. Other transport errors must never replay a turn.
+export class HerdrPromptNotReadyError extends HerdrBridgeError {
+  constructor() {
+    super("HERDR_AGENT_NOT_READY", "The Herdr agent is not ready for a prompt.");
+  }
+}

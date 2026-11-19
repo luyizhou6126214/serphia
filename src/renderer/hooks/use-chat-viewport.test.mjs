@@ -31,7 +31,7 @@ function eventTarget() {
   };
 }
 
-async function mount(t, { resetFollow = true } = {}) {
+async function mount(t, { resetFollow = true, spacerHeight = 0 } = {}) {
   const originals = new Map();
   const install = (name, value) => {
     originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
@@ -92,7 +92,7 @@ async function mount(t, { resetFollow = true } = {}) {
     scrollHeight: 2000,
     clientHeight: 600,
     querySelector() {
-      return null;
+      return spacerHeight > 0 ? { offsetHeight: spacerHeight } : null;
     },
     getBoundingClientRect() {
       return { top: 0, bottom: 600 };
@@ -105,7 +105,7 @@ async function mount(t, { resetFollow = true } = {}) {
   const anchor = (name) => ({
     scrollIntoView(options) {
       calls.push({ target: name, ...options });
-      container.scrollTop = container.scrollHeight - container.clientHeight;
+      container.scrollTop = container.scrollHeight - container.clientHeight - (name === "live" ? spacerHeight : 0);
     },
     getBoundingClientRect() {
       return { top: name === "live" ? liveTop : 0 };
@@ -212,6 +212,47 @@ test("upward wheel intent releases streaming follow even inside the programmatic
   await fixture.update({ streamState: stream("three") });
   await fixture.flush();
   assert.ok(fixture.calls.some((call) => call.target === "live"));
+});
+
+test("manually returning to the live content end resumes streaming follow", async (t) => {
+  const fixture = await mount(t, { spacerHeight: 600 });
+  const { container, calls, WheelEvent } = fixture;
+  fixture.advance(2_000);
+  fixture.current.beginExternalTurn();
+  await fixture.update({ agentRunning: true, streamState: stream("one") });
+  await fixture.flush();
+  assert.equal(container.scrollTop, 800);
+  calls.length = 0;
+
+  const scrollBy = async (deltaY) => {
+    await act(async () => {
+      container.emit("wheel", new WheelEvent(deltaY));
+      container.scrollTop += deltaY;
+      container.emit("scroll");
+    });
+  };
+
+  await scrollBy(-200);
+  container.scrollHeight += 50;
+  await fixture.update({ streamState: stream("two") });
+  await fixture.flush();
+  assert.equal(container.scrollTop, 600);
+  assert.deepEqual(calls, []);
+
+  await scrollBy(210);
+  assert.equal(container.scrollTop, 810);
+  assert.deepEqual(calls, []);
+
+  await scrollBy(40);
+  await fixture.flush();
+  assert.ok(calls.some((call) => call.target === "live"));
+  calls.length = 0;
+
+  container.scrollHeight += 70;
+  await fixture.update({ streamState: stream("three") });
+  await fixture.flush();
+  assert.equal(container.scrollTop, 920);
+  assert.ok(calls.some((call) => call.target === "live"));
 });
 
 test("a local prompt stays pinned until its output passes the fold, then follows the tail", async (t) => {

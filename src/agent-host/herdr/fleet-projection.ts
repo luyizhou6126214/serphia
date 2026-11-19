@@ -13,6 +13,11 @@ import { idField, isRecord, numberField, optionalStringField, type JsonRecord } 
 const MAX_WORKSPACES = 128;
 const MAX_TABS = 512;
 const MAX_PANES = 1_024;
+const sessionReferences = new WeakMap<HerdrPane, string>();
+
+export function getPaneSessionReference(pane: HerdrPane) {
+  return sessionReferences.get(pane);
+}
 
 export function agentState(value: unknown): HerdrAgentState {
   return ["blocked", "working", "done", "idle", "unknown"].includes(String(value))
@@ -61,6 +66,22 @@ export function mapFleet(result: JsonRecord, previousRevision: number, sourceGen
   }
   const wireAgents = Array.isArray(snapshot.agents) ? snapshot.agents.filter(isRecord) : [];
   const agentsByPane = new Map(wireAgents.map((item) => [String(item.pane_id ?? ""), item]));
+  const rects = new Map<string, NonNullable<HerdrPane["rect"]>>();
+  if (Array.isArray(snapshot.layouts)) {
+    for (const layout of snapshot.layouts.slice(0, MAX_TABS)) {
+      if (!isRecord(layout) || !Array.isArray(layout.panes)) continue;
+      for (const item of layout.panes.slice(0, MAX_PANES)) {
+        if (!isRecord(item) || typeof item.pane_id !== "string" || !isRecord(item.rect)) continue;
+        const { x, y, width, height } = item.rect;
+        if (
+          [x, y, width, height].every((n) => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 65535) &&
+          Number(width) > 0 &&
+          Number(height) > 0
+        )
+          rects.set(item.pane_id, { x: Number(x), y: Number(y), width: Number(width), height: Number(height) });
+      }
+    }
+  }
   const panes: HerdrPane[] = snapshot.panes.filter(isRecord).map((wire) => {
     const id = idField(wire, "pane_id");
     const wireAgent = agentsByPane.get(id);
@@ -74,8 +95,9 @@ export function mapFleet(result: JsonRecord, previousRevision: number, sourceGen
       const value = typeof wireAgent.agent_session.value === "string" ? wireAgent.agent_session.value : "";
       if (kind) session = { kind, displayValue: safeSessionDisplay(value, kind) };
     }
-    return {
+    const pane: HerdrPane = {
       id,
+      ...(rects.has(id) ? { rect: rects.get(id) } : {}),
       terminalId: idField(wire, "terminal_id"),
       workspaceId: idField(wire, "workspace_id"),
       tabId: idField(wire, "tab_id"),
@@ -105,6 +127,11 @@ export function mapFleet(result: JsonRecord, previousRevision: number, sourceGen
           }
         : {}),
     };
+    if (session && wireAgent && isRecord(wireAgent.agent_session)) {
+      const reference = wireAgent.agent_session.value;
+      if (typeof reference === "string" && reference.length <= 4096) sessionReferences.set(pane, reference);
+    }
+    return pane;
   });
   const paneIdsByTab = new Map<string, string[]>();
   for (const pane of panes) {

@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { x } from "tar";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
   ModelRuntime,
@@ -89,6 +92,21 @@ test(
   { timeout: 30000 },
   async (t) => {
     const root = await mkdtemp(path.join(tmpdir(), "ppt-workflow-"));
+    const skillDir = path.join(root, "ppt-master");
+    await mkdir(skillDir);
+    await x(
+      {
+        file: path.resolve(import.meta.dirname, "../../build/presentation-skills/ppt-master-6.9.0.tar.gz"),
+        cwd: skillDir,
+      },
+      ["SKILL.md"],
+    );
+    const priorSkillDir = process.env.PI_DESKTOP_PPT_MASTER_DIR;
+    process.env.PI_DESKTOP_PPT_MASTER_DIR = skillDir;
+    t.after(() => {
+      if (priorSkillDir === undefined) delete process.env.PI_DESKTOP_PPT_MASTER_DIR;
+      else process.env.PI_DESKTOP_PPT_MASTER_DIR = priorSkillDir;
+    });
     const priorAgentDir = process.env.PI_CODING_AGENT_DIR;
     process.env.PI_CODING_AGENT_DIR = path.join(root, "agent");
     const upstream = path.join(process.env.PI_CODING_AGENT_DIR, "skills/deck-a");
@@ -209,15 +227,11 @@ test(
     });
     const request = {
       cwd: root,
-      brief: "/skill:deck-a Build a 2-slide presentation",
-      source: "Source facts",
-      count: 2,
       model: { provider: "presentation-fixture", modelId: "fixture" },
       thinkingLevel: "high",
-      language: "en-US",
     };
     const workflow = await workflows.prepare(request);
-    assert.match(workflow.prompt, /^\/skill:deck-a /);
+    assert.equal("prompt" in workflow, false, "creating a conversation must not submit a user turn");
     const { session, policy } = created[0];
     const sessionHandlers = api.createSessionHandlers({
       server: { emit() {} },
@@ -264,9 +278,19 @@ test(
       });
       return stream;
     };
-    await session.prompt(workflow.prompt, { source: "rpc" });
+    await session.prompt("/skill:deck-a Build a 2-slide presentation", { source: "rpc" });
     assert.match(JSON.stringify(contexts[0].messages), /<skill name=\\"deck-a\\"/);
     assert.match(JSON.stringify(contexts[0].messages), /Mandatory Load Order/);
+    function assertLockedSkill(context) {
+      const instructions = JSON.stringify(context.messages.filter((message) => message.role === "system"));
+      assert.match(instructions, /ppt-master skill is locked/);
+      assert.match(instructions, /--daemon --no-browser/);
+      assert.match(instructions, /--wait-only --wait-stage final/);
+      assert.match(instructions, /editable PPTX pane/);
+      assert.match(instructions, /Global Execution Discipline/);
+    }
+    assertLockedSkill(contexts[0]);
+    assert.ok(JSON.stringify(contexts[0]).includes(JSON.stringify(path.join(skillDir, "SKILL.md")).slice(1, -1)));
     assert.ok(
       contexts[0].activeTools.includes("serphia_workflow"),
       JSON.stringify({
@@ -324,6 +348,7 @@ test(
       return reply(model, [{ type: "text", text: "Continuing." }]);
     };
     await session.prompt("Confirm the design brief", { source: "rpc" });
+    assertLockedSkill(contexts.at(-1));
     assert.ok(contexts.at(-1).activeTools.includes("serphia_workflow"), "continuation re-enables delegation");
     let dispatched = false;
     session.agent.streamFunction = (model) => {
@@ -374,38 +399,50 @@ test(
     assert.equal("skill" in (await workflows.workflow({ sessionId: workflow.sessionId })), false);
     session.agent.streamFunction = (model, context) => {
       assert.match(JSON.stringify(context.messages.at(-1)), /Alternative deck workflow/);
-      assert.doesNotMatch(context.systemPrompt, /Selected skill:|SKILL_DIR/);
-      return reply(model, [{ type: "text", text: "Switched within the same conversation." }]);
+      assertLockedSkill(context);
+      return reply(model, [{ type: "text", text: "Using the additional skill within the PPT workflow." }]);
     };
     await session.prompt("/skill:another-deck Use this workflow now", { source: "rpc" });
   },
 );
 
-test("artifact snapshots follow complete authored files, embed contained assets and ignore partial exports", async (t) => {
+test("Studio discovers only the active confirmation service owned by this project and tracks final submission", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "ppt-form-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "deck");
+  const receipts = path.join(project, "confirm_ui");
+  await mkdir(receipts, { recursive: true });
+  const health = { service: "confirm_ui", status: "ok", pid: process.pid, project, session: { status: "ready_user" } };
+  const server = createServer((req, res) => {
+    assert.equal(req.url, "/api/health");
+    res.end(JSON.stringify(health));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+  await writeFile(path.join(project, ".confirm_ui.lock"), JSON.stringify({ pid: process.pid, port }));
+  assert.equal((await api.presentationArtifacts(root)).confirmationPort, port);
+  health.session.status = "waiting_agent";
+  assert.equal((await api.presentationArtifacts(root)).confirmationPort, port);
+  health.project = root;
+  assert.equal((await api.presentationArtifacts(root)).confirmationPort, undefined);
+  health.project = project;
+  health.pid++;
+  assert.equal((await api.presentationArtifacts(root)).confirmationPort, undefined);
+  health.pid--;
+  health.session.status = "done";
+  await writeFile(path.join(receipts, "result.json"), JSON.stringify({ stage: "final", status: "confirmed" }));
+  assert.deepEqual(await api.presentationArtifacts(root), { exports: [], designConfirmed: true });
+});
+
+test("only deliverable PPTX files reach the editor and stale or invalid edits preserve the current file", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "ppt-artifacts-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(path.join(root, "deck/svg_output"), { recursive: true });
-  await mkdir(path.join(root, "deck/images"));
-  await mkdir(path.join(root, "deck/icons/outline"), { recursive: true });
-  await writeFile(
-    path.join(root, "deck/icons/outline/check.svg"),
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="currentColor" d="M1 1L20 20"/></svg>',
-  );
-  await mkdir(path.join(root, "deck/svg_final"));
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg"><use data-icon="outline/check" x="5" y="6" width="32" height="32" fill="#1B4332"/><image href="../images/a.png"/><image href="https://example.com/a.png"/><image href="../../../outside.png"/><text>Native page</text></svg>';
-  await writeFile(path.join(root, "deck/images/a.png"), Buffer.from("local-image"));
-  await writeFile(path.join(root, "deck/svg_output/10.svg"), svg);
-  await writeFile(path.join(root, "deck/svg_output/2.svg"), svg);
-  await writeFile(path.join(root, "deck/svg_output/3.svg"), '<svg xmlns="http://www.w3.org/2000/svg">');
-  await writeFile(path.join(root, "deck/svg_final/ignored.svg"), svg);
   await writeFile(path.join(root, "partial.pptx"), Buffer.from("PK partial zip"));
   const { default: PptxGenJS } = await import("pptxgenjs");
   const deck = new PptxGenJS();
   deck.addSlide().addText("Native", { x: 1, y: 1, w: 3, h: 1 });
   await writeFile(path.join(root, "complete.pptx"), await deck.write({ outputType: "nodebuffer" }));
-  await mkdir(path.join(root, "deck/backup/20261117/svg_output"), { recursive: true });
-  await writeFile(path.join(root, "deck/backup/20261117/svg_output/2.svg"), svg);
   await mkdir(path.join(root, "deck/exports/.pptx-build-temporary"), { recursive: true });
   await writeFile(
     path.join(root, "deck/exports/.pptx-build-temporary/base.pptx"),
@@ -413,25 +450,28 @@ test("artifact snapshots follow complete authored files, embed contained assets 
   );
   const snapshot = await api.presentationArtifacts(root);
   assert.deepEqual(
-    snapshot.pages.map((p) => p.name),
-    ["2.svg", "10.svg"],
-  );
-  assert.deepEqual(
     snapshot.exports.map((file) => file.name),
     ["complete.pptx"],
   );
-  const image = Buffer.from(snapshot.pages[0].image.split(",")[1], "base64").toString();
-  assert.match(image, /data:image\/png;base64/);
-  const embeddedIcon = image.match(/data:image\/svg\+xml;base64,([^"']+)/)?.[1];
-  assert.ok(embeddedIcon, "local icon placeholders render in the live canvas");
-  assert.match(Buffer.from(embeddedIcon, "base64").toString(), /stroke="#1B4332"/);
-  assert.doesNotMatch(image, /<use/);
-  assert.doesNotMatch(image, /https:|outside.png/);
-  await writeFile(path.join(root, "deck/images/a.png"), "updated-image");
-  assert.notEqual((await api.presentationArtifacts(root)).pages[0].revision, snapshot.pages[0].revision);
-  assert.equal(
-    await readFile(path.join(root, "deck/svg_output/2.svg"), "utf8"),
-    svg,
-    "preview does not mutate upstream artifacts",
+  const file = snapshot.exports[0].path;
+  const original = await readFile(file);
+  const expectedHash = createHash("sha256").update(original).digest("hex");
+  await assert.rejects(
+    api.savePresentationFile(root, { path: file, expectedHash, base64: "bm90IHppcA==" }),
+    /Invalid PowerPoint/,
+  );
+  assert.deepEqual(await readFile(file), original);
+  deck.addSlide().addText("Edited", { x: 1, y: 1, w: 3, h: 1 });
+  const base64 = await deck.write({ outputType: "base64" });
+  const saved = await api.savePresentationFile(root, { path: file, expectedHash, base64 });
+  assert.equal(saved.hash, createHash("sha256").update(Buffer.from(base64, "base64")).digest("hex"));
+  await assert.rejects(
+    api.savePresentationFile(root, { path: file, expectedHash, base64: original.toString("base64") }),
+    /changed on disk/,
+  );
+  assert.equal((await readFile(file)).toString("base64"), base64);
+  await assert.rejects(
+    api.savePresentationFile(path.join(root, "deck"), { path: file, expectedHash: saved.hash, base64 }),
+    /outside/,
   );
 });

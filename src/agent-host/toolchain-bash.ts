@@ -9,6 +9,7 @@ export function createToolchainBashOptions(
   runtime: ToolchainRuntime = toolchainRuntime,
   commandPrefix?: string,
   beforeExec?: (command: string) => Promise<void>,
+  sessionEnv?: () => NodeJS.ProcessEnv | undefined,
 ): BashToolOptions {
   const descriptor = context.commands["shell.bash"];
   if (!descriptor) {
@@ -35,7 +36,7 @@ export function createToolchainBashOptions(
     spawnHook(spawnContext) {
       return {
         ...spawnContext,
-        env: sanitizeToolEnvironment({ ...spawnContext.env, ...context.shellEnv }),
+        env: sanitizeToolEnvironment({ ...spawnContext.env, ...context.shellEnv, ...sessionEnv?.() }),
       };
     },
   };

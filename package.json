@@ -71,6 +71,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "6.3.2",
+    "@diceui/pptx": "0.6.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@earendil-works/pi-mcp": "1.4.0",
