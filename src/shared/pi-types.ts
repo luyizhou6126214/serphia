@@ -105,7 +105,7 @@ type WidgetOptionsLike = {
 };
 
 export interface ExtensionUiContextLike {
-  select(title: string, options: string[], opts?: DialogOptionsLike): Promise<string | undefined>;
+  select(title: string, options: string[], opts?: DialogOptionsLike & { plan?: string }): Promise<string | undefined>;
   confirm(title: string, message: string, opts?: DialogOptionsLike): Promise<boolean>;
   confirmLocalized?(
     title: string,

@@ -618,34 +618,26 @@ test("running views coalesce persisted changes and prompt completion immediately
   assert.equal(testApi.historyReads, initialReads + 2, "completion cancels the pending redundant read");
 });
 
-for (const action of ["recall", "stats", "tools"]) {
+for (const action of ["recall", "tools"]) {
   test(`a late ${action} result cannot mutate the next view's shared UI`, async (t) => {
     const effects = [],
       pending = createDeferred();
     const input = { current: { prependText: (text) => effects.push(text) } };
     const fixture = await mountRuntime(t, runtimeDetail({ running: false }), {
       chatInputRef: input,
-      onSessionStatsPanelOpen: () => effects.push("open stats"),
       setToolPreset: (value) => effects.push(value),
     });
     const initialEffects = [...effects];
-    const type = { recall: "clear_queue", stats: "get_session_stats", tools: "get_tools" }[action];
+    const type = action === "recall" ? "clear_queue" : "get_tools";
     testApi.queueCommand(type, pending.promise);
     let operation;
     await act(async () => {
-      operation =
-        action === "recall"
-          ? fixture.current.handleRecallQueue()
-          : action === "stats"
-            ? fixture.current.handleBuiltinSlashCommand("/session")
-            : fixture.current.loadTools("fixture");
+      operation = action === "recall" ? fixture.current.handleRecallQueue() : fixture.current.loadTools("fixture");
     });
     await fixture.unmount();
     input.current = { prependText: (text) => effects.push("new view: " + text) };
     await act(async () => {
-      pending.resolve(
-        action === "recall" ? { steering: ["old draft"] } : action === "tools" ? [] : { sessionName: "old" },
-      );
+      pending.resolve(action === "recall" ? { steering: ["old draft"] } : []);
       await operation;
     });
     assert.deepEqual(effects, initialEffects);

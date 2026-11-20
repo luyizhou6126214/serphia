@@ -6,6 +6,7 @@ import { NOTICE_VISIBLE_MS, noticeExpiryDelay, noticeReducer, type NoticeType } 
 import type { RuntimeSnapshotTicket, SessionRuntimeGate } from "@/lib/session-runtime-gate";
 import { useI18n } from "@/i18n";
 import { modelSelectionNoticeText } from "@/lib/model-selection-notice";
+import { PLAN_MODE_READ_ONLY, PLAN_MODE_STATUS } from "@shared/plan-mode";
 
 type DialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
 type CustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
@@ -81,6 +82,25 @@ export function useSessionExtensionUi({
     [getViewSignal, runtimeGate, t],
   );
 
+  const updateExtensionStatus = useCallback(
+    (key: string, text?: string) => {
+      runtimeGate.touch("statuses");
+      setExtensionStatuses((previous) => {
+        const rest = previous.filter((item) => item.key !== key);
+        return text ? [...rest, { key, text }] : rest;
+      });
+    },
+    [runtimeGate],
+  );
+
+  const applyPlanModeStatus = useCallback(
+    (enabled: boolean, ticket: RuntimeSnapshotTicket) => {
+      if (runtimeGate.isCurrent(ticket, "statuses"))
+        updateExtensionStatus(PLAN_MODE_STATUS, enabled ? PLAN_MODE_READ_ONLY : undefined);
+    },
+    [runtimeGate, updateExtensionStatus],
+  );
+
   const respondToExtensionUi = useCallback(
     async (request: DialogRequest, response: { value: string } | { confirmed: boolean } | { cancelled: true }) => {
       const owner = dialogOwnerRef.current;
@@ -117,6 +137,13 @@ export function useSessionExtensionUi({
         sid = sessionIdRef.current;
       if (signal.aborted || !sid) return;
       switch (request.method) {
+        case "dismissDialog": {
+          const owner = dialogOwnerRef.current;
+          if (owner?.request.id !== request.id || !owns(owner)) return;
+          dialogOwnerRef.current = null;
+          setExtensionDialog(null);
+          break;
+        }
         case "select":
         case "confirm":
         case "input":
@@ -131,11 +158,7 @@ export function useSessionExtensionUi({
           addNotice({ id: request.id, message: request.message, type: request.notifyType ?? "info" });
           break;
         case "setStatus":
-          runtimeGate.touch("statuses");
-          setExtensionStatuses((prev) => {
-            const rest = prev.filter((item) => item.key !== request.statusKey);
-            return request.statusText ? [...rest, { key: request.statusKey, text: request.statusText }] : rest;
-          });
+          updateExtensionStatus(request.statusKey, request.statusText);
           break;
         case "setWidget":
           runtimeGate.touch("widgets");
@@ -186,7 +209,7 @@ export function useSessionExtensionUi({
         }
       }
     },
-    [addNotice, chatInputRef, getViewSignal, owns, runtimeGate, sessionIdRef],
+    [addNotice, chatInputRef, getViewSignal, owns, runtimeGate, sessionIdRef, updateExtensionStatus],
   );
 
   useEffect(() => {
@@ -224,6 +247,7 @@ export function useSessionExtensionUi({
     notices: noticeState.visible,
     addNotice,
     applyExtensionSnapshot,
+    applyPlanModeStatus,
     handleExtensionUiRequest,
     respondToExtensionUi,
     sendExtensionCustomInput,

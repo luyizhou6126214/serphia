@@ -180,9 +180,15 @@ export type ExtensionUiRequest =
   | {
       type: "extension_ui_request";
       id: string;
+      method: "dismissDialog";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
       method: "select";
       title: string;
       options: string[];
+      plan?: string;
       timeout?: number;
       expiresAt?: number;
     }

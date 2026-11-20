@@ -7,6 +7,7 @@ import { ExecutionLogStore } from "../execution-log-store";
 import { validateExecutionQuery } from "../../contract/executions";
 import { RpcError, type HistoryWindow, type SessionDetail, type SessionRuntimeState } from "../../contract/types";
 import type { SessionEntry, SessionTreeNode } from "../../shared/types";
+import { PLAN_MODE_READ_ONLY, PLAN_MODE_STATUS, readPlanModeEnabled } from "../../shared/plan-mode";
 import { getRpcSession, getRunningRpcSessionIds } from "../rpc-manager";
 import { readSessionSnapshot, assertSessionWritable } from "../session-readonly";
 import { getDesktopSessionToolNames } from "../session-tool-store";
@@ -188,6 +189,12 @@ export function createSessionHandlers({
           buildSessionInfoFromManager(filePath, sm, entries),
           agentStatePromise,
         ]);
+        if (agentState && !agentState.running && readPlanModeEnabled(entries)) {
+          agentState.state = {
+            extensionStatuses: [{ key: PLAN_MODE_STATUS, text: PLAN_MODE_READ_ONLY }],
+            queuedMessages: null,
+          };
+        }
         const infoMs = performance.now() - infoStartedAt;
 
         const toolNames = getDesktopSessionToolNames(id);

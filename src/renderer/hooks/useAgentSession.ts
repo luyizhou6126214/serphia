@@ -17,7 +17,6 @@ import { sendAgentCommand } from "@/lib/agent-client";
 import { agentState, newAgent } from "@/lib/api-client";
 import { getPresetFromToolNames } from "@/lib/tool-presets";
 import type { ToolPreset } from "@shared/tool-presets";
-import type { SessionStatsInfo } from "@/lib/pi-types";
 import { useSessionToolSelection } from "./useSessionToolSelection";
 import { useSessionEvents } from "./useSessionEvents";
 import { requestAutoSessionTitle, shouldAutoTitleMessage } from "../lib/auto-session-title";
@@ -40,6 +39,7 @@ import { useSessionPresentation } from "./useSessionPresentation";
 import { SessionRuntimeGate, type RuntimeSnapshotTicket } from "@/lib/session-runtime-gate";
 import { sessionClientErrorMessage } from "@/lib/session-error-message";
 import { skillInvocationCommandText } from "@shared/skill-invocation";
+import { PLAN_MODE_COMMAND, type PlanModeAction } from "@shared/plan-mode";
 
 import {
   createSessionTurnState,
@@ -62,9 +62,6 @@ function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] 
 
 export type { NoticeItem } from "@/lib/notice-queue";
 
-export type BuiltinSlashCommandResult =
-  { handled: false } | { handled: true; message?: string; error?: string; action?: "openSessionStats" };
-
 export interface UseAgentSessionOptions {
   session: SessionInfo | null;
   newSessionCwd: string | null;
@@ -80,7 +77,6 @@ export interface UseAgentSessionOptions {
   ) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   presentationStore?: SessionPresentationStore;
-  onSessionStatsPanelOpen?: () => void;
   setToolPreset?: (preset: ToolPreset) => void;
 }
 
@@ -163,7 +159,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     modelsRefreshKey,
     onBranchDataChange,
     onSystemPromptChange,
-    onSessionStatsPanelOpen,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
@@ -194,6 +189,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     notices,
     addNotice,
     applyExtensionSnapshot,
+    applyPlanModeStatus,
     handleExtensionUiRequest,
     respondToExtensionUi,
     sendExtensionCustomInput,
@@ -210,6 +206,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [getViewSignal]);
   const commandsRequestGate = useRef(new LatestRequestGate()).current;
   const modelRequestGate = useRef(new LatestRequestGate()).current;
+  const planModePendingRef = useRef(false);
+  const [planModePending, setPlanModePending] = useState(false);
 
   const [turnState, dispatchTurn] = useReducer(reduceSessionTurnState, undefined, createSessionTurnState);
   const {
@@ -236,6 +234,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
   const forkRequestSessionRef = useRef<string | null>(null);
+  const compactRequestSessionRef = useRef<string | null>(null);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
@@ -250,9 +249,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     newSessionModel,
     newSessionDefaultModel,
     setNewSessionModel,
-    loadModels,
   } = useSessionModels({ isNew, cwd: newSessionCwd ?? session?.cwd, refreshKey: modelsRefreshKey, addNotice });
-  const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(null);
   // Preserve the existing imperative handle while publishing render state through the reducer.
   const setAgentRunning = useCallback((value: boolean | ((running: boolean) => boolean)) => {
     const running = typeof value === "function" ? value(agentRunningRef.current) : value;
@@ -306,7 +303,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   );
   const applySessionSnapshot = useCallback(
     (d: SessionDetail, ticket = runtimeGate.capture()) => {
-      setSessionStatsOverride(null);
       if (d.toolNames !== undefined) setToolPresetState(getPresetFromToolNames(d.toolNames));
       setCurrentModelOverride(null);
       applyRuntimeSnapshot(d.agentState, ticket);
@@ -385,7 +381,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const reasoningFallback =
     availableThinkingLevels && effectiveThinkingLevel !== thinkingLevel ? effectiveThinkingLevel : undefined;
 
-  const sessionStats = sessionStatsForDisplay(sessionStatsOverride, data, session?.name, contextUsage);
+  const sessionStats = sessionStatsForDisplay(data, session?.name, contextUsage);
   const herdrAgentPaneIds = useMemo(
     () => [...new Set([...(persistedHerdrPaneIds ?? []), ...getInvokedHerdrPaneIds(messages)])],
     [messages, persistedHerdrPaneIds],
@@ -730,10 +726,49 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   );
   handleAgentEventRef.current = handleAgentEvent;
 
+  const changePlanMode = useCallback(
+    async (action: PlanModeAction): Promise<boolean> => {
+      const ownsView = captureCommandView();
+      if (!ownsView() || planModePendingRef.current || agentRunningRef.current || isCompacting) return false;
+      planModePendingRef.current = true;
+      setPlanModePending(true);
+      try {
+        const sid = sessionIdRef.current ?? (await ensureNewSession());
+        if (!sid || !ownsView() || sid !== sessionIdRef.current) return false;
+        await ensureEventsConnected(sid);
+        if (!ownsView() || sid !== sessionIdRef.current) return false;
+        const ticket = runtimeGate.capture();
+        const { enabled } = await sendAgentCommand(sid, { type: "set_plan_mode", action });
+        if (!ownsView() || sid !== sessionIdRef.current) return false;
+        applyPlanModeStatus(enabled, ticket);
+        return true;
+      } catch {
+        if (ownsView()) addNotice({ type: "error", message: t("planModeChangeFailed", "Could not change Plan mode.") });
+        return false;
+      } finally {
+        planModePendingRef.current = false;
+        setPlanModePending(false);
+      }
+    },
+    [
+      addNotice,
+      applyPlanModeStatus,
+      captureCommandView,
+      ensureEventsConnected,
+      ensureNewSession,
+      isCompacting,
+      runtimeGate,
+      t,
+    ],
+  );
+  const handleExitPlanMode = useCallback(() => changePlanMode("off"), [changePlanMode]);
+
   const handleSend = useCallback(
     async (message: string, images?: AttachedImage[]) => {
       const trimmedMessage = message.trim();
       if (!trimmedMessage && !images?.length) return;
+      if (!images?.length && trimmedMessage === `/${PLAN_MODE_COMMAND}`) return { ok: await changePlanMode("toggle") };
+      if (planModePendingRef.current) return { ok: false };
       if (!isActive() || agentRunningRef.current) return;
       const ownsView = captureCommandView();
       const isSlashCommandPrompt = !images?.length && trimmedMessage.startsWith("/");
@@ -852,6 +887,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       isNew,
       beginLocalTurn,
       captureCommandView,
+      changePlanMode,
       newSessionCwd,
       newSessionModel,
       newSessionDefaultModel,
@@ -992,7 +1028,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
     const ownsView = captureCommandView();
-    if (!sid || isCompacting || !ownsView()) return;
+    if (!sid || agentRunningRef.current || isCompacting || !ownsView() || compactRequestSessionRef.current === sid)
+      return;
+    compactRequestSessionRef.current = sid;
     runtimeGate.touch("compaction");
     dispatchTurn({ type: "compaction-start" });
     try {
@@ -1002,135 +1040,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await loadSession(sid, true);
     } catch (e) {
       if (!ownsView()) return;
-      dispatchTurn({ type: "compaction-error", error: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      addNotice({ type: "error", message });
+      dispatchTurn({ type: "compaction-error", error: message });
       dispatchTurn({ type: "compaction-result", result: null });
     } finally {
+      if (compactRequestSessionRef.current === sid) compactRequestSessionRef.current = null;
       if (ownsView()) dispatchTurn({ type: "compaction-state", isCompacting: false });
     }
-  }, [captureCommandView, isCompacting, loadSession, runtimeGate]);
-
-  const handleBuiltinSlashCommand = useCallback(
-    async (text: string): Promise<BuiltinSlashCommandResult> => {
-      if (!text.startsWith("/")) return { handled: false };
-      const match = text.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
-      if (!match) return { handled: false };
-
-      const [, commandName, rawArgs = ""] = match;
-      const ownsView = captureCommandView();
-      if (!ownsView()) return { handled: true };
-      const args = rawArgs.trim();
-      const sid = sessionIdRef.current ?? (await ensureNewSession());
-      const complete = (result: BuiltinSlashCommandResult): BuiltinSlashCommandResult => {
-        if (!ownsView()) return { handled: true };
-        if (!result.handled) return result;
-        if (result.error) {
-          addNotice({ type: "error", message: result.error });
-        } else if (result.action !== "openSessionStats") {
-          addNotice({ type: "success", message: result.message ?? t("commandCompleted", "Command completed") });
-        }
-        return result;
-      };
-
-      try {
-        switch (commandName) {
-          case "compact": {
-            if (!sid || isCompacting) {
-              return complete({
-                handled: true,
-                error: t("noActiveSessionToCompact", "No active session to compact"),
-              });
-            }
-            runtimeGate.touch("compaction");
-            dispatchTurn({ type: "compaction-start" });
-            const result = await sendAgentCommand(sid, {
-              type: "compact",
-              ...(args ? { customInstructions: args } : {}),
-            });
-            if (!ownsView()) return { handled: true };
-            dispatchTurn({ type: "compaction-result", result: readCompactResult(result, "manual") });
-            if (await loadSession(sid, true)) promoteNewSession();
-            return complete({ handled: true, message: t("contextCompacted", "Compacted context") });
-          }
-
-          case "reload": {
-            if (!sid) {
-              return complete({ handled: true, error: t("noActiveSessionToReload", "No active session to reload") });
-            }
-            await sendAgentCommand(sid, { type: "reload" });
-            if (!ownsView()) return { handled: true };
-            await Promise.all([loadSession(sid, false, true), loadTools(sid), loadSlashCommands(), loadModels()]);
-            return complete({
-              handled: true,
-              message: t("sessionResourcesReloaded", "Reloaded session resources"),
-            });
-          }
-
-          case "name": {
-            if (!sid) {
-              return complete({ handled: true, error: t("noActiveSessionToName", "No active session to name") });
-            }
-            if (!args) return complete({ handled: true, error: t("nameCommandUsage", "Usage: /name <name>") });
-            await sendAgentCommand(sid, { type: "set_session_name", name: args });
-            if (await loadSession(sid)) promoteNewSession();
-            return complete({
-              handled: true,
-              message: t("sessionRenamedTo", "Session renamed to {name}").replace("{name}", args),
-            });
-          }
-
-          case "session": {
-            if (!sid) return complete({ handled: true, error: t("noActiveSession", "No active session") });
-            const stats = await sendAgentCommand(sid, { type: "get_session_stats" });
-            if (!ownsView()) return { handled: true };
-            if (stats) {
-              setSessionStatsOverride(stats);
-            }
-            onSessionStatsPanelOpen?.();
-            return complete({ handled: true, action: "openSessionStats" });
-          }
-
-          case "copy": {
-            if (!sid) return complete({ handled: true, error: t("noActiveSession", "No active session") });
-            const data = await sendAgentCommand(sid, { type: "get_last_assistant_text" });
-            if (!ownsView()) return { handled: true };
-            const textToCopy = data?.text ?? "";
-            if (!textToCopy) {
-              return complete({
-                handled: true,
-                error: t("noAssistantMessageToCopy", "No assistant message to copy"),
-              });
-            }
-            await navigator.clipboard.writeText(textToCopy);
-            return complete({
-              handled: true,
-              message: t("copiedLastAssistantMessage", "Copied last assistant message"),
-            });
-          }
-
-          default:
-            return { handled: false };
-        }
-      } catch (e) {
-        return complete({ handled: true, error: e instanceof Error ? e.message : String(e) });
-      } finally {
-        if (ownsView() && commandName === "compact") dispatchTurn({ type: "compaction-state", isCompacting: false });
-      }
-    },
-    [
-      addNotice,
-      captureCommandView,
-      ensureNewSession,
-      isCompacting,
-      loadModels,
-      loadSession,
-      loadSlashCommands,
-      loadTools,
-      promoteNewSession,
-      runtimeGate,
-      onSessionStatsPanelOpen,
-      t,
-    ],
-  );
+  }, [addNotice, captureCommandView, isCompacting, loadSession, runtimeGate]);
 
   // Queued (undelivered) messages live in the queue panel only; the chat gets
   // the real user message when pi delivers it (user message_end event). An
@@ -1329,10 +1247,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearTimeout(t);
   }, [compactResult]);
 
-  useEffect(() => {
-    setSessionStatsOverride(null);
-  }, [messages.length, contextUsage?.tokens, contextUsage?.percent, contextUsage?.contextWindow]);
-
   return {
     // State
     sessionId: sessionIdRef.current,
@@ -1373,6 +1287,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     extensionDialog,
     extensionCustomUi,
     extensionStatuses,
+    planModePending,
     extensionWidgets,
     subagents,
     respondToExtensionUi,
@@ -1395,6 +1310,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     initialScrollDoneRef,
     // Actions
     handleSend,
+    handleExitPlanMode,
     handleAbort,
     handleFork,
     handleNavigate,
@@ -1405,7 +1321,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handlePromptWithStreamingBehavior,
     handleAbortCompaction,
     handleRecallQueue,
-    handleBuiltinSlashCommand,
     handleToolPresetChange,
     toolSelectionError,
     handleThinkingLevelChange,

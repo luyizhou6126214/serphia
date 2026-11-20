@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactElement, ReactNode } from "react";
 import type { MotionController, MotionOptions } from "./motion-runtime";
 
 export type Effort = "simple" | "medium" | "deep";
@@ -97,6 +97,7 @@ export function createDeepAgentMenuScope(target: HTMLElement): {
   mountPoint: HTMLElement;
   parts: {
     ApprovalMenu: <T extends string>(props: ApprovalMenuProps<T>) => ReactNode;
+    HoverInfo: (props: { content: ReactNode; children: ReactElement }) => ReactNode;
     ModelThinkingSelector: <T extends string>(props: ModelThinkingSelectorProps<T>) => ReactNode;
   };
   destroy(): void;

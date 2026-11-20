@@ -222,11 +222,6 @@ export function AppShell({
     setActiveTopPanel((cur) => (cur === "session" ? null : "session"));
   }, [isMobile]);
 
-  const openSessionStatsPanel = useCallback(() => {
-    if (isMobile) setSidebarOpen(false);
-    setActiveTopPanel("session");
-  }, [isMobile]);
-
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
     setSidebarOpen((open) => !open);
@@ -1345,7 +1340,6 @@ export function AppShell({
                     modelsRefreshKey={modelsRefreshKey}
                     chatInputRef={chatInputRef}
                     presentationStore={presentationStore}
-                    onSessionStatsPanelOpen={openSessionStatsPanel}
                     onOpenFile={handleOpenLinkedFile}
                     thinkingExpansionStore={thinkingExpansionRegistryRef.current.get(
                       selectedSession?.id ?? `new:${effectiveNewSessionCwd ?? "untitled"}`,

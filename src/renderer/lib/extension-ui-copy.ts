@@ -1,7 +1,21 @@
 import type { ExtensionUiRequest } from "@shared/types";
+import { PLAN_REFINE_TITLE, PLAN_REVIEW_CHOICES, PLAN_REVIEW_TITLE } from "../../shared/plan-mode.ts";
 
 type Translate = (key: string, fallback: string) => string;
 type ConfirmRequest = Extract<ExtensionUiRequest, { method: "confirm" }>;
+type DialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
+
+export function localizedPlanDialogCopy(request: DialogRequest, t: Translate) {
+  if (request.method === "input" && request.title === PLAN_REFINE_TITLE)
+    return { title: t("planRefine", "Refine the plan") };
+  if (request.method !== "select" || request.title !== PLAN_REVIEW_TITLE) return;
+  const options: Record<string, string> = {
+    [PLAN_REVIEW_CHOICES.execute]: t("planExecute", "Exit plan mode and execute"),
+    [PLAN_REVIEW_CHOICES.stay]: t("planStay", "Stay in plan mode"),
+    [PLAN_REVIEW_CHOICES.refine]: t("planRefine", "Refine the plan"),
+  };
+  return { title: t("planReady", "Plan ready"), options };
+}
 
 function format(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{([A-Za-z0-9_]+)\}/g, (token, key: string) =>

@@ -39,7 +39,6 @@ test("registers critical session notification flows in both languages", () => {
       "Unable to load the model directory. Retry from the model picker or check the Agent Host connection.",
       "无法加载模型目录。请从模型选择器重试，或检查 Agent Host 连接。",
     ],
-    sessionRenamedTo: ["Session renamed to {name}", "会话已重命名为 {name}"],
   };
   for (const [key, [english, chinese]] of Object.entries(expected)) {
     assert.equal(enUS[key], english);

@@ -1,40 +1,16 @@
-# Serphia / Unfold
+# Serphia 图标
 
-The symbol represents potential becoming action: two broad folded surfaces open
-around a generous rising path of negative space. It can evoke an opening seed or
-wing without requiring a literal reading. Its identity comes from the asymmetric
-silhouette, not from an initial or a letterform.
+标志以欧拉螺线为骨架。中心的笔画舒展，两端逐渐收紧、变细，勾出介于 Serphia 首字母 S 与积分号 ∫ 之间的轮廓。
+两端绕画布中心旋转 180° 后重合，整枚标志由一条闭合路径构成。
 
-The concept was explored using the built-in image generation tool, then redrawn
-as two editable Bézier paths for predictable desktop rendering. The symbol works
-as one flat color without textures, shading, or a wordmark. The charcoal desktop
-tile (`#242824`) carries a warm ivory symbol (`#F4F1E8`).
+桌面图标使用墨绿底色（`#163C34`）与暖象牙白笔画（`#F8F2DE`）。侧栏中的标志跟随文字颜色，macOS 菜单栏使用透明底的单色模板。
 
-Edit **`build/mark.svg`**, then run **`npm run build:icons`**. This regenerates the
-app tile and all platform assets. Do not edit generated `build/icon.svg` directly.
-The rasterizer is a development dependency, not an application dependency.
+## 更新图标
 
-- `mark.svg`: standalone monochrome vector master.
-- `icon.svg`: generated tile, with a 64 px transparent inset on a 1024 px canvas.
-- `icon.png`: 1024 × 1024 RGBA master, also used by the README and Dock.
-- `icon.ico`: 16, 20, 24, 32, 40, 48, 64, 128, and 256 px Windows frames.
-- `icon.icns`: macOS standard and Retina representations up to 1024 px.
-- `icons/`: PNG exports from 16 to 1024 px, also used by Linux packaging.
-- `trayTemplate.png` and `trayTemplate@2x.png`: 18/36 px monochrome menu-bar mark.
+编辑 `build/mark.svg` 中的贝塞尔路径后，运行 `npm run build:icons` 重新生成以下资源。
 
-The full-color icon is for application launchers, desktop shortcuts, and Windows
-or Linux trays. The transparent monochrome template is for the macOS menu bar,
-where the operating system adapts its color to the current appearance.
-
-## Image generation brief
-
-Original abstract symbol for a premium AI desktop workspace: “Unfold / potential
-becoming action.” Two broad softly folded surfaces open around one generous
-negative-space aperture. Evoke an unfolding seed or opening wing without literal
-illustration. Memorable asymmetric silhouette, optical balance, at most two or
-three broad shapes, recognisable at 16–32 px. Monochrome, vector-friendly, flat
-near-black on warm off-white. No letters, initials, S, typography, infinity,
-six-loop knot, apple, stock AI sparkle, brain, circuit, or decorative dots. Seek
-the restraint and finish of established product identities without imitating
-their symbols. One centered finished logo, no app tile, frame, gradient, shadow,
-bevel, or mockup. Generated using the built-in image tool, not the CLI fallback.
+- `icon.svg` 是带圆角底板的矢量图，也用作浏览器标签页图标。
+- `icon.png` 是 1024 × 1024 的透明底 PNG，供 README 与 Dock 使用。
+- `icon.ico` 和 `icon.icns` 分别用于 Windows 和 macOS 打包。
+- `icons/` 包含 16 至 1024 像素的 PNG，供 Linux 打包使用。
+- `trayTemplate.png` 和 `trayTemplate@2x.png` 是 macOS 菜单栏的 18 和 36 像素模板。

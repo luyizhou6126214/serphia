@@ -302,6 +302,27 @@ const ACCESSIBILITY_STYLE = `
 const EMBEDDED_STYLE = `
   [popover].morph-menu-shell { margin: 0; border: 0; padding: 0; }
   .morph-menu-shell[data-state=closed] .morph-menu-compact { pointer-events: auto; }
+  .serphia-composer-model-controls { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .serphia-composer-model-selector { min-width: 0; }
+  .composer-toolbar-compact {
+    display: grid;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .composer-toolbar-compact:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+  .composer-toolbar-compact:focus-visible { outline: 2px solid var(--text-muted); outline-offset: 1px; }
+  .composer-toolbar-compact:disabled { opacity: 0.45; cursor: default; }
+  @media (max-width: 640px) {
+    .serphia-composer-model-selector { max-width: min(50vw, 210px); }
+  }
   [data-serphia-model-trigger] { min-height: 32px; max-width: 100%; padding-block: 4px; }
   [data-serphia-model-trigger] > .model-trigger-name {
     white-space: normal;
@@ -386,6 +407,7 @@ function mountDeepAgent(target, options, variant) {
     __export(original_icons_exports, {
       OriginalDemo: () => OriginalDemo,
       ApprovalMenu: () => ApprovalMenu,
+      HoverInfo: () => HoverInfo,
       ModelThinkingSelector: () => ModelThinkingSelector,
       disposeMessages: () => disposeMessages
     });

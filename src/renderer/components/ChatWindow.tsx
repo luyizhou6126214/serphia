@@ -19,11 +19,13 @@ import { scaledChatFont } from "@/lib/chat-appearance";
 import { CHAT_COLUMN_PADDING, CHAT_INPUT_RIGHT_PADDING, CHAT_MINIMAP_WIDTH } from "@/lib/chat-layout";
 import { isAssistantFailure, isAssistantAborted, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
+import { MarkdownBody } from "./MarkdownBody";
 import { LiveProcessRows } from "./LiveProcessRows";
 import { RunningTurnStatus } from "./RunningTurnStatus";
 import { ProcessDetailsGroup } from "./ProcessDetailsGroup";
 import { summarizeActivity } from "./chat/process-activity";
 import { SubagentActivityPanel } from "./chat/SubagentActivityPanel";
+import { NoticeShelf } from "./chat/NoticeShelf";
 import { SessionTodoPanel } from "./chat/SessionTodoPanel";
 import { ExtensionWidgets } from "./chat/ExtensionWidgets";
 import { SessionProfiler } from "./SessionProfiler";
@@ -37,7 +39,7 @@ import { SessionViewTabs, type SessionView } from "./SessionViewTabs";
 import { ChatWidthHandles } from "./ChatWidthHandles";
 import { ContextView } from "./context/ContextView";
 import { TrajectoryView } from "./trajectory/TrajectoryView";
-import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
+import { useAgentSession } from "@/hooks/useAgentSession";
 import { useMcpServerListCommand } from "@/hooks/useMcpSettingsRequests";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -49,7 +51,8 @@ import { withGeneratedImageReply } from "@/lib/generated-image-reply";
 import { useI18n } from "@/i18n";
 import type { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
 import { skillInvocationCommandText } from "@shared/skill-invocation";
-import { localizedExtensionConfirmCopy } from "@/lib/extension-ui-copy";
+import { localizedExtensionConfirmCopy, localizedPlanDialogCopy } from "@/lib/extension-ui-copy";
+import { PLAN_MODE_STATUS, PLAN_REVIEW_CHOICES } from "@shared/plan-mode";
 import { isDefaultSessionDirectory } from "@shared/session-workspace";
 import { worktreePathsEqual } from "@shared/worktree-path";
 import { WelcomeOrb } from "./chat/WelcomeOrb";
@@ -70,7 +73,6 @@ interface Props {
   ) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   presentationStore: SessionPresentationStore;
-  onSessionStatsPanelOpen?: () => void;
   onOpenFile?: (filePath: string) => void;
   thinkingExpansionStore: ThinkingExpansionStore;
   processDetailsExpansionStore: ThinkingExpansionStore;
@@ -173,7 +175,6 @@ export function ChatWindow({
   onBranchDataChange,
   onSystemPromptChange,
   presentationStore,
-  onSessionStatsPanelOpen,
   onOpenFile,
   thinkingExpansionStore,
   processDetailsExpansionStore,
@@ -184,7 +185,6 @@ export function ChatWindow({
   const chatRootRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
   const [sessionView, setSessionView] = useState<SessionView>("chat");
-  const [todosExpanded, setTodosExpanded] = useState(false);
   const [mcpServersOpen, setMcpServersOpen] = useState(false);
   const openMcpServers = useCallback(() => setMcpServersOpen(true), []);
   const closeMcpServers = useCallback(() => setMcpServersOpen(false), []);
@@ -237,6 +237,7 @@ export function ChatWindow({
     extensionDialog,
     extensionCustomUi,
     extensionStatuses,
+    planModePending,
     extensionWidgets,
     subagents,
     respondToExtensionUi,
@@ -250,16 +251,17 @@ export function ChatWindow({
     scrollContainerRef,
     lastUserMsgRef,
     handleSend,
+    handleExitPlanMode,
     handleAbort,
     handleFork,
     handleNavigate,
     handleModelChange,
+    handleCompact,
     handleSteer,
     handleFollowUp,
     handlePromptWithStreamingBehavior,
     handleAbortCompaction,
     handleRecallQueue,
-    handleBuiltinSlashCommand,
     handleToolPresetChange,
     toolSelectionError,
     handleThinkingLevelChange,
@@ -277,17 +279,14 @@ export function ChatWindow({
     onBranchDataChange,
     onSystemPromptChange,
     presentationStore,
-    onSessionStatsPanelOpen,
   });
-  const handleComposerCommand = useCallback(
-    (text: string) => {
-      if (text !== "/todos") return handleBuiltinSlashCommand(text);
-      setTodosExpanded(true);
-      return Promise.resolve({ handled: true } as const);
-    },
-    [handleBuiltinSlashCommand],
-  );
   useMcpServerListCommand(currentSessionId, openMcpServers);
+  const todoPanel = useMemo(() => {
+    if (agentRunning && sessionTodos.some((todo) => !todo.done)) {
+      return <SessionTodoPanel todos={sessionTodos} />;
+    }
+    return null;
+  }, [agentRunning, sessionTodos]);
   const runningToolCallIds = useMemo(
     () => new Set(agentPhase?.kind === "running_tools" ? agentPhase.tools.map((tool) => tool.id) : []),
     [agentPhase],
@@ -388,9 +387,12 @@ export function ChatWindow({
     <ChatInput
       ref={chatInputRef}
       welcome={isEmptyNew}
+      todoPanel={todoPanel}
       showWorkspace={showWorkspace}
       onSend={handleSend}
       onAbort={isCompacting ? handleAbortCompaction : handleAbort}
+      onCompact={handleCompact}
+      compactDisabled={!session}
       onSteer={agentRunning && !isCompacting ? handleSteer : undefined}
       onFollowUp={agentRunning && !isCompacting ? handleFollowUp : undefined}
       onPromptWithStreamingBehavior={agentRunning && !isCompacting ? handlePromptWithStreamingBehavior : undefined}
@@ -407,6 +409,9 @@ export function ChatWindow({
       toolPreset={toolPreset}
       onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       toolSelectionError={toolSelectionError}
+      planModeEnabled={extensionStatuses.some(({ key }) => key === PLAN_MODE_STATUS)}
+      planModePending={planModePending}
+      onExitPlanMode={handleExitPlanMode}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
@@ -419,7 +424,6 @@ export function ChatWindow({
       onLoadSlashCommands={loadSlashCommands}
       onOpenMcpServers={openMcpServers}
       mcpServerList={mcpServerList}
-      onBuiltinCommand={handleComposerCommand}
       draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}
       cwd={session?.cwd ?? newSessionCwd}
@@ -438,6 +442,18 @@ export function ChatWindow({
   if (error) {
     return <div className="flex h-full items-center justify-center text-red-400">{error}</div>;
   }
+
+  const chatTopOverlays = (notices.length > 0 || (!isEmptyNew && subagents.length > 0)) && (
+    <div
+      className="chat-top-overlays"
+      style={{ right: isMobile || isEmptyNew ? 0 : CHAT_MINIMAP_WIDTH, paddingInline: CHAT_COLUMN_PADDING }}
+    >
+      <div className="chat-content-column flex flex-col items-end gap-2">
+        <NoticeShelf notices={notices} />
+        {!isEmptyNew && subagents.length > 0 && <SubagentActivityPanel subagents={subagents} />}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -529,11 +545,11 @@ export function ChatWindow({
           inert={activeSessionView !== "chat" || undefined}
           style={{ display: activeSessionView === "chat" ? undefined : "none" }}
         >
+          {chatTopOverlays}
           <div className="chat-content-column">
             <div className="chat-welcome">
               <WelcomeOrb replayLabel={t("sessionWelcomeReplay", "Replay the mascot entrance")} />
             </div>
-            <NoticeShelf notices={notices} align="right" />
           </div>
         </div>
       ) : (
@@ -548,24 +564,7 @@ export function ChatWindow({
             inert={activeSessionView !== "chat" || undefined}
             style={{ display: activeSessionView === "chat" ? undefined : "none" }}
           >
-            <div
-              style={{
-                position: "absolute",
-                top: 12,
-                left: 0,
-                right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
-                zIndex: 40,
-                padding: `0 ${CHAT_COLUMN_PADDING}px`,
-                pointerEvents: "none",
-              }}
-            >
-              <div className="chat-content-column">
-                <div className="flex flex-col items-end gap-2">
-                  <NoticeShelf notices={notices} floating align="right" />
-                  {subagents.length > 0 && <SubagentActivityPanel subagents={subagents} />}
-                </div>
-              </div>
-            </div>
+            {chatTopOverlays}
             <div ref={scrollContainerRef} className="chat-message-scroll relative z-[1] flex-1 overflow-y-auto">
               <div
                 style={{
@@ -597,7 +596,7 @@ export function ChatWindow({
                       </button>
                     </div>
                   )}
-                  <ExtensionStatusBar statuses={extensionStatuses} />
+                  <ExtensionStatusBar statuses={extensionStatuses.filter(({ key }) => key !== PLAN_MODE_STATUS)} />
                   <ExtensionWidgets widgets={aboveEditorWidgets} />
 
                   <div className="dsh-flow" data-chat-flow="">
@@ -959,7 +958,7 @@ export function ChatWindow({
         inert={activeSessionView !== "chat" || undefined}
         style={{ display: activeSessionView === "chat" ? undefined : "none" }}
       >
-        {((!isEmptyNew && belowEditorWidgets.length > 0) || sessionTodos.length > 0 || todosExpanded) && (
+        {!isEmptyNew && belowEditorWidgets.length > 0 && (
           <div
             style={{
               padding: `0 ${CHAT_COLUMN_PADDING}px`,
@@ -967,14 +966,7 @@ export function ChatWindow({
             }}
           >
             <div className="chat-content-column">
-              {!isEmptyNew && <ExtensionWidgets widgets={belowEditorWidgets} />}
-              {(sessionTodos.length > 0 || todosExpanded) && (
-                <SessionTodoPanel
-                  todos={sessionTodos}
-                  expanded={todosExpanded}
-                  onToggle={() => setTodosExpanded((value) => !value)}
-                />
-              )}
+              <ExtensionWidgets widgets={belowEditorWidgets} />
             </div>
           </div>
         )}
@@ -1004,90 +996,6 @@ export function ChatWindow({
   );
 }
 
-function NoticeShelf({
-  notices,
-  floating = false,
-  align = "left",
-}: {
-  notices: NoticeItem[];
-  floating?: boolean;
-  align?: "left" | "right";
-}) {
-  if (notices.length === 0) return null;
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: align === "right" ? "flex-end" : "stretch",
-        marginBottom: floating ? 0 : 10,
-      }}
-    >
-      {notices.map((notice, index) => {
-        const color =
-          notice.type === "error"
-            ? "#ef4444"
-            : notice.type === "warning"
-              ? "#d97706"
-              : notice.type === "success"
-                ? "#10b981"
-                : "var(--accent)";
-        return (
-          <div
-            key={notice.id}
-            className="notice-shelf-item"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              minHeight: 60,
-              marginBottom: index === notices.length - 1 ? 0 : 6,
-              overflow: "hidden",
-              borderRadius: 14,
-              border: "1px solid color-mix(in srgb, var(--border) 70%, transparent)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              width: "fit-content",
-              maxWidth: "min(100%, 620px)",
-              boxShadow: floating
-                ? "0 1px 2px rgba(15,23,42,0.05), 0 10px 28px -14px rgba(15,23,42,0.24)"
-                : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
-              fontSize: 18,
-              lineHeight: 1.45,
-              transformOrigin: "top center",
-              animation: notice.exiting
-                ? "notice-shelf-out 0.18s ease-in forwards"
-                : "notice-shelf-in 0.18s ease-out both",
-              padding: "0 12px",
-            }}
-          >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: color,
-                flexShrink: 0,
-              }}
-            />
-            <span
-              style={{
-                padding: "14px 0",
-                minWidth: 0,
-                maxWidth: "100%",
-                overflowWrap: "anywhere",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {notice.message}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 type ExtensionDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
 
 function ExtensionDialog({
@@ -1103,6 +1011,7 @@ function ExtensionDialog({
   const { t } = useI18n();
   const [value, setValue] = useState(request.method === "editor" ? (request.prefill ?? "") : "");
   const confirmCopy = request.method === "confirm" ? localizedExtensionConfirmCopy(request, t) : null;
+  const planCopy = localizedPlanDialogCopy(request, t);
 
   useEffect(() => {
     setValue(request.method === "editor" ? (request.prefill ?? "") : "");
@@ -1132,6 +1041,14 @@ function ExtensionDialog({
       <div
         role="dialog"
         aria-modal="true"
+        aria-label={confirmCopy?.title ?? planCopy?.title ?? request.title}
+        onKeyDown={(event) => {
+          if (planCopy && request.method === "select" && event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onRespond(request, { cancelled: true });
+          }
+        }}
         style={{
           width: "min(560px, 100%)",
           border: "1px solid var(--border)",
@@ -1143,7 +1060,7 @@ function ExtensionDialog({
       >
         <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ color: "var(--text)", fontSize: scaledChatFont(14), fontWeight: 650 }}>
-            {confirmCopy?.title ?? request.title}
+            {confirmCopy?.title ?? planCopy?.title ?? request.title}
           </div>
           <div
             style={{
@@ -1172,9 +1089,15 @@ function ExtensionDialog({
           )}
           {request.method === "select" && (
             <div style={{ display: "grid", gap: 8 }}>
+              {request.plan && (
+                <div style={{ maxHeight: "34vh", overflowY: "auto", overflowWrap: "anywhere" }}>
+                  <MarkdownBody variant="compact">{request.plan}</MarkdownBody>
+                </div>
+              )}
               {request.options.map((option) => (
                 <button
                   key={option}
+                  autoFocus={!!planCopy && option === PLAN_REVIEW_CHOICES.stay}
                   onClick={() => onRespond(request, { value: option })}
                   style={{
                     width: "100%",
@@ -1188,7 +1111,7 @@ function ExtensionDialog({
                     fontSize: scaledChatFont(13),
                   }}
                 >
-                  {option}
+                  {planCopy?.options?.[option] ?? option}
                 </button>
               ))}
             </div>

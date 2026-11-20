@@ -1,4 +1,4 @@
-import { Brain, CircleAlert, Feather, Hand, Lightbulb, Plus, ShieldHalf } from "lucide-react";
+import { Brain, CircleAlert, Feather, Hand, Lightbulb, ListCollapse, Plus, ShieldHalf, X } from "lucide-react";
 import { type ReactNode, memo, useEffect, useId, useState } from "react";
 import { DeepAgentMenuScope } from "./DeepAgentMenuScope";
 import type { ModelCatalogStatus } from "@contract/types";
@@ -19,6 +19,8 @@ interface ModelOption {
 
 export interface ComposerToolbarOptions {
   onAbort: () => void;
+  onCompact?: () => void;
+  compactDisabled?: boolean;
   isStreaming: boolean;
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
@@ -30,6 +32,9 @@ export interface ComposerToolbarOptions {
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
   toolSelectionError?: string;
+  planModeEnabled?: boolean;
+  planModePending?: boolean;
+  onExitPlanMode?: () => Promise<boolean>;
   thinkingLevel?: ThinkingLevelOption;
   onThinkingLevelChange?: (level: ReasoningLevel) => void;
   availableThinkingLevels?: string[] | null;
@@ -72,6 +77,8 @@ function ComposerToolbarView({
   const { t } = useI18n();
   const {
     onAbort,
+    onCompact,
+    compactDisabled,
     isStreaming,
     model,
     isAutoModelSelection,
@@ -83,6 +90,9 @@ function ComposerToolbarView({
     toolPreset,
     onToolPresetChange,
     toolSelectionError,
+    planModeEnabled,
+    planModePending,
+    onExitPlanMode,
     thinkingLevel,
     onThinkingLevelChange,
     availableThinkingLevels,
@@ -91,6 +101,8 @@ function ComposerToolbarView({
   const permissionLayoutId = useId();
   const [activeMenu, setActiveMenu] = useState<"model" | "permission" | null>(null);
   const currentMenu = isStreaming ? null : activeMenu;
+  const compactLabel = t("compactContext", "Compact context");
+  const exitPlanLabel = t("exitPlanMode", "Exit Plan mode");
 
   useEffect(() => setActiveMenu(null), [isMobile, isStreaming]);
 
@@ -228,40 +240,75 @@ function ComposerToolbarView({
             )}
           </DeepAgentMenuScope>
         )}
+        {planModeEnabled && (
+          <div className="composer-plan-mode" title={t("planReadOnly", "Read-only exploration")}>
+            <Lightbulb size={14} strokeWidth={1.7} aria-hidden="true" />
+            <span>{t("planModeTag", "Plan")}</span>
+            <button
+              type="button"
+              className="composer-plan-mode-close"
+              aria-label={exitPlanLabel}
+              title={exitPlanLabel}
+              disabled={isStreaming || planModePending || !onExitPlanMode}
+              onClick={() => void onExitPlanMode?.()}
+            >
+              <X size={13} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </div>
       <div className="composer-toolbar-settings">
         {modelStatus}
-        {(onThinkingLevelChange || onModelChange) && (
+        {(onCompact || onThinkingLevelChange || onModelChange) && (
           <DeepAgentMenuScope>
-            {({ ModelThinkingSelector }) => (
-              <ModelThinkingSelector
-                open={currentMenu === "model"}
-                onOpenChange={(open) => setMenuOpen("model", open)}
-                menuLabel={t("modelAndReasoning", "Model and reasoning")}
-                selectModelLabel={t("models", "Models")}
-                modelsLabel={t("models", "Models")}
-                noModelsLabel={t("composerNoModels", "No models available")}
-                reasoningLabel={t("composerEffortTitle", "Reasoning effort")}
-                disabled={isStreaming}
-                showThinking={Boolean(onThinkingLevelChange && currentThinking)}
-                thinkingDisabled={isStreaming}
-                models={[...modelsByKey.keys()]}
-                selectedModel={selectedModelKey}
-                getModelLabel={(id) => modelsByKey.get(id)?.name ?? currentModelName ?? id}
-                getModelGroup={multipleProviders ? (id) => modelsByKey.get(id)?.provider : undefined}
-                selectedThinking={currentThinking}
-                thinkingOptions={thinkingOptions}
-                modelStatus={modelCatalogStatus}
-                onChooseModel={(id) => {
-                  const option = modelsByKey.get(id);
-                  if (option && (id !== selectedModelKey || isAutoModelSelection)) {
-                    onModelChange?.(option.provider, option.modelId);
-                  }
-                }}
-                onChooseThinking={(next) => {
-                  if (next !== currentThinking && thinkingSteps.includes(next)) onThinkingLevelChange?.(next);
-                }}
-              />
+            {({ HoverInfo, ModelThinkingSelector }) => (
+              <div className="serphia-composer-model-controls">
+                {onCompact && (
+                  <HoverInfo content={compactLabel}>
+                    <button
+                      type="button"
+                      className="composer-toolbar-compact"
+                      onClick={onCompact}
+                      disabled={isStreaming || compactDisabled}
+                      aria-label={compactLabel}
+                    >
+                      <ListCollapse size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </button>
+                  </HoverInfo>
+                )}
+                {(onThinkingLevelChange || onModelChange) && (
+                  <div className="serphia-composer-model-selector">
+                    <ModelThinkingSelector
+                      open={currentMenu === "model"}
+                      onOpenChange={(open) => setMenuOpen("model", open)}
+                      menuLabel={t("modelAndReasoning", "Model and reasoning")}
+                      selectModelLabel={t("models", "Models")}
+                      modelsLabel={t("models", "Models")}
+                      noModelsLabel={t("composerNoModels", "No models available")}
+                      reasoningLabel={t("composerEffortTitle", "Reasoning effort")}
+                      disabled={isStreaming}
+                      showThinking={Boolean(onThinkingLevelChange && currentThinking)}
+                      thinkingDisabled={isStreaming}
+                      models={[...modelsByKey.keys()]}
+                      selectedModel={selectedModelKey}
+                      getModelLabel={(id) => modelsByKey.get(id)?.name ?? currentModelName ?? id}
+                      getModelGroup={multipleProviders ? (id) => modelsByKey.get(id)?.provider : undefined}
+                      selectedThinking={currentThinking}
+                      thinkingOptions={thinkingOptions}
+                      modelStatus={modelCatalogStatus}
+                      onChooseModel={(id) => {
+                        const option = modelsByKey.get(id);
+                        if (option && (id !== selectedModelKey || isAutoModelSelection)) {
+                          onModelChange?.(option.provider, option.modelId);
+                        }
+                      }}
+                      onChooseThinking={(next) => {
+                        if (next !== currentThinking && thinkingSteps.includes(next)) onThinkingLevelChange?.(next);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
             )}
           </DeepAgentMenuScope>
         )}

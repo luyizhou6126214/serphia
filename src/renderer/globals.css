@@ -1340,10 +1340,83 @@ span.linenumber {
   }
 }
 
+.chat-top-overlays {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.notice-shelf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.notice-shelf-item {
+  --notice-color: var(--info);
+  --notice-tint: var(--info-soft);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 42px;
+  max-width: min(100%, 560px);
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 5%),
+    0 10px 24px -12px rgb(0 0 0 / 24%);
+  font-size: calc(13px * var(--chat-font-scale, 1));
+  line-height: 1.45;
+  transform-origin: top center;
+  animation: notice-shelf-in 180ms ease-out both;
+}
+
+.notice-shelf-item[data-tone="error"] {
+  --notice-color: var(--danger);
+  --notice-tint: var(--danger-soft);
+}
+
+.notice-shelf-item[data-tone="warning"] {
+  --notice-color: var(--warning);
+  --notice-tint: var(--warning-soft);
+}
+
+.notice-shelf-item[data-tone="success"] {
+  --notice-color: var(--success);
+  --notice-tint: var(--success-soft);
+}
+
+.notice-shelf-item[data-exiting] {
+  animation: notice-shelf-out 180ms ease-in forwards;
+}
+
+.notice-shelf-icon {
+  display: grid;
+  flex: 0 0 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--notice-tint);
+  color: var(--notice-color);
+}
+
+.notice-shelf-message {
+  min-width: 0;
+  margin-block: max(0px, calc((24px - 1lh) / 2));
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 @keyframes notice-shelf-in {
   from {
     opacity: 0;
-    margin-bottom: 0;
     transform: translateY(-6px) scale(0.995);
   }
   to {
@@ -1359,7 +1432,6 @@ span.linenumber {
   }
   to {
     opacity: 0;
-    margin-bottom: 0;
     transform: translateY(-5px) scale(0.995);
   }
 }
@@ -1588,11 +1660,22 @@ span.linenumber {
   height: 29px;
 }
 .project-sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: #37383c;
   font-size: 18px;
   line-height: 1;
   font-weight: 650;
   letter-spacing: -0.35px;
+}
+.project-sidebar-brand::before {
+  content: "";
+  width: 18px;
+  height: 20px;
+  flex: none;
+  background-color: currentColor;
+  mask: url("../../build/mark.svg") center / 30px 30px no-repeat;
 }
 .project-sidebar-title-actions {
   display: flex;
@@ -3413,6 +3496,31 @@ html.dark .chat-welcome {
   line-height: 20px;
 }
 
+/* The checklist tucks behind the input's top edge, outside its focus surface. */
+.session-todo-panel {
+  margin: 0 clamp(10px, 2%, 20px) -8px;
+  padding-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--action-blue) 16%, var(--border));
+  border-radius: 14px 14px 0 0;
+  background: color-mix(in srgb, var(--action-blue) 5%, var(--bg-panel));
+  color: var(--text);
+}
+.session-todo-mark {
+  display: grid;
+  flex: 0 0 14px;
+  height: 14px;
+  margin: 3px 1px;
+  place-items: center;
+  border: 1px solid var(--text-dim);
+  border-radius: 4px;
+}
+.session-todo-mark[data-done="true"] {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--action-blue) 14%, var(--bg-panel));
+  color: var(--action-blue);
+}
+
 /* A single, quiet composer keeps the prompt and its controls together. */
 .chat-composer-card {
   position: relative;
@@ -3886,6 +3994,39 @@ button.composer-context:hover {
 }
 .composer-toolbar-primary {
   flex: 0 0 auto;
+}
+.composer-plan-mode {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding-inline: 7px 2px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.composer-plan-mode-close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.composer-plan-mode-close:not(:disabled):hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.composer-plan-mode-close:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .composer-toolbar-settings {
   flex: 0 1 auto;
@@ -5653,11 +5794,11 @@ html.dark .turn-changes {
   .composer-toolbar-primary {
     gap: 0;
   }
+  .composer-plan-mode {
+    margin-inline-start: 4px;
+  }
   .composer-toolbar-settings {
     flex: 0 1 auto;
-  }
-  .composer-toolbar-settings .composer-deep-agent-control {
-    max-width: min(50vw, 210px);
   }
   .chat-timeline {
     display: none;

@@ -9,6 +9,7 @@ import { sessionOrchestrationExtensions } from "./session-orchestration";
 import { createAgentSettlementExtension } from "./agent-settlement";
 import { createAdditionalSkillReferencesExtension } from "./additional-skill-references";
 import { createSessionTodoExtension } from "./session-todo";
+import { createPlanModeExtension } from "./plan-mode";
 
 export function desktopSessionExtensions(
   policy: SessionToolPolicy,
@@ -17,9 +18,11 @@ export function desktopSessionExtensions(
   running: () => boolean,
   hasDirectory = true,
   getSkills: () => readonly { name: string; filePath: string; baseDir: string }[] = () => [],
+  planMode: InlineExtension = createPlanModeExtension(),
 ): InlineExtension[] {
   return [
     createAgentSettlementExtension(),
+    planMode,
     policy.extension(),
     history.extension(),
     createSessionTodoExtension(),

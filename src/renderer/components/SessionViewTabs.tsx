@@ -53,6 +53,7 @@ export function SessionViewTabs({ value, onChange }: Props) {
   };
   const rootRef = useRef<HTMLDivElement>(null);
   const indicatorRef = useRef<HTMLSpanElement>(null);
+  const emberRef = useRef<HTMLSpanElement>(null);
   const motionRef = useRef<gsap.core.Timeline | null>(null);
   const lensRef = useRef({ top: 0, bottom: 0, taper: 0 });
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -62,8 +63,9 @@ export function SessionViewTabs({ value, onChange }: Props) {
   useGSAP(
     () => {
       const indicator = indicatorRef.current;
+      const ember = emberRef.current;
       const activeButton = buttonRefs.current[selectedIndex];
-      if (!indicator || !activeButton?.offsetHeight) return;
+      if (!indicator || !ember || !activeButton?.offsetHeight) return;
 
       const target = activeButton.offsetTop - indicator.offsetTop;
       const size = activeButton.offsetHeight;
@@ -87,6 +89,7 @@ export function SessionViewTabs({ value, onChange }: Props) {
         lens.bottom = target;
         lens.taper = 0;
         paintLens();
+        gsap.set(ember, { "--session-ember-boost": 0 });
         return;
       }
 
@@ -96,11 +99,20 @@ export function SessionViewTabs({ value, onChange }: Props) {
       const trailing = direction > 0 ? "top" : "bottom";
       const duration = 0.33 + Math.min(Math.abs(delta), 78) * 0.0008;
 
-      motionRef.current = gsap
+      const movement = gsap
         .timeline({ onUpdate: paintLens })
         .to(lens, { [leading]: target, duration, ease: "power2.inOut" }, 0)
         .to(lens, { [trailing]: target, duration: duration + 0.055, ease: "power2.inOut" }, 0.055)
         .to(lens, { taper: direction, duration: 0.13, ease: "sine.inOut" }, 0);
+
+      motionRef.current = gsap
+        .timeline()
+        .add(movement, 0)
+        .to(ember, { "--session-ember-boost": 0.28, duration: 0.22, ease: "sine.out" }, 0)
+        .to(ember, { "--session-ember-boost": 1, duration: 0.12, ease: "power2.out" }, movement.duration() - 0.08)
+        .to(ember, { "--session-ember-boost": 0.43, duration: 0.14, ease: "sine.inOut" })
+        .to(ember, { "--session-ember-boost": 0.59, duration: 0.1, ease: "sine.inOut" })
+        .to(ember, { "--session-ember-boost": 0, duration: 0.33, ease: "power2.out" });
     },
     { scope: rootRef, dependencies: [selectedIndex] },
   );
@@ -149,7 +161,9 @@ export function SessionViewTabs({ value, onChange }: Props) {
         className="session-view-tabs-indicator"
         style={{ "--session-lens-filter": `url("#${refractionId}")` } as CSSProperties}
         aria-hidden="true"
-      />
+      >
+        <span ref={emberRef} className="session-view-tabs-ember" />
+      </span>
       {TABS.map(({ id, Icon }, index) => {
         const selected = id === value;
         const label = labels[id];

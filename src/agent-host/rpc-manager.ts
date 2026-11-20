@@ -3,6 +3,7 @@ import { SessionModelConfig } from "./session-model-config";
 import { loadSessionToolSelection } from "./session-shell";
 import { buildLiveSessionStats } from "./session-stats";
 import { AUTO_ROUTING_PROVIDER } from "../contract/model-settings";
+import { RpcError } from "../contract/types";
 import {
   createAgentSessionFromServices,
   getAgentDir,
@@ -53,6 +54,9 @@ import { sessionWorkspaceOptions, openSessionWorkspace, forkSessionWorkspace } f
 import { DIRECTORY_TOOL_NAMES, requiresSessionDirectory } from "../shared/session-workspace";
 import { allowFileRoot } from "./file-access";
 import type { SubagentActivity } from "./subagent-activity";
+import { PLAN_MODE_COMMAND, PLAN_MODE_EXTENSION } from "../shared/plan-mode";
+import { ExtensionDialogs } from "./extension-dialogs";
+import { createPlanModeExtension } from "./plan-mode";
 
 // ============================================================================
 // Types
@@ -64,11 +68,6 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
-
-type PendingUiResponse = {
-  resolve: (response: ExtensionUiResponse) => void;
-  cancel: () => void;
-};
 
 type CustomUiComponent = {
   render: (width: number) => string[];
@@ -82,12 +81,6 @@ type ActiveCustomUi = {
   width: number;
   resolve: (value: unknown) => void;
   settled: boolean;
-};
-
-type ExtensionUiRequestBody = Record<string, unknown> & {
-  method: ExtensionUiRequest["method"];
-  timeout?: number;
-  expiresAt?: number;
 };
 
 type ExtensionCommandContextActionsLike = {
@@ -113,8 +106,11 @@ export type ExternalSessionCommand = "compact" | "reload";
 export class AgentSessionWrapper {
   public readonly inner: AgentSessionLike;
   private listeners: EventListener[] = [];
-  private pendingUiResponses = new Map<string, PendingUiResponse>();
-  private pendingUiRequests = new Map<string, AgentEvent>();
+  private readonly dialogs = new ExtensionDialogs(
+    (event) => this.emit(event),
+    () => (this.scheduledTurnActive ? "scheduled" : this.externalTurnActive ? "channel" : "desktop"),
+  );
+  private pendingCustomUiRequests = new Map<string, AgentEvent>();
   private activeCustomUis = new Map<string, ActiveCustomUi>();
   private extensionStatuses = new Map<string, string>();
   private runtimeDiagnosticStatuses = new Map<string, string>();
@@ -160,6 +156,7 @@ export class AgentSessionWrapper {
     private readonly disposeMcp?: () => Promise<void>,
     readonly modelSelection = new SessionModelSelection(),
     private readonly subagentActivity?: SubagentActivity,
+    private readonly planMode?: Pick<ReturnType<typeof createPlanModeExtension>, "changeMode">,
   ) {
     this.inner = inner;
     this.toolPolicy?.setResourceReady(() => this.resourceReload.executionReady());
@@ -575,7 +572,8 @@ export class AgentSessionWrapper {
 
   onEvent(listener: EventListener): () => void {
     this.listeners.push(listener);
-    for (const event of this.pendingUiRequests.values()) listener(event);
+    this.dialogs.replay(listener);
+    for (const event of this.pendingCustomUiRequests.values()) listener(event);
     return () => {
       const i = this.listeners.indexOf(listener);
       if (i !== -1) this.listeners.splice(i, 1);
@@ -596,9 +594,29 @@ export class AgentSessionWrapper {
     const type = command.type as string;
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
     if (this.forceEmptySystemPrompt && this.shouldWaitForExtensions(type)) this.syncDesktopToolActivation();
-    if (["prompt", "steer", "follow_up", "compact"].includes(type)) this.modelSelection.assertReady(this.inner);
+    const togglesPlanMode =
+      type === "prompt" &&
+      command.message === `/${PLAN_MODE_COMMAND}` &&
+      this.inner.extensionRunner
+        .getRegisteredCommands()
+        .some(
+          ({ invocationName, sourceInfo }) =>
+            invocationName === PLAN_MODE_COMMAND && sourceInfo?.path === `<inline:${PLAN_MODE_EXTENSION}>`,
+        );
+    if (!togglesPlanMode && ["prompt", "steer", "follow_up", "compact"].includes(type))
+      this.modelSelection.assertReady(this.inner);
 
     switch (type) {
+      case "set_plan_mode": {
+        const { action } = command;
+        if (action !== "toggle" && action !== "off")
+          throw new RpcError({ code: "BAD_REQUEST", message: "Invalid Plan mode action" });
+        await this.waitForExtensionsBound();
+        if (!this._alive || !this.planMode) throw new Error("Plan mode is unavailable for this session");
+        if (this.isRunning()) throw new Error("Wait for the current turn before changing Plan mode");
+        return { enabled: this.planMode.changeMode(action) };
+      }
+
       case "prompt": {
         // Fire and forget — events come via subscribe
         const clientRunId =
@@ -609,8 +627,10 @@ export class AgentSessionWrapper {
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         if (!streamingBehavior) browserAgentRuntime.beginTurn(this.sessionId, "local");
         const invokePrompt = async () => {
-          if (!streamingBehavior) await this.modelConfig.sync(this.inner, this.modelSelection);
-          this.modelSelection.assertReady(this.inner);
+          if (!togglesPlanMode) {
+            if (!streamingBehavior) await this.modelConfig.sync(this.inner, this.modelSelection);
+            this.modelSelection.assertReady(this.inner);
+          }
           return this.inner.prompt(command.message as string, {
             ...(promptImages?.length ? { images: promptImages } : {}),
             ...(streamingBehavior ? { streamingBehavior } : {}),
@@ -635,6 +655,7 @@ export class AgentSessionWrapper {
       }
 
       case "abort":
+        this.dialogs.cancelPlanReview();
         await this.withFinalRunningNotification(() => this.inner.abort());
         return null;
 
@@ -846,7 +867,7 @@ export class AgentSessionWrapper {
       }
 
       case "extension_ui_response": {
-        this.resolveExtensionUiResponse(command as ExtensionUiResponse);
+        this.dialogs.respond(command as ExtensionUiResponse);
         return null;
       }
 
@@ -935,10 +956,9 @@ export class AgentSessionWrapper {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     this.unsubscribe = null;
-    for (const pending of this.pendingUiResponses.values()) pending.cancel();
+    this.dialogs.dispose();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
-    this.pendingUiResponses.clear();
-    this.pendingUiRequests.clear();
+    this.pendingCustomUiRequests.clear();
     this.listeners = [];
     const destroyCallbacks = [...this.destroyCallbacks];
     this.destroyCallbacks.clear();
@@ -950,12 +970,6 @@ export class AgentSessionWrapper {
       }
     }
     notifyRunningChange();
-  }
-
-  private resolveExtensionUiResponse(response: ExtensionUiResponse): void {
-    const pending = this.pendingUiResponses.get(response.id);
-    if (!pending) return;
-    pending.resolve(response);
   }
 
   private getExtensionStatuses(): Array<{ key: string; text: string }> {
@@ -1024,7 +1038,7 @@ export class AgentSessionWrapper {
       method: "custom",
       lines,
     } as ExtensionUiRequest as AgentEvent;
-    this.pendingUiRequests.set(id, event);
+    this.pendingCustomUiRequests.set(id, event);
     this.emit(event);
   }
 
@@ -1033,7 +1047,7 @@ export class AgentSessionWrapper {
     if (!custom || custom.settled) return;
     custom.settled = true;
     this.activeCustomUis.delete(id);
-    this.pendingUiRequests.delete(id);
+    this.pendingCustomUiRequests.delete(id);
     try {
       custom.component.dispose?.();
     } catch {
@@ -1122,116 +1136,9 @@ export class AgentSessionWrapper {
     });
   }
 
-  private requestExtensionUi<T>(
-    request: ExtensionUiRequestBody,
-    defaultValue: T,
-    parseResponse: (response: ExtensionUiResponse) => T,
-    timeout?: number,
-    signal?: AbortSignal,
-  ): Promise<T> {
-    if (this.scheduledTurnActive) return Promise.resolve(defaultValue);
-    if (this.externalTurnActive) {
-      this.emit({
-        type: "channel_headless_ui_blocked",
-        feature: request.method,
-        errorMessage: "Interactive extension UI is unavailable for messaging-channel turns.",
-      });
-      return Promise.resolve(defaultValue);
-    }
-    if (signal?.aborted) return Promise.resolve(defaultValue);
-
-    const id = randomUUID();
-    const fullRequest = {
-      type: "extension_ui_request",
-      id,
-      ...request,
-      ...(timeout ? { timeout, expiresAt: Date.now() + timeout } : {}),
-    };
-
-    return new Promise((resolve) => {
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      const cleanup = () => {
-        if (timeoutId) clearTimeout(timeoutId);
-        signal?.removeEventListener("abort", onAbort);
-        this.pendingUiRequests.delete(id);
-        this.pendingUiResponses.delete(id);
-      };
-      const settle = (value: T) => {
-        cleanup();
-        resolve(value);
-      };
-      const onAbort = () => settle(defaultValue);
-
-      if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
-      signal?.addEventListener("abort", onAbort, { once: true });
-
-      this.pendingUiRequests.set(id, fullRequest as AgentEvent);
-      this.pendingUiResponses.set(id, {
-        resolve: (response) => settle(parseResponse(response)),
-        cancel: () => settle(defaultValue),
-      });
-      this.emit(fullRequest as AgentEvent);
-    });
-  }
-
   private createExtensionUiContext(): ExtensionUiContextLike {
     return {
-      select: (title, options, opts) =>
-        this.requestExtensionUi(
-          { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-          undefined,
-          (response) => ("value" in response ? response.value : undefined),
-          opts?.timeout,
-          opts?.signal,
-        ),
-      confirm: (title, message, opts) =>
-        this.requestExtensionUi(
-          { method: "confirm", title, message, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-          false,
-          (response) => ("confirmed" in response ? response.confirmed : false),
-          opts?.timeout,
-          opts?.signal,
-        ),
-      confirmLocalized: (title, message, localization, opts) =>
-        this.requestExtensionUi(
-          {
-            method: "confirm",
-            title,
-            message,
-            localization,
-            ...(opts?.timeout ? { timeout: opts.timeout } : {}),
-          },
-          false,
-          (response) => ("confirmed" in response ? response.confirmed : false),
-          opts?.timeout,
-          opts?.signal,
-        ),
-      input: (title, placeholder, opts) =>
-        this.requestExtensionUi(
-          {
-            method: "input",
-            title,
-            ...(placeholder !== undefined ? { placeholder } : {}),
-            ...(opts?.timeout ? { timeout: opts.timeout } : {}),
-          },
-          undefined,
-          (response) => ("value" in response ? response.value : undefined),
-          opts?.timeout,
-          opts?.signal,
-        ),
-      editor: (title, prefill, opts) =>
-        this.requestExtensionUi(
-          {
-            method: "editor",
-            title,
-            ...(prefill !== undefined ? { prefill } : {}),
-            ...(opts?.timeout ? { timeout: opts.timeout } : {}),
-          },
-          undefined,
-          (response) => ("value" in response ? response.value : undefined),
-          opts?.timeout,
-          opts?.signal,
-        ),
+      ...this.dialogs.ui,
       notify: (message, type) => {
         this.emit({
           type: "extension_ui_request",
@@ -1521,6 +1428,7 @@ export async function startRpcSession(
     // before the SDK restores the saved model from the session file.
     const promptPolicy = new SessionPromptPolicy(sessionToolNames?.length === 0, hasDirectory);
     const modelSelection = new SessionModelSelection();
+    const planMode = createPlanModeExtension();
     const services = await createAgentSessionServices(
       sessionWorkspaceOptions(cwd, agentDir, [
         modelSelection.extension(),
@@ -1536,6 +1444,7 @@ export async function startRpcSession(
                 ? [{ name: skill.name, filePath: skill.filePath, baseDir: skill.baseDir }]
                 : [],
             ),
+          planMode,
         ),
       ]),
       { project: hasDirectory, sessionManager, toolPolicy },
@@ -1576,6 +1485,7 @@ export async function startRpcSession(
       () => peekMcpService()?.detach(realSessionId) ?? Promise.resolve(),
       modelSelection,
       services.subagentActivity,
+      planMode,
     );
     wrapper.setRuntimeDiagnostics(services.diagnostics);
     desktopTools.attach(wrapper, toolPolicy);

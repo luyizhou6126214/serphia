@@ -1036,4 +1036,11 @@ test("sessions.get returns the contract shape without rescanning known session p
     handlers["sessions.entryContent"]({ id: sessionId, entryId: "another-session-entry", blockIndex: 0 }),
     (error) => error.code === "NOT_FOUND",
   );
+
+  SessionManager.open(sessionPath).appendCustomEntry("plan-mode", { enabled: true });
+  const restoredPlanMode = await handlers["sessions.get"]({ id: sessionId, includeState: true });
+  assert.deepEqual(restoredPlanMode.agentState, {
+    running: false,
+    state: { extensionStatuses: [{ key: "plan-mode", text: "Read-only exploration" }], queuedMessages: null },
+  });
 });

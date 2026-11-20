@@ -1,17 +1,4 @@
-import {
-  ArrowUp,
-  Blocks,
-  ChevronRight,
-  Copy,
-  FileText,
-  Minimize2,
-  Pencil,
-  Puzzle,
-  RefreshCw,
-  ScrollText,
-  Server,
-  Terminal,
-} from "lucide-react";
+import { ArrowUp, Blocks, ChevronRight, FileText, Lightbulb, Puzzle, Server } from "lucide-react";
 import { ComposerToolbar, type ComposerToolbarOptions } from "./composer/ComposerToolbar";
 import { ComposerAttachments } from "./composer/ComposerAttachments";
 import { ComposerFocusSurface } from "./composer/ComposerFocusSurface";
@@ -25,9 +12,9 @@ import { QueuedMessageRow } from "./composer/QueuedMessageRow";
 import { McpServerStatusPanel } from "./mcp/McpServerStatusPanel";
 import { openMcpSettings } from "@/hooks/useMcpSettingsRequests";
 import {
-  builtinSlashCommands,
   groupSlashCommands,
   isDesktopMcpCommand,
+  isDesktopPlanCommand,
   isPackageSlashCommand,
   SLASH_SOURCE_GROUP_LABEL,
   SLASH_SOURCE_ORDER,
@@ -56,6 +43,7 @@ import { ProjectFolderIcon } from "./ProjectFolderIcon";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/i18n";
 import { getFileName } from "@shared/file-paths";
+import { PLAN_MODE_COMMAND } from "@shared/plan-mode";
 import type { ContextUsage, SessionStatsInfo } from "@shared/pi-types";
 
 export type { AttachedImage } from "@/hooks/useComposerDraft";
@@ -78,6 +66,7 @@ interface Props extends ComposerActions, ComposerToolbarOptions {
   cwd?: string | null;
   welcome?: boolean;
   showWorkspace?: boolean;
+  todoPanel?: React.ReactNode;
   sessionStats?: SessionStatsInfo | null;
   contextUsage?: ContextUsage | null;
 }
@@ -120,15 +109,16 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     onLoadSlashCommands,
     onOpenMcpServers,
     mcpServerList,
-    onBuiltinCommand,
     onPromptWithStreamingBehavior,
     draftKey,
     draftPromotionFrom,
     cwd,
     welcome = false,
     showWorkspace = false,
+    todoPanel,
     sessionStats,
     contextUsage,
+    onExitPlanMode,
     ...toolbarOptions
   }: Props,
   ref,
@@ -145,6 +135,11 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   const [atActiveIndex, setAtActiveIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const exitPlanMode = useCallback(async () => {
+    const exited = (await onExitPlanMode?.()) ?? false;
+    if (exited) textareaRef.current?.focus();
+    return exited;
+  }, [onExitPlanMode]);
   const referenceMirrorRef = useRef<HTMLDivElement>(null);
   const slashAnchorRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
@@ -203,7 +198,6 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     onSteer,
     onFollowUp,
     onPromptWithStreamingBehavior,
-    onBuiltinCommand,
   });
 
   useImperativeHandle(ref, () => ({
@@ -307,10 +301,9 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
           packageSlashToggleIndex: -1,
         };
       }
-      const commands: SlashCommandPaletteItem[] = [
-        ...(isStreaming ? [] : builtinSlashCommands(t)),
-        ...(slashCommands ?? []).filter((command) => !hasDesktopMcpCommand || !isDesktopMcpCommand(command)),
-      ];
+      const commands: SlashCommandPaletteItem[] = (slashCommands ?? []).filter(
+        (command) => !hasDesktopMcpCommand || !isDesktopMcpCommand(command),
+      );
       if (hasDesktopMcpCommand) {
         commands.push({ name: "mcp", description: t("slashCommandMcp", "Show MCP server status"), source: "builtin" });
       }
@@ -343,7 +336,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         ],
         packageSlashToggleIndex: packageCommands.length ? primaryCommands.length + visiblePackageCommands.length : -1,
       };
-    }, [hasDesktopMcpCommand, isStreaming, packageSlashExpanded, slashCommands, slashQuery, slashStart, t]);
+    }, [hasDesktopMcpCommand, packageSlashExpanded, slashCommands, slashQuery, slashStart, t]);
 
   const slashItemCount = visibleSlashCommands.length + Number(packageSlashToggleIndex !== -1);
 
@@ -436,7 +429,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
   }, [atActiveIndex, atMenuOpen]);
 
   const applySlashCommand = useCallback(
-    (command: SlashCommandPaletteItem) => {
+    (command: SlashCommandPaletteItem, submit = true) => {
       const cursor = textareaRef.current?.selectionStart ?? value.length;
       const start = slashStart ?? cursor;
       const afterCursor = value.slice(cursor);
@@ -444,6 +437,18 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
       const insert = `/${command.name} `;
       const nextValue = value.slice(0, start) + insert + suffix;
       if (command.source === "builtin" && command.name === "mcp" && showMcpServers(nextValue)) return;
+      if (
+        submit &&
+        !isStreaming &&
+        isDesktopPlanCommand(command) &&
+        nextValue.trim() === `/${PLAN_MODE_COMMAND}` &&
+        !attachedImages.length &&
+        !attachedFiles.length
+      ) {
+        setSlashMenuOpen(false);
+        void handleSend(undefined, `/${PLAN_MODE_COMMAND}`);
+        return;
+      }
       const nextCursor = start + insert.length;
       setValue(nextValue);
       setSlashCursor(nextCursor);
@@ -457,7 +462,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         resizeComposer(ta);
       });
     },
-    [setValue, showMcpServers, slashStart, value],
+    [attachedFiles.length, attachedImages.length, handleSend, isStreaming, setValue, showMcpServers, slashStart, value],
   );
 
   const getNextSlashIndex = useCallback(
@@ -570,7 +575,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         ) {
           e.preventDefault();
           if (slashActiveIndex === packageSlashToggleIndex) togglePackageSlashCommands();
-          else applySlashCommand(visibleSlashCommands[slashActiveIndex]);
+          else applySlashCommand(visibleSlashCommands[slashActiveIndex], e.key === "Enter");
           return;
         }
       }
@@ -659,7 +664,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
         if (isStreaming && (onSteer || onFollowUp)) {
           void stageMessage();
         } else {
-          void handleSend(blurOnCommit);
+          void handleSend(value.trim() === `/${PLAN_MODE_COMMAND}` ? undefined : blurOnCommit);
         }
       }
     },
@@ -1093,6 +1098,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             </span>
           </div>
         )}
+        {todoPanel}
         <ComposerFocusSurface cardRef={slashAnchorRef} streaming={isStreaming} liftOnFocus={!welcome}>
           {slashMenuOpen && slashQuery !== null && (
             <div
@@ -1144,23 +1150,17 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                         )}
                       {group.items.map(({ command, index }) => {
                         const active = index === slashActiveIndex;
-                        const builtinIcons: Record<string, typeof Terminal> = {
-                          compact: Minimize2,
-                          copy: Copy,
-                          name: Pencil,
-                          reload: RefreshCw,
-                          session: ScrollText,
-                          mcp: Server,
-                        };
-                        const Icon =
-                          builtinIcons[command.name] ??
-                          (command.source === "skill"
-                            ? Blocks
-                            : command.source === "extension"
-                              ? Puzzle
-                              : command.source === "prompt"
-                                ? FileText
-                                : Terminal);
+                        const isPlan = isDesktopPlanCommand(command);
+                        const description = isPlan ? t("planReadOnly", "Read-only exploration") : command.description;
+                        const Icon = isPlan
+                          ? Lightbulb
+                          : command.name === "mcp"
+                            ? Server
+                            : command.source === "skill"
+                              ? Blocks
+                              : command.source === "extension"
+                                ? Puzzle
+                                : FileText;
                         const scope = command.source === "skill" ? command.sourceInfo?.scope : undefined;
                         const scopeLabel =
                           scope === "project"
@@ -1185,7 +1185,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                               slashKeyboardNavigationRef.current = false;
                               setSlashActiveIndex(index);
                             }}
-                            title={command.description}
+                            title={description}
                             style={{
                               width: "100%",
                               minWidth: 0,
@@ -1212,13 +1212,15 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                                 fontSize: scaledChatFont(12),
                               }}
                             >
-                              {command.source === "skill"
-                                ? command.name.replace(/^skill:/, "")
-                                : command.name === "mcp"
-                                  ? "MCP"
-                                  : command.name.charAt(0).toUpperCase() + command.name.slice(1)}
+                              {isPlan
+                                ? t("planMode", "Plan mode")
+                                : command.source === "skill"
+                                  ? command.name.replace(/^skill:/, "")
+                                  : command.name === "mcp"
+                                    ? "MCP"
+                                    : command.name.charAt(0).toUpperCase() + command.name.slice(1)}
                             </span>
-                            {command.description && (
+                            {description && (
                               <span
                                 style={{
                                   flex: 1,
@@ -1230,7 +1232,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
                                   color: "var(--text-dim)",
                                 }}
                               >
-                                {command.description}
+                                {description}
                               </span>
                             )}
                             {command.source === "builtin" && command.name === "mcp" && (
@@ -1497,7 +1499,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
           </div>
 
           <ComposerToolbar
-            options={{ ...toolbarOptions, isStreaming }}
+            options={{ ...toolbarOptions, isStreaming, onExitPlanMode: onExitPlanMode ? exitPlanMode : undefined }}
             isMobile={isMobile}
             hasAttachments={attachedImages.length > 0 || attachedFiles.length > 0}
             onAttach={openAttachmentPicker}
@@ -1509,7 +1511,9 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
               onClick={() => {
                 if (!showMcpServers(value)) void handleSend();
               }}
-              disabled={!value.trim() && !attachedImages.length && !attachedFiles.length}
+              disabled={
+                toolbarOptions.planModePending || (!value.trim() && !attachedImages.length && !attachedFiles.length)
+              }
               aria-label={t("send", "Send")}
               title={t("send", "Send")}
             >

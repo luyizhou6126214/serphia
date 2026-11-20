@@ -1,10 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { enUS, zhCN } from "../i18n-dictionaries.ts";
-import { localizedExtensionConfirmCopy } from "./extension-ui-copy.ts";
+import { localizedExtensionConfirmCopy, localizedPlanDialogCopy } from "./extension-ui-copy.ts";
+import { PLAN_REVIEW_CHOICES, PLAN_REVIEW_TITLE } from "../../shared/plan-mode.ts";
 
 const translate = (dictionary) => (key, fallback) => dictionary[key] ?? fallback;
 const base = { type: "extension_ui_request", id: "confirm-a", method: "confirm" };
+
+test("the Plan review localizes labels while preserving the runtime's response values", () => {
+  const copy = localizedPlanDialogCopy(
+    { ...base, method: "select", title: PLAN_REVIEW_TITLE, options: Object.values(PLAN_REVIEW_CHOICES) },
+    translate(zhCN),
+  );
+  assert.equal(copy.title, "计划已就绪");
+  assert.deepEqual(copy.options, {
+    [PLAN_REVIEW_CHOICES.execute]: "退出计划模式并执行",
+    [PLAN_REVIEW_CHOICES.stay]: "留在计划模式",
+    [PLAN_REVIEW_CHOICES.refine]: "修改计划",
+  });
+});
 
 test("Herdr extension confirmations localize semantic content without parsing fallback English", () => {
   assert.deepEqual(

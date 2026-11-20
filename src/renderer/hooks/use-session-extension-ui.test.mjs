@@ -156,6 +156,18 @@ test("expired dialogs disappear and cannot respond or reappear from a stale repl
   assert.equal(commands.length, 0);
 });
 
+test("a host dismissal closes only the matching dialog and invalidates its answer", async (t) => {
+  const fixture = await mount(t);
+  await fixture.emit({ id: "review", method: "select", title: "Plan ready", options: ["Execute"] });
+  const request = fixture.current.extensionDialog;
+  await fixture.emit({ id: "older", method: "dismissDialog" });
+  assert.equal(fixture.current.extensionDialog, request);
+  await fixture.emit({ id: "review", method: "dismissDialog" });
+  assert.equal(fixture.current.extensionDialog, null);
+  await act(async () => fixture.current.respondToExtensionUi(request, { value: "Execute" }));
+  assert.equal(commands.length, 0);
+});
+
 test("custom repaint callbacks remain valid until the panel closes, including ID reuse", async (t) => {
   const fixture = await mount(t);
   await fixture.emit({ id: "custom", method: "custom", lines: ["frame one"] });

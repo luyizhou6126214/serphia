@@ -56,6 +56,41 @@
   pointer-events: none;
 }
 
+.session-view-tabs-ember {
+  --session-ember-boost: 0;
+
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow:
+    0 0 4px rgb(239 131 45 / 58%),
+    1px 2px 10px rgb(219 81 22 / 44%);
+  opacity: calc(0.35 + var(--session-ember-boost) * 0.65);
+  transform: scale(calc(1 + var(--session-ember-boost) * 0.045));
+}
+
+.session-view-tabs-ember::before {
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 20deg,
+    transparent 5%,
+    rgb(249 170 71 / 88%) 24%,
+    rgb(228 91 29 / 90%) 36%,
+    transparent 56%,
+    rgb(229 101 35 / 72%) 73%,
+    #ffd791 89%,
+    transparent 100%
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  content: "";
+}
+
 .session-view-tab {
   position: relative;
   display: grid;
@@ -171,6 +206,11 @@ html.dark .session-view-tabs {
   .session-view-tab[aria-selected] > svg {
     transform: none;
   }
+
+  .session-view-tabs-ember {
+    opacity: 0.35;
+    transform: none;
+  }
 }
 
 @media (forced-colors: active) {
@@ -182,6 +222,10 @@ html.dark .session-view-tabs {
     forced-color-adjust: none;
     border-color: Highlight;
     backdrop-filter: none;
+  }
+
+  .session-view-tabs-ember {
+    display: none;
   }
 
   .session-view-tab[aria-selected="true"] {

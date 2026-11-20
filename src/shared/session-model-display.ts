@@ -24,12 +24,11 @@ export function sessionModelForDisplay(
 }
 
 export function sessionStatsForDisplay(
-  override: SessionStatsInfo | null,
   data: SessionDetail | null | undefined,
   sessionName: string | undefined,
   contextUsage: ContextUsage | null,
 ): SessionStatsInfo | null {
-  const stats = override ?? data?.stats;
+  const stats = data?.stats;
   return stats
     ? {
         ...stats,

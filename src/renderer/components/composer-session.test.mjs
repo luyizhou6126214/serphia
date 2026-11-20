@@ -25,13 +25,22 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
           namespace: "composer-test",
         }));
         build.onResolve({ filter: /^@\/i18n$/ }, () => ({ path: "i18n", namespace: "composer-test" }));
+        build.onResolve({ filter: /^\.\/DeepAgentMenuScope$/ }, () => ({
+          path: "menu-scope",
+          namespace: "composer-test",
+        }));
         build.onLoad({ filter: /.*/, namespace: "composer-test" }, ({ path }) => ({
           contents:
-            path === "i18n"
+            path === "menu-scope"
               ? `
+      const HoverInfo = ({ children }) => children;
+      export const DeepAgentMenuScope = ({ children }) => children({ HoverInfo });
+    `
+              : path === "i18n"
+                ? `
       const t = (_key, fallback) => fallback; export const useI18n = () => ({t, language:'en-US'});
     `
-              : `
+                : `
       export const requests = [], streams = [], toolReadRequests = [];
       const model = { provider: 'fixture', modelId: 'model' };
       let cwd, running, reasoningLevels;
@@ -69,7 +78,10 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
 
 let fixtureNumber = 0;
 const text = (node) => (typeof node === "string" ? node : (node?.children?.map(text).join("") ?? ""));
-async function mount(t, { existing = false, running = false, directory, autoTitle = false, reasoningLevels } = {}) {
+async function mount(
+  t,
+  { existing = false, running = false, directory, autoTitle = false, reasoningLevels, slashCommands } = {},
+) {
   const cwd = directory ?? `/composer-fixture-${++fixtureNumber}`;
   const initialId = `existing-${fixtureNumber}`;
   const previous = new Map(
@@ -125,6 +137,7 @@ async function mount(t, { existing = false, running = false, directory, autoTitl
   t.mock.method(console, "error", () => {});
   api.reset(cwd, running, reasoningLevels);
   const promotions = [];
+  const onOpenMcpServers = slashCommands ? () => {} : undefined;
   let current, renderer;
   function Harness() {
     const [session, setSession] = useState(existing ? { id: initialId, cwd } : null);
@@ -145,8 +158,14 @@ async function mount(t, { existing = false, running = false, directory, autoTitl
       isCompacting: current.isCompacting,
       compactResult: current.compactResult,
       onSend: current.handleSend,
+      planModeEnabled: current.extensionStatuses.some(({ key }) => key === "plan-mode"),
+      planModePending: current.planModePending,
+      onExitPlanMode: current.handleExitPlanMode,
       onAbort: current.isCompacting ? current.handleAbortCompaction : current.handleAbort,
-      onBuiltinCommand: current.handleBuiltinSlashCommand,
+      onCompact: current.handleCompact,
+      compactDisabled: !session,
+      onOpenMcpServers,
+      slashCommands,
       onSteer: current.agentRunning ? current.handleSteer : undefined,
       onFollowUp: current.agentRunning ? current.handleFollowUp : undefined,
       onPromptWithStreamingBehavior: current.agentRunning ? current.handlePromptWithStreamingBehavior : undefined,
@@ -210,6 +229,8 @@ async function mount(t, { existing = false, running = false, directory, autoTitl
     focus: () => textarea.focus(),
     focused: () => globalThis.document.activeElement === textarea,
     text: () => text(renderer.root),
+    compactDisabled: () => renderer.root.findByProps({ className: "composer-toolbar-compact" }).props.disabled,
+    planClose: () => renderer.root.findAllByProps({ className: "composer-plan-mode-close" })[0]?.props,
     count: (type) => api.requests.filter((request) => request.commandType === type).length,
     async type(value) {
       textarea.value = value;
@@ -250,8 +271,67 @@ async function mount(t, { existing = false, running = false, directory, autoTitl
         request.reject(new RpcError({ code: "CONFLICT", message: "Fixture rejected the operation" })),
       );
     },
+    async emit(event) {
+      await act(async () => api.streams.findLast(({ key }) => key !== "*").on(event));
+    },
   };
 }
+
+test("the composer changes Plan mode without a prompt and preserves the draft and focus when closing", async (t) => {
+  const f = await mount(t);
+  await f.type("/plan");
+  await f.enter();
+  await f.reply("ensure_session", { sessionId: "plan-session" });
+  assert.deepEqual(f.next("set_plan_mode").params.command, { type: "set_plan_mode", action: "toggle" });
+  await f.reply("set_plan_mode", { enabled: true });
+  assert.equal(f.count("prompt"), 0);
+  assert.deepEqual(f.promotions, []);
+  assert.equal(f.current.messages.length, 0);
+  assert.equal(f.current.agentRunning, false);
+  assert.equal(f.value(), "");
+  assert.equal(f.planClose().disabled, false);
+
+  await f.type("Unsent task");
+  await f.click("Exit Plan mode");
+  assert.deepEqual(f.next("set_plan_mode").params.command, { type: "set_plan_mode", action: "off" });
+  assert.equal(f.planClose().disabled, true);
+  await f.reject("set_plan_mode");
+  assert.equal(f.planClose().disabled, false);
+  assert.match(f.current.notices.at(-1).message, /Could not change Plan mode/);
+  assert.equal(f.value(), "Unsent task");
+
+  await f.click("Exit Plan mode");
+  await f.reply("set_plan_mode", { enabled: false });
+  assert.equal(f.planClose(), undefined);
+  assert.equal(f.value(), "Unsent task");
+  assert.equal(f.focused(), true);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("the Plan label follows runtime status updates and stays visible during a turn", async (t) => {
+  const f = await mount(t, { existing: true, running: true });
+  const status = { type: "extension_ui_request", method: "setStatus", id: "plan-status", statusKey: "plan-mode" };
+  await f.emit({ ...status, statusText: "Read-only exploration" });
+  assert.equal(f.planClose().disabled, true);
+  await f.emit(status);
+  assert.equal(f.planClose(), undefined);
+});
+
+test("selecting Plan mode from slash suggestions activates it on the first Enter", async (t) => {
+  const f = await mount(t, {
+    existing: true,
+    slashCommands: [{ name: "plan", source: "extension", sourceInfo: { path: "<inline:plan-mode>" } }],
+  });
+  f.focus();
+  await f.type("/pl");
+  assert.match(f.text(), /Plan mode/);
+  await f.enter();
+  assert.deepEqual(f.next("set_plan_mode").params.command, { type: "set_plan_mode", action: "toggle" });
+  await f.reply("set_plan_mode", { enabled: true });
+  assert.equal(f.value(), "");
+  assert.equal(f.focused(), true);
+  assert.equal(f.count("prompt"), 0);
+});
 
 test("Enter blurs the composer only when an existing session submits a message", async (t) => {
   const f = await mount(t, { existing: true });
@@ -267,6 +347,7 @@ test("Enter blurs the composer only when an existing session submits a message",
 
 test("the composer send icon submits the draft and creates the session", async (t) => {
   const f = await mount(t);
+  assert.equal(f.compactDisabled(), true);
   await f.type("send with the icon");
   await f.click("Send");
   assert.equal(f.count("ensure_session"), 1);
@@ -462,41 +543,47 @@ test("multiple staged messages remain independent until an action is selected", 
   assert.match(f.text(), /second pending/);
 });
 
-test("a built-in command failure restores the draft and a successful retry never sends a prompt", async (t) => {
-  const f = await mount(t, { existing: true });
+test("the slash menu retains MCP and extension commands after removing the old built-ins", async (t) => {
+  const f = await mount(t, {
+    existing: true,
+    slashCommands: [{ name: "example", source: "extension", description: "Example command" }],
+  });
+  await f.type("/");
+  assert.match(f.text(), /MCP/);
+  assert.match(f.text(), /Example command/);
+  assert.doesNotMatch(f.text(), /Compact|Copy|Name|Reload|Session|Todos/);
   await f.type("/name composer fixture");
   await f.enter();
-  assert.equal(f.next("set_session_name").params.command.name, "composer fixture");
-  assert.equal(f.value(), "");
-  await f.reject("set_session_name");
-  assert.equal(f.value(), "/name composer fixture");
-  await f.enter();
-  await f.type("new draft while renaming");
-  await f.reply("set_session_name", null);
-  assert.equal(f.count("set_session_name"), 2);
-  assert.equal(f.count("prompt"), 0);
-  assert.equal(f.count("ensure_session"), 0);
-  assert.equal(f.value(), "new draft while renaming");
+  assert.equal(f.next("prompt").params.command.message, "/name composer fixture");
+  assert.equal(f.count("set_session_name"), 0);
+  await f.reply("prompt", null);
 });
 
-test("/compact submits custom instructions without sending a prompt and retains result feedback", async (t) => {
+test("the compact button preserves the draft and shows the result without sending a prompt", async (t) => {
   const f = await mount(t, { existing: true });
-  await f.type("/compact preserve the product specification");
-  await f.enter();
-  assert.equal(f.next("compact").params.command.customInstructions, "preserve the product specification");
+  await f.type("Unsent draft");
+  assert.equal(f.compactDisabled(), false);
+  await f.click("Compact context");
+  assert.deepEqual(f.next("compact").params.command, { type: "compact" });
   assert.equal(f.current.isCompacting, true);
+  assert.equal(f.compactDisabled(), true);
   await f.reply("compact", { tokensBefore: 8000, estimatedTokensAfter: 2000 });
   assert.equal(f.current.isCompacting, false);
+  assert.equal(f.compactDisabled(), false);
   assert.equal(f.current.compactResult.tokensBefore, 8000);
   assert.match(f.text(), /6000|6k/);
   assert.equal(f.count("prompt"), 0);
+  assert.equal(f.value(), "Unsent draft");
 });
 
-test("the shared stop action can still cancel a /compact command after removing its toolbar icon", async (t) => {
+test("failed compaction shows a notice and a retry can be stopped", async (t) => {
   const f = await mount(t, { existing: true });
-  await f.type("/compact");
-  await f.enter(); // accept the slash-command completion
-  await f.enter();
+  await f.click("Compact context");
+  await f.reject("compact");
+  assert.equal(f.compactDisabled(), false);
+  assert.equal(f.current.notices.at(-1).type, "error");
+  assert.match(f.current.notices.at(-1).message, /Fixture rejected the operation/);
+  await f.click("Compact context");
   assert.equal(f.current.isCompacting, true);
   await f.click("Stop");
   assert.equal(f.count("abort_compaction"), 1);

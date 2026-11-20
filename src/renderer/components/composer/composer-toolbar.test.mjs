@@ -28,8 +28,9 @@ const { ComposerToolbar, toolbarRenders } = await importTestBundle("composer-too
               ? "export const toolbarRenders={count:0}; const t=(_key,fallback)=>fallback; export const useI18n=()=>{toolbarRenders.count++;return {t};};"
               : `
                 const ApprovalMenu = () => null;
+                const HoverInfo = ({ children }) => children;
                 const ModelThinkingSelector = () => null;
-                const parts = { ApprovalMenu, ModelThinkingSelector };
+                const parts = { ApprovalMenu, HoverInfo, ModelThinkingSelector };
                 export const DeepAgentMenuScope = ({ children }) => children(parts);
               `,
         }));
@@ -102,6 +103,27 @@ test("permissions keep their tool presets, surface errors, and repeat revocation
   assert.equal(fixture.permission.open, false);
 });
 
+test("the Plan label follows the permission control and closes independently", async (t) => {
+  const fixture = await mount(t);
+  const onExitPlanMode = async () => {
+    fixture.actions.push(["exit plan"]);
+    return true;
+  };
+  assert.equal(fixture.root.findAllByProps({ className: "composer-plan-mode" }).length, 0);
+  await fixture.update({ planModeEnabled: true, onExitPlanMode });
+  const primary = fixture.root.findByProps({ className: "composer-toolbar-primary" });
+  assert.equal(primary.children.at(-1).props.className, "composer-plan-mode");
+  assert.equal(primary.children.at(-2).type.name, "DeepAgentMenuScope");
+  const close = () => fixture.root.findByProps({ className: "composer-plan-mode-close" }).props;
+  assert.equal(close()["aria-label"], "Exit Plan mode");
+  await act(async () => close().onClick());
+  assert.deepEqual(fixture.actions, [["exit plan"]]);
+  await fixture.update({ planModePending: true });
+  assert.equal(close().disabled, true);
+  await fixture.update({ planModePending: false, isStreaming: true });
+  assert.equal(close().disabled, true);
+});
+
 test("choosing a model preserves provider identity and keeps the menu open", async (t) => {
   const fixture = await mount(t);
   await act(async () => fixture.model.onOpenChange(true));
@@ -170,11 +192,17 @@ test("equivalent options skip rendering, and model controls occupy the right sid
   const before = toolbarRenders.count;
   await fixture.update({});
   assert.equal(toolbarRenders.count, before);
-  await fixture.update({ thinkingLevel: "high" });
+  await fixture.update({ thinkingLevel: "high", onCompact: () => {} });
   assert.equal(toolbarRenders.count, before + 1);
   const left = fixture.root.findByProps({ className: "composer-toolbar-primary" });
   const right = fixture.root.findByProps({ className: "composer-toolbar-settings" });
   assert.equal(left.findAll((node) => node.type?.name === "ApprovalMenu").length, 1);
   assert.equal(left.findAllByType("button").length, 1);
+  const settings = right.findByProps({ className: "serphia-composer-model-controls" });
+  assert.equal(settings.children[0].type.name, "HoverInfo");
+  assert.equal(settings.children[0].props.content, "Compact context");
+  const compactButton = settings.findByType("button");
+  assert.equal(compactButton.props["aria-label"], "Compact context");
+  assert.equal(compactButton.props.title, undefined);
   assert.equal(right.findAll((node) => node.type?.name === "ModelThinkingSelector").length, 1);
 });

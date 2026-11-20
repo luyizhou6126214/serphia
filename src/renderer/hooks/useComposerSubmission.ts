@@ -1,6 +1,5 @@
 import { useCallback } from "react";
 import { useI18n } from "@/i18n";
-import type { BuiltinSlashCommandResult } from "@/hooks/useAgentSession";
 import type { AttachedImage, useComposerDraft } from "@/hooks/useComposerDraft";
 import { localFileReferenceToMarkdown } from "@/lib/file-url";
 import { captureComposerSubmission } from "@/lib/composer-submission";
@@ -16,7 +15,6 @@ export interface ComposerActions {
     behavior: "steer" | "followUp",
     images?: AttachedImage[],
   ) => Promise<void> | void;
-  onBuiltinCommand?: (message: string) => Promise<BuiltinSlashCommandResult>;
 }
 
 type SubmissionDraft = Pick<
@@ -31,7 +29,7 @@ type SubmissionDraft = Pick<
   | "restoreFailedSubmission"
 >;
 
-/** Submit a captured draft through one command path and restore failures by revision. */
+/** Submit a captured draft and restore failures by revision. */
 export function useComposerSubmission({
   draft,
   clearInput,
@@ -40,7 +38,6 @@ export function useComposerSubmission({
   onSteer,
   onFollowUp,
   onPromptWithStreamingBehavior,
-  onBuiltinCommand,
 }: ComposerActions & { draft: SubmissionDraft; clearInput: () => void; isStreaming: boolean }) {
   const { t } = useI18n();
   const {
@@ -55,8 +52,8 @@ export function useComposerSubmission({
   } = draft;
 
   const handleSend = useCallback(
-    async (onCommit?: () => void) => {
-      const text = value.trim();
+    async (onCommit?: () => void, completedCommand?: string) => {
+      const text = completedCommand ?? value.trim();
       const msg = [text, ...attachedFiles.map(localFileReferenceToMarkdown)].filter(Boolean).join(" ");
       if (!msg && !attachedImages.length) return;
       if (isStreaming) return;
@@ -75,13 +72,6 @@ export function useComposerSubmission({
       clearInput();
       const clearedAtRevision = getRevision();
       try {
-        if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
-          const result = await onBuiltinCommand(msg);
-          if (result.handled) {
-            if (result.error) restoreFailedSubmission(snapshot, clearedAtRevision, "send");
-            return;
-          }
-        }
         const settled = await onSend(msg, attachedImages.length ? attachedImages : undefined);
         if (settled && typeof settled === "object" && "ok" in settled && settled.ok === false) {
           restoreFailedSubmission(snapshot, clearedAtRevision, "send");
@@ -98,7 +88,6 @@ export function useComposerSubmission({
       commitCurrentDraft,
       getRevision,
       isStreaming,
-      onBuiltinCommand,
       onSend,
       restoreFailedSubmission,
       setSubmissionNotice,

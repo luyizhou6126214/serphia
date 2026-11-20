@@ -3,6 +3,7 @@ import type { ToolEntry } from "../shared/tool-presets";
 import type { ExtensionUiResponse } from "../shared/types";
 import type { AgentCommand, SessionRuntimeState } from "./types";
 import type { ThinkingLevel } from "../shared/thinking-levels";
+import type { PlanModeAction } from "../shared/plan-mode";
 
 export interface SlashCommandInfo {
   name: string;
@@ -28,6 +29,7 @@ export interface BuiltinAgentCommands {
   follow_up: Command<Prompt, null>;
   abort: Command<Empty, null>;
   get_state: Command<Empty, SessionRuntimeState>;
+  set_plan_mode: Command<{ action: PlanModeAction }, { enabled: boolean }>;
   set_model: Command<{ provider: string; modelId: string }, { id: string; provider: string }>;
   fork: Command<{ entryId: string }, { cancelled: true } | { cancelled: false; newSessionId: string }>;
   navigate_tree: Command<{ targetId: string }, { cancelled: boolean }>;

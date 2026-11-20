@@ -14,7 +14,7 @@ const mark = readFileSync(path.join(build, "mark.svg"), "utf8")
 const svg = (body, viewBox = "0 0 1024 1024") =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="${viewBox}">\n${body}\n</svg>\n`;
 const source = svg(
-  `<rect x="64" y="64" width="896" height="896" rx="208" fill="#242824"/>\n<g fill="#F4F1E8">${mark}</g>`,
+  `<rect x="64" y="64" width="896" height="896" rx="208" fill="#163C34"/>\n<g fill="#F8F2DE">${mark}</g>`,
 );
 writeFileSync(path.join(build, "icon.svg"), source);
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512, 1024];
@@ -69,7 +69,7 @@ icnsHeader.writeUInt32BE(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0
 writeFileSync(path.join(build, "icon.icns"), Buffer.concat([icnsHeader, ...chunks]));
 
 // macOS templates contain only the silhouette; the OS supplies the menu-bar color.
-const template = svg(`<g fill="#000000">${mark}</g>`, "160 160 704 704");
+const template = svg(`<g fill="#000000">${mark}</g>`, "128 128 768 768");
 writeFileSync(path.join(build, "trayTemplate.png"), render(template, 18));
 writeFileSync(path.join(build, "trayTemplate@2x.png"), render(template, 36));
 console.log(`Generated desktop icons (${sizes.join(", ")} px), ICO, ICNS, and macOS tray templates.`);

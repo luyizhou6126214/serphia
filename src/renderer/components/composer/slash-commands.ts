@@ -1,45 +1,28 @@
 import type { SlashCommandInfo } from "@/hooks/useAgentSession";
-import type { useI18n } from "@/i18n";
+import { PLAN_MODE_COMMAND, PLAN_MODE_EXTENSION } from "@shared/plan-mode";
 
 export const SLASH_COMMAND_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 export type SlashCommandPaletteItem =
   | SlashCommandInfo
   | {
-      name: string;
+      name: "mcp";
       description: string;
       source: "builtin";
     };
 
 export type SlashCommandSource = SlashCommandPaletteItem["source"];
 
-type Translate = ReturnType<typeof useI18n>["t"];
-
-export function builtinSlashCommands(t: Translate): SlashCommandPaletteItem[] {
-  return [
-    {
-      name: "compact",
-      description: t("slashCommandCompact", "Compress context, optionally with instructions"),
-      source: "builtin",
-    },
-    {
-      name: "reload",
-      description: t("slashCommandReload", "Reload extensions, skills, prompts, and tools"),
-      source: "builtin",
-    },
-    { name: "name", description: t("slashCommandName", "Set the session display name"), source: "builtin" },
-    {
-      name: "session",
-      description: t("slashCommandSession", "Show session message, token, and cost stats"),
-      source: "builtin",
-    },
-    { name: "copy", description: t("slashCommandCopy", "Copy the last assistant message"), source: "builtin" },
-    { name: "todos", description: t("slashCommandTodos", "Show the current branch’s to-do list"), source: "builtin" },
-  ];
-}
-
 export function isDesktopMcpCommand(command: SlashCommandInfo): boolean {
   return command.source === "extension" && command.sourceInfo?.path === "builtin:mcp" && command.name === "mcp";
+}
+
+export function isDesktopPlanCommand(command: SlashCommandPaletteItem): boolean {
+  return (
+    command.source === "extension" &&
+    command.name === PLAN_MODE_COMMAND &&
+    command.sourceInfo?.path === `<inline:${PLAN_MODE_EXTENSION}>`
+  );
 }
 
 export function isPackageSlashCommand(command: SlashCommandPaletteItem): boolean {
