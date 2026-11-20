@@ -1,7 +1,7 @@
 import { useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
-import { CalendarClock, Layers3, PanelLeft, PanelRight } from "lucide-react";
+import { CalendarClock, Layers3, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
@@ -13,7 +13,6 @@ import { recordNavigation } from "@/lib/navigation-history";
 import { call, subscribe } from "@/lib/api-client";
 import { useState, useReducer, useCallback, useRef, useEffect, useSyncExternalStore, type CSSProperties } from "react";
 import { SessionPanelResize } from "./elastic-panel-resize/SessionPanelResize";
-import { PixelToggle } from "./pixel-toggle/PixelToggle";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { ScheduledTasksPage } from "./schedule/ScheduledTasksPage";
@@ -123,7 +122,7 @@ export function AppShell({
   onChatAppearanceChange: (preferences: ChatAppearancePreferences) => Promise<void>;
 }) {
   const router = routerCompat;
-  const { isDark, setTheme } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
   const { language, t } = useI18n();
   const sessionList = useSessionList();
   const { sessions: workspaceSessions, projectInfoRevision } = useSyncExternalStore(
@@ -1144,14 +1143,23 @@ export function AppShell({
             panelContainerRef={chatContentRef}
           />
           <OpenInAppButton directory={selectedSession?.cwd ?? effectiveNewSessionCwd ?? null} />
-          <div className="app-topbar-theme-switch">
-            <PixelToggle
-              embedded
-              checked={!isDark}
-              label={t("light", "Light")}
-              onCheckedChange={(day) => setTheme(day ? "light" : "dark")}
-            />
-          </div>
+          <button
+            type="button"
+            className="app-topbar-button"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+            }}
+            title={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
+            aria-label={isDark ? t("switchToLight", "Switch to light mode") : t("switchToDark", "Switch to dark mode")}
+            aria-pressed={isDark}
+          >
+            {isDark ? (
+              <Sun size={17} strokeWidth={1.7} aria-hidden="true" />
+            ) : (
+              <Moon size={17} strokeWidth={1.7} aria-hidden="true" />
+            )}
+          </button>
           <span className="app-topbar-divider" aria-hidden="true" />
           <button
             type="button"

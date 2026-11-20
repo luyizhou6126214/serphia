@@ -3015,13 +3015,6 @@ html.dark .settings-page {
   margin-inline: 5px;
   background: color-mix(in srgb, currentColor 16%, transparent);
 }
-.app-topbar-theme-switch {
-  width: 68px;
-  min-width: 54px;
-  flex: 0 1 auto;
-  margin-inline: 2px;
-  -webkit-app-region: no-drag;
-}
 html.dark .app-topbar-button[aria-pressed="true"] {
   background: #38343b;
   color: #f2f0f2;
