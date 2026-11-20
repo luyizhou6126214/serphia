@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useId, useRef, type CSSProperties, type KeyboardEvent } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
+import { Layers3, MessageSquare, Route, type LucideIcon } from "lucide-react";
 import { useI18n } from "@/i18n";
 import "./SessionViewTabs.css";
 
@@ -13,207 +14,164 @@ interface Props {
   onChange: (view: SessionView) => void;
 }
 
-interface TabRect {
-  x: number;
-  width: number;
-}
-
-const TABS: ReadonlyArray<{ id: SessionView; labelKey: string; fallback: string; panelId: string }> = [
-  { id: "chat", labelKey: "sessionViewChat", fallback: "Chat", panelId: "session-view-chat" },
-  { id: "trajectory", labelKey: "sessionViewTrajectory", fallback: "Trajectory", panelId: "session-view-trajectory" },
-  { id: "context", labelKey: "sessionViewContext", fallback: "Context", panelId: "session-view-context" },
+const TABS: ReadonlyArray<{ id: SessionView; Icon: LucideIcon }> = [
+  { id: "chat", Icon: MessageSquare },
+  { id: "trajectory", Icon: Route },
+  { id: "context", Icon: Layers3 },
 ];
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+// Red bends the backdrop horizontally and green bends it vertically. The flat
+// center stays clear while the curved edge samples pixels closer to the center.
+const REFRACTION_MAP = `data:image/svg+xml,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+    <defs>
+      <linearGradient id="x">
+        <stop stop-color="#ef0000"/>
+        <stop offset=".28" stop-color="#800000"/>
+        <stop offset=".72" stop-color="#800000"/>
+        <stop offset="1" stop-color="#110000"/>
+      </linearGradient>
+      <linearGradient id="y" x2="0" y2="1">
+        <stop stop-color="#00ef00"/>
+        <stop offset=".28" stop-color="#008000"/>
+        <stop offset=".72" stop-color="#008000"/>
+        <stop offset="1" stop-color="#001100"/>
+      </linearGradient>
+    </defs>
+    <rect width="100" height="100" fill="url(#x)"/>
+    <rect width="100" height="100" fill="url(#y)" style="mix-blend-mode:screen"/>
+  </svg>
+`)}`;
 
-/**
- * Text tabs under the session title: one continuous surface, no divider above
- * the row, and a single accent line that glides between labels. GSAP owns the
- * motion; the stylesheet owns the ink, the hairline and the accent gradient.
- */
 export function SessionViewTabs({ value, onChange }: Props) {
   const { t } = useI18n();
+  const refractionId = useId();
+  const labels = {
+    chat: t("sessionViewChat", "Chat"),
+    trajectory: t("sessionViewTrajectory", "Trajectory"),
+    context: t("sessionViewContext", "Context"),
+  };
   const rootRef = useRef<HTMLDivElement>(null);
   const indicatorRef = useRef<HTMLSpanElement>(null);
-  const haloRef = useRef<HTMLSpanElement>(null);
+  const motionRef = useRef<gsap.core.Timeline | null>(null);
+  const lensRef = useRef({ top: 0, bottom: 0, taper: 0 });
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const labelRefs = useRef<Array<HTMLSpanElement | null>>([]);
-  const valueRef = useRef(value);
-  valueRef.current = value;
-  const rectRef = useRef<TabRect | null>(null);
-  const entranceDoneRef = useRef(false);
-  const firstSelectionRef = useRef(true);
+  const selectedIndex = TABS.findIndex(({ id }) => id === value);
+  const previousIndexRef = useRef(selectedIndex);
 
-  const measure = useCallback((view: SessionView): TabRect | null => {
-    const index = TABS.findIndex((entry) => entry.id === view);
-    const button = index >= 0 ? buttonRefs.current[index] : null;
-    const label = index >= 0 ? labelRefs.current[index] : null;
-    // The button is the label's positioned offset parent, so this measures the
-    // text itself rather than the click target.
-    return button && label ? { x: button.offsetLeft + label.offsetLeft, width: label.offsetWidth } : null;
-  }, []);
-
-  // The entrance owns the first placement so the selection effect never
-  // animates on mount; its cleanup restores that state for StrictMode.
   useGSAP(
     () => {
-      const root = rootRef.current;
       const indicator = indicatorRef.current;
-      const halo = haloRef.current;
-      const initial = measure(valueRef.current);
-      if (!root || !indicator || !halo || !initial) return;
-      entranceDoneRef.current = true;
-      rectRef.current = initial;
-      gsap.set(indicator, { ...initial, autoAlpha: 1, scaleX: 1, scaleY: 1 });
-      gsap.set(halo, { ...initial, autoAlpha: 0, scaleY: 1 });
-      const cleanup = () => {
-        entranceDoneRef.current = false;
-        firstSelectionRef.current = true;
+      const activeButton = buttonRefs.current[selectedIndex];
+      if (!indicator || !activeButton?.offsetHeight) return;
+
+      const target = activeButton.offsetTop - indicator.offsetTop;
+      const size = activeButton.offsetHeight;
+      const lens = lensRef.current;
+      const changed = selectedIndex !== previousIndexRef.current;
+      previousIndexRef.current = selectedIndex;
+
+      const paintLens = () => {
+        const center = (lens.top + lens.bottom) / 2;
+        const stretch = Math.max(0, Math.min((lens.bottom - lens.top) / size, 0.94));
+        indicator.style.transform = `translate3d(0, ${center}px, 0) scale(${1 - stretch * 0.19}, ${1 + stretch})`;
+        indicator.style.setProperty("--session-lens-curve", `${6 * stretch}px`);
+        indicator.style.setProperty("--session-lens-taper", `${8 * stretch * lens.taper}px`);
       };
-      if (prefersReducedMotion()) {
-        gsap.set(
-          labelRefs.current.filter((label): label is HTMLSpanElement => label !== null),
-          { autoAlpha: 1, y: 0 },
-        );
-        return cleanup;
+
+      // Keep the current pose when another tab is selected mid-flight.
+      motionRef.current?.kill();
+      const instant = window.matchMedia("(prefers-reduced-motion: reduce), (forced-colors: active)").matches;
+      if (!changed || instant) {
+        lens.top = target;
+        lens.bottom = target;
+        lens.taper = 0;
+        paintLens();
+        return;
       }
-      const labels = labelRefs.current.filter((label): label is HTMLSpanElement => label !== null);
-      const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
-      timeline
-        .fromTo(
-          indicator,
-          { scaleX: 0.35, autoAlpha: 0 },
-          { scaleX: 1, autoAlpha: 1, duration: 0.5, ease: "expo.out" },
-          0,
-        )
-        .fromTo(labels, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.38, stagger: 0.045 }, 0.04);
-      return cleanup;
+
+      const delta = target - (lens.top + lens.bottom) / 2;
+      const direction = delta >= 0 ? 1 : -1;
+      const leading = direction > 0 ? "bottom" : "top";
+      const trailing = direction > 0 ? "top" : "bottom";
+      const duration = 0.33 + Math.min(Math.abs(delta), 78) * 0.0008;
+
+      motionRef.current = gsap
+        .timeline({ onUpdate: paintLens })
+        .to(lens, { [leading]: target, duration, ease: "power2.inOut" }, 0)
+        .to(lens, { [trailing]: target, duration: duration + 0.055, ease: "power2.inOut" }, 0.055)
+        .to(lens, { taper: direction, duration: 0.13, ease: "sine.inOut" }, 0);
     },
-    { scope: rootRef },
+    { scope: rootRef, dependencies: [selectedIndex] },
   );
 
-  useLayoutEffect(() => {
-    const indicator = indicatorRef.current;
-    const halo = haloRef.current;
-    const position = measure(value);
-    if (!indicator || !position) return;
-    if (!entranceDoneRef.current) return;
-    if (firstSelectionRef.current) {
-      firstSelectionRef.current = false;
-      rectRef.current = position;
-      gsap.set(indicator, { ...position, autoAlpha: 1 });
-      gsap.set(halo, { ...position, autoAlpha: 0 });
-      return;
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let target: number;
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowRight":
+        target = (index + 1) % TABS.length;
+        break;
+      case "ArrowUp":
+      case "ArrowLeft":
+        target = (index - 1 + TABS.length) % TABS.length;
+        break;
+      case "Home":
+        target = 0;
+        break;
+      case "End":
+        target = TABS.length - 1;
+        break;
+      default:
+        return;
     }
-    const previous = rectRef.current ?? position;
-    rectRef.current = position;
-    if (prefersReducedMotion()) {
-      gsap.set(indicator, position);
-      gsap.set(halo, { ...position, autoAlpha: 0 });
-      return;
-    }
-    const activeIndex = TABS.findIndex((entry) => entry.id === value);
-    const activeLabel = labelRefs.current[activeIndex];
-    const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
-    timeline.to(indicator, { ...position, duration: 0.46, ease: "expo.out", overwrite: "auto" }, 0);
-    timeline.fromTo(
-      indicator,
-      { scaleY: 1.55 },
-      { scaleY: 1, duration: 0.55, ease: "elastic.out(1, 0.55)", overwrite: "auto" },
-      0,
-    );
-    if (halo) {
-      timeline.fromTo(
-        halo,
-        { ...previous, autoAlpha: 0.34, scaleY: 1.7 },
-        { ...position, autoAlpha: 0, scaleY: 1, duration: 0.5, ease: "power2.out", overwrite: "auto" },
-        0,
-      );
-    }
-    if (activeLabel) {
-      timeline.fromTo(activeLabel, { y: 1.5 }, { y: 0, duration: 0.4, ease: "power2.out", overwrite: "auto" }, 0);
-    }
-  }, [measure, value]);
-
-  // Localization, fonts and window width can all change label metrics after the
-  // line has settled; snap it rather than animating from a stale width.
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root || typeof ResizeObserver === "undefined") return;
-    let frame = 0;
-    const snap = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const position = measure(valueRef.current);
-        if (!position) return;
-        rectRef.current = position;
-        gsap.set(indicatorRef.current, position);
-        gsap.set(haloRef.current, { ...position, autoAlpha: 0 });
-      });
-    };
-    const observer = new ResizeObserver(snap);
-    observer.observe(root);
-    for (let index = 0; index < TABS.length; index += 1) {
-      const button = buttonRefs.current[index];
-      const label = labelRefs.current[index];
-      if (button) observer.observe(button);
-      if (label) observer.observe(label);
-    }
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [measure]);
-
-  const select = (next: SessionView) => {
-    if (next === value) return;
-    onChange(next);
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    let target: number | null = null;
-    if (event.key === "ArrowRight") target = (index + 1) % TABS.length;
-    else if (event.key === "ArrowLeft") target = (index - 1 + TABS.length) % TABS.length;
-    else if (event.key === "Home") target = 0;
-    else if (event.key === "End") target = TABS.length - 1;
-    if (target === null) return;
     event.preventDefault();
     buttonRefs.current[target]?.focus();
-    select(TABS[target].id);
+    onChange(TABS[target].id);
   };
 
   return (
-    <div ref={rootRef} className="session-view-tabs" role="tablist" aria-label={t("sessionViews", "Session views")}>
-      <span ref={haloRef} className="session-view-tabs-halo" aria-hidden="true" />
-      <span ref={indicatorRef} className="session-view-tabs-indicator" aria-hidden="true" />
-      {TABS.map((tab, index) => {
-        const selected = tab.id === value;
+    <div
+      ref={rootRef}
+      className="session-view-tabs"
+      role="tablist"
+      aria-label={t("sessionViews", "Session views")}
+      aria-orientation="vertical"
+    >
+      <svg className="absolute" width="0" height="0" aria-hidden="true" focusable="false">
+        <filter id={refractionId} x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
+          <feImage href={REFRACTION_MAP} preserveAspectRatio="none" result="surface" />
+          <feDisplacementMap in="SourceGraphic" in2="surface" scale={11} xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </svg>
+      <span
+        ref={indicatorRef}
+        className="session-view-tabs-indicator"
+        style={{ "--session-lens-filter": `url("#${refractionId}")` } as CSSProperties}
+        aria-hidden="true"
+      />
+      {TABS.map(({ id, Icon }, index) => {
+        const selected = id === value;
+        const label = labels[id];
         return (
           <button
-            key={tab.id}
+            key={id}
             ref={(node) => {
               buttonRefs.current[index] = node;
             }}
             type="button"
             role="tab"
-            id={`session-view-tab-${tab.id}`}
+            id={`session-view-tab-${id}`}
+            aria-label={label}
             aria-selected={selected}
-            aria-controls={tab.panelId}
+            aria-controls={`session-view-${id}`}
             tabIndex={selected ? 0 : -1}
             className="session-view-tab"
-            onClick={() => select(tab.id)}
+            data-tooltip={label}
+            onClick={() => onChange(id)}
             onKeyDown={(event) => handleKeyDown(event, index)}
           >
-            <span
-              ref={(node) => {
-                labelRefs.current[index] = node;
-              }}
-              className="session-view-tab-label"
-            >
-              {t(tab.labelKey, tab.fallback)}
-            </span>
+            <Icon size={16} strokeWidth={1.7} aria-hidden="true" />
           </button>
         );
       })}

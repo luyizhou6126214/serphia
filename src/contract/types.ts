@@ -7,11 +7,13 @@ import type {
   ExtensionWidgetItem,
   ImageContent,
   SessionTreeNode,
+  SubagentActivityItem,
   TextContent,
   ThinkingContent,
   ToolCallContent,
 } from "../shared/types";
 import type { SessionStatsInfo } from "../shared/pi-types";
+import type { SessionTodo } from "../shared/session-todo";
 
 export interface SessionInfo {
   path: string;
@@ -22,6 +24,7 @@ export interface SessionInfo {
   modified: string;
   messageCount: number;
   firstMessage: string;
+  isFork?: boolean;
   parentSessionId?: string;
   projectRoot?: string;
   worktreeBranch?: string;
@@ -60,6 +63,8 @@ export interface HistoryWindow {
 export interface PagedContextInfo extends ContextInfo {
   /** Successful Herdr invocations on the active branch, including history outside the display page. */
   herdrAgentPaneIds?: string[];
+  /** Latest checklist snapshot on the active branch, independent of the display page. */
+  todos?: SessionTodo[];
   totalMessages: number;
   loadedMessages: number;
   truncatedBefore: boolean;
@@ -103,6 +108,7 @@ export interface SessionRuntimeState {
   isCompacting?: boolean;
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
+  subagents?: SubagentActivityItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
   [key: string]: unknown;
 }

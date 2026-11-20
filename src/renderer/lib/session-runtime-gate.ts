@@ -1,7 +1,7 @@
 /** Runtime snapshots need field-level ordering: a queue event must not discard
  * the only initial run snapshot, while an old queue snapshot must not win. */
 export type RuntimeField =
-  "run" | "queue" | "compaction" | "statuses" | "widgets" | "thinking" | "usage" | "systemPrompt";
+  "run" | "queue" | "compaction" | "statuses" | "widgets" | "subagents" | "thinking" | "usage" | "systemPrompt";
 type Versions = Record<RuntimeField, number>;
 export interface RuntimeSnapshotTicket {
   readonly run: number;
@@ -18,6 +18,7 @@ export class SessionRuntimeGate {
     compaction: 0,
     statuses: 0,
     widgets: 0,
+    subagents: 0,
     thinking: 0,
     usage: 0,
     systemPrompt: 0,

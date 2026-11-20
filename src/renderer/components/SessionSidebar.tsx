@@ -1,4 +1,5 @@
-import { DeleteOutlined, EditOutlined, EllipsisOutlined, PushpinOutlined, SearchOutlined } from "@ant-design/icons/es";
+import { DeleteOutlined, EllipsisOutlined, PushpinOutlined, SearchOutlined } from "@ant-design/icons/es";
+import { SidebarIcon } from "./sidebar/SidebarIcon";
 import { ProjectFolderIcon } from "./ProjectFolderIcon";
 import { PROJECT_HOVER_CARD_WIDTH, ProjectHoverCard, type ProjectHoverCardState } from "./ProjectHoverCard";
 import { call, subscribeRunning } from "@/lib/api-client";
@@ -444,7 +445,7 @@ export function SessionSidebar({
               title={`${t("newSessionIn", "New session in selected project")}: ${group.label}`}
               aria-label={`${t("newSession", "new session")}: ${group.label}`}
             >
-              <EditOutlined />
+              <SidebarIcon name="newChat" size={16} />
             </button>
           </div>
           {projectMenu === group.path && (
@@ -520,7 +521,7 @@ export function SessionSidebar({
           title={t("newUnprojectedHint", "Start a session in its own folder under Documents/Serphia")}
           onClick={() => handleNewSession("")}
         >
-          <EditOutlined /> {t("newSession", "new session")}
+          <SidebarIcon name="newChat" size={18} /> {t("newSession", "new session")}
         </button>
       </div>
       <nav aria-label={t("sessions", "Sessions")} className="project-sidebar-list">

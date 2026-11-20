@@ -1523,7 +1523,7 @@ span.linenumber {
   border: 0;
   border-radius: 11px;
   background: transparent;
-  color: #8b8990;
+  color: #706b76;
   font-size: 18px;
   cursor: pointer;
 }
@@ -1531,9 +1531,31 @@ span.linenumber {
   background: #e3dde6;
   color: #36353a;
 }
-.sidebar-rail-button.is-active {
+.sidebar-rail-button:is(.is-active, :focus-visible, :active) {
+  --sidebar-icon-fill: currentColor;
+  --sidebar-icon-inner-stroke: #e4dee8;
   background: #e4dee8;
   color: #202124;
+}
+.sidebar-icon,
+.project-folder-icon {
+  display: block;
+  flex-shrink: 0;
+}
+.sidebar-icon-body {
+  fill: var(--sidebar-icon-fill, none);
+}
+.sidebar-icon-detail {
+  stroke: var(--sidebar-icon-inner-stroke, currentColor);
+}
+@media (hover: hover) {
+  :where(.sidebar-rail-button, .project-sidebar-new, .project-sidebar-icon, .project-sidebar-group-toggle):hover {
+    --sidebar-icon-fill: color-mix(in srgb, currentColor 14%, transparent);
+  }
+}
+:is(.sidebar-rail-button, .project-sidebar-new, .project-sidebar-icon, .project-sidebar-group-toggle):focus-visible {
+  outline-color: var(--project-folder-accent) !important;
+  outline-offset: -2px;
 }
 .project-sidebar {
   display: flex;
@@ -1593,8 +1615,17 @@ span.linenumber {
   text-align: left;
   cursor: pointer;
 }
-.project-sidebar-new .anticon {
-  font-size: 15px;
+.project-sidebar-new .sidebar-icon {
+  color: var(--text-muted);
+}
+.project-sidebar :is(.project-sidebar-new, .project-sidebar-icon):is(:focus-visible, :active) {
+  --sidebar-icon-fill: currentColor;
+  --sidebar-icon-inner-stroke: var(--bg-selected);
+  color: var(--text);
+  background: var(--bg-selected);
+}
+.project-sidebar-new:is(:hover, :focus-visible, :active) .sidebar-icon {
+  color: var(--text);
 }
 .project-sidebar-new:hover,
 .project-sidebar-group-heading:hover,
@@ -1850,45 +1881,18 @@ span.linenumber {
   cursor: pointer;
 }
 .project-sidebar-group-toggle:hover {
-  background: #eceaee;
+  background: var(--bg-hover);
 }
 .project-sidebar-group-toggle.is-current {
   background: var(--bg-selected);
   color: var(--text);
 }
-.project-sidebar-group-toggle:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--text) 28%, transparent);
-  outline-offset: 1px;
+.project-sidebar-group-toggle .project-folder-icon {
+  color: var(--text-muted);
 }
-.project-sidebar-group-toggle svg {
-  flex-shrink: 0;
-  color: var(--text-dim);
-}
-.project-sidebar-group-toggle.is-current svg {
-  color: var(--text);
-}
-/* Project glyph shared by project rows and the collapsed rail. The open state
-   paints stroke directly so ancestor colour rules cannot cancel the accent. */
-.project-folder-icon {
-  display: block;
-  flex-shrink: 0;
-  overflow: visible;
-}
-.project-folder-icon path {
-  transition:
-    stroke 140ms ease,
-    fill 140ms ease;
-}
-.project-folder-icon.is-open path {
-  stroke: var(--project-folder-accent, #4176e6);
-}
-.project-folder-icon.is-open .project-folder-icon-body {
-  fill: var(--project-folder-tint, #dbe5f8);
-}
-@media (prefers-reduced-motion: reduce) {
-  .project-folder-icon path {
-    transition: none;
-  }
+.project-sidebar-group-toggle:is(.is-current, :focus-visible, :active) .project-folder-icon {
+  --sidebar-icon-fill: currentColor;
+  color: var(--project-folder-accent);
 }
 /* Hover feedback for a project row, matching the DeepSeek Harness workspace list:
    the row eases into its highlight and the row actions fade in with it. */
@@ -2475,7 +2479,8 @@ html.dark .sidebar-session-halo {
   color: #aaa6ad;
 }
 .dark .sidebar-rail-button:hover,
-.dark .sidebar-rail-button.is-active {
+.dark .sidebar-rail-button:is(.is-active, :focus-visible, :active) {
+  --sidebar-icon-inner-stroke: #363339;
   background: #363339;
   color: #f4f2f4;
 }
@@ -3302,84 +3307,112 @@ html.dark .app-workspace {
   cursor: pointer;
 }
 
-/* The mascot and one staggered sentence share an open, editorial composition. */
-.chat-welcome {
-  --welcome-green: #496b57;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: clip;
-  padding: calc(48px * var(--chat-font-scale, 1)) 16px 28px;
+/* Light and reflected color belong to the empty chat surface, so the
+   sculpture and composer can share one uninterrupted field. */
+.chat-appearance-scope[data-welcome]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 45% 36% at 50% 28%, #fbf7ef, transparent);
 }
-html.dark .chat-welcome {
-  --welcome-green: #a8cbb0;
+html.dark .chat-appearance-scope[data-welcome]::before {
+  background: radial-gradient(ellipse 38% 34% at 50% 28%, #9a806725, transparent);
 }
-.chat-welcome-scene {
-  container-type: inline-size;
-  position: relative;
-  width: calc(250px * var(--chat-font-scale, 1));
-  max-width: 100%;
-}
-.chat-welcome-heading {
+.chat-welcome-region {
   position: relative;
   z-index: 1;
-  margin: 0;
-  color: var(--text);
-  font-family: Georgia, "Songti SC", "Noto Serif CJK SC", "STSong", "SimSun", serif;
-  font-size: calc(24px * var(--chat-font-scale, 1));
-  font-weight: 400;
-  line-height: 1.4;
-  text-align: left;
+  display: flex;
+  /* Match the bottom spacer so the composer is centered at any draft height. */
+  flex: 1 1 0;
+  min-height: 0;
+  flex-direction: column;
+  container-type: size;
+  overflow-y: auto;
+  padding-inline: 16px;
 }
-.chat-welcome-line {
-  display: block;
-  width: fit-content;
-  font-size: min(1.6em, 15.36cqw);
-  letter-spacing: 0.045em;
-  white-space: nowrap;
+.chat-welcome-region > .chat-content-column {
+  margin-block-start: auto;
+  flex: none;
 }
-.chat-welcome-line + .chat-welcome-line {
-  padding-left: 0.8em;
-  color: var(--welcome-green);
+.chat-welcome {
+  --orb-light: #eadbb9;
+  --orb-midtone: #e7d9ba;
+  --orb-shade: #d9ccb0;
+  --orb-edge: #cdbfa4;
+  --orb-ink: #2b2420;
+  --orb-blush: #f5c1c0;
+  --orb-shadow: #988569;
+  --orb-slit-depth: #5e5246;
+  --orb-slit-wall: #998977;
+  --orb-slit-lip: #d3c5ab;
+  --orb-slit-edge: #efe3c9;
+  --orb-slit-glint: #eee0c7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: min(16px, 5cqh);
 }
-.chat-welcome-mascot {
-  position: absolute;
-  top: -15.6cqw;
-  right: 8cqw;
-  width: 44.8cqw;
-  height: auto;
-  pointer-events: none;
+html.dark .chat-welcome {
+  --orb-light: #d9cbb4;
+  --orb-midtone: #c7b59d;
+  --orb-shade: #a99585;
+  --orb-edge: #93867f;
+  --orb-ink: #312923;
+  --orb-blush: #d9938a;
+  --orb-shadow: #090808;
+  --orb-slit-depth: #100f0e;
+  --orb-slit-wall: #34302e;
+  --orb-slit-lip: #65594e;
+  --orb-slit-edge: #897767;
+  --orb-slit-glint: #9f8b74;
+}
+.welcome-orb {
+  position: relative;
+  width: min(100%, 244px, 82cqh);
+  aspect-ratio: 240 / 250;
   user-select: none;
-  transform: rotate(4deg);
-  transform-origin: 50% 82%;
-  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .chat-welcome:hover .chat-welcome-mascot {
-    transform: translateY(-2px) rotate(1deg);
-  }
+.welcome-orb svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
-@media (max-width: 520px), (max-height: 580px) {
-  .chat-welcome {
-    padding: calc(40px * var(--chat-font-scale, 1)) 12px 24px;
-  }
-  .chat-welcome-scene {
-    width: calc(200px * var(--chat-font-scale, 1));
-  }
-  .chat-welcome-line {
-    font-size: min(1.27em, 15.24cqw);
-  }
-  .chat-welcome-mascot {
-    top: -15.5cqw;
-    right: 9cqw;
-    width: 45cqw;
-  }
+.welcome-orb-replay {
+  position: absolute;
+  top: 10%;
+  left: 13.75%;
+  width: 72.5%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.welcome-orb-replay:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .chat-welcome-mascot {
-    transition: none;
+  .welcome-orb-replay {
+    display: none;
   }
 }
+.chat-composer-workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-bottom: 8px;
+  padding-inline: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
 /* A single, quiet composer keeps the prompt and its controls together. */
 .chat-composer-card {
   position: relative;
@@ -3406,6 +3439,33 @@ html.dark .chat-composer-frame {
   --composer-glow-a: #a78bfa;
   --composer-glow-b: #22d3ee;
   --composer-glow-c: #f472b6;
+}
+html.dark .chat-appearance-scope[data-welcome] .chat-composer-frame {
+  --composer-glow-a: #9d876f;
+  --composer-glow-b: #76695f;
+  --composer-glow-c: #91776c;
+  --bg: #262422;
+  --bg-panel: #302d2a;
+  --bg-hover: #3a3632;
+  --border: #46403b;
+  --text: #ede5da;
+  --text-muted: #c2b8ab;
+  --text-dim: #aba296;
+}
+/* The embedded menu installs its light palette inline on the shadow host. */
+html.dark .chat-appearance-scope[data-welcome] [data-deep-agent-original="embedded"] {
+  --theme-fg: var(--text) !important;
+  --theme-text-secondary: var(--text-muted) !important;
+  --theme-bg: var(--bg) !important;
+  --theme-elevated: var(--bg-panel) !important;
+  --theme-hover: var(--bg-hover) !important;
+  --theme-border: var(--border) !important;
+  --theme-selection: #494136 !important;
+}
+html.dark .chat-appearance-scope[data-welcome] .chat-composer-send {
+  --action-blue: #cbb898;
+  --action-blue-hover: #decbb0;
+  color: #302921 !important;
 }
 /* The aurora sits behind the card and breathes while the composer owns focus. */
 .chat-composer-aura {

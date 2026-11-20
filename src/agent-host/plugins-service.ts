@@ -24,6 +24,7 @@ import { toolchainRuntime } from "./toolchain-runtime";
 import { runPluginWorker } from "./plugin-worker-client";
 import type { PluginActionBody } from "./plugin-worker-protocol";
 import { classifyPluginSource, getConfiguredPluginVersion, getPluginResourceName } from "./plugins-policy";
+import { bundledSubagents, setBundledSubagentsEnabled } from "./bundled-subagents";
 
 function emptyCounts(): PluginResourceCounts {
   return { extensions: 0, skills: 0, prompts: 0, themes: 0 };
@@ -235,12 +236,14 @@ export async function readPlugins(cwd: string, npmCommand?: string[]): Promise<P
     cwd,
     agentDir: getAgentDir(),
     settingsManager,
+    builtinExtensions: [bundledSubagents.name],
   });
 
   const diagnostics: PluginDiagnostic[] = [];
   let countsByPackage = new Map<string, PluginResourceCounts>();
   let resourcesByPackage = new Map<string, PluginResourceInfo[]>();
   let totals = emptyCounts();
+  let bundledDisabled = (settingsManager.getGlobalSettings().extensions ?? []).includes(`-${bundledSubagents.source}`);
   const disabledByPackage = getDisabledPackages(settingsManager);
 
   try {
@@ -253,6 +256,8 @@ export async function readPlugins(cwd: string, npmCommand?: string[]): Promise<P
       return "skip";
     });
     ({ countsByPackage, resourcesByPackage, totals } = collectResources(resolved));
+    bundledDisabled =
+      resolved.extensions.find((resource) => resource.path === bundledSubagents.source)?.enabled === false;
   } catch (error) {
     diagnostics.push({
       type: "error",
@@ -290,12 +295,38 @@ export async function readPlugins(cwd: string, npmCommand?: string[]): Promise<P
     } satisfies PluginPackageInfo;
   });
 
-  return { packages, totals, diagnostics };
+  const counts = emptyCounts();
+  if (!bundledDisabled) {
+    counts.extensions = 1;
+    totals.extensions += 1;
+  }
+  const bundled: PluginPackageInfo = {
+    source: bundledSubagents.source,
+    scope: "global",
+    bundled: true,
+    filtered: false,
+    disabled: bundledDisabled,
+    packageName: bundledSubagents.packageName,
+    version: bundledSubagents.version,
+    counts,
+    resources: bundledDisabled
+      ? []
+      : [
+          {
+            kind: "extension",
+            name: bundledSubagents.name,
+            path: bundledSubagents.source,
+            relativePath: bundledSubagents.name,
+          },
+        ],
+    status: bundledDisabled ? "disabled" : "loaded",
+  };
+  return { packages: [bundled, ...packages], totals, diagnostics };
 }
 
 export async function applyPluginAction(body: PluginActionBody): Promise<PluginsResponse> {
   validatePluginActionBody(body);
-  if (body.action === "disable" || body.action === "enable") {
+  if (body.source?.trim() === bundledSubagents.source || body.action === "disable" || body.action === "enable") {
     return applyPluginActionInProcess(body);
   }
 
@@ -333,6 +364,13 @@ export async function applyPluginActionInProcess(
   });
   const source = body.source?.trim();
   const local = (body.scope === "project" ? "project" : "global") === "project";
+  if (source === bundledSubagents.source) {
+    if (local || (body.action !== "enable" && body.action !== "disable")) {
+      throw new RpcError({ code: "BAD_REQUEST", message: "Bundled plugins support global enable and disable" });
+    }
+    await setBundledSubagentsEnabled(settingsManager, body.action === "enable");
+    return readPlugins(body.cwd, npmCommand);
+  }
 
   if (body.action === "install") {
     if (!source) throw new RpcError({ code: "BAD_REQUEST", message: "source required" });

@@ -2,6 +2,8 @@ import type { Options as ReactMarkdownOptions } from "react-markdown";
 import type rehypeKatex from "rehype-katex";
 import type rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
+import remarkCjkFriendlyStrikethrough from "remark-cjk-friendly-gfm-strikethrough/parseOnly";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { fileUrlToLocalPath, localFilePathToUrl } from "./file-url.ts";
@@ -124,6 +126,9 @@ export function remarkLocalFileLinks() {
 export const markdownRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   remarkGfm,
   remarkMath,
+  // Apply the CJK delimiter rules after GFM so they also govern strikethrough.
+  remarkCjkFriendly,
+  remarkCjkFriendlyStrikethrough,
   remarkLocalFileLinks,
 ];
 

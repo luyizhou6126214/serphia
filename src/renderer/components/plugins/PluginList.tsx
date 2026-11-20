@@ -27,7 +27,7 @@ export function PluginList({
   onSelect,
   onAdd,
 }: {
-  groups: Array<{ scope: PluginScope; packages: PluginPackageInfo[] }>;
+  groups: Array<{ scope: PluginScope | "bundled"; packages: PluginPackageInfo[] }>;
   selected: string | null;
   addMode: boolean;
   loading: boolean;
@@ -121,7 +121,11 @@ export function PluginList({
                   color: "var(--text-dim)",
                 }}
               >
-                {group.scope === "project" ? t("pluginScopeProject", "project") : t("pluginScopeGlobal", "global")}
+                {group.scope === "bundled"
+                  ? t("pluginScopeBundled", "Bundled with Serphia")
+                  : group.scope === "project"
+                    ? t("pluginScopeProject", "project")
+                    : t("pluginScopeGlobal", "global")}
               </div>
               {group.packages.map((pkg) => {
                 const key = `${pkg.scope}\0${pkg.source}`;

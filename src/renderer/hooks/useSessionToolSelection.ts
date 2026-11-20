@@ -61,7 +61,7 @@ export function useSessionToolSelection({
   const available = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (sid) return (await sendAgentCommand(sid, { type: "get_tools" })) ?? [];
-    return cwd ? ((await call("host.toolchain", { cwd }))?.codingTools ?? []) : [];
+    return cwd == null ? [] : ((await call("host.toolchain", { cwd }))?.codingTools ?? []);
   }, [cwd, sessionIdRef]);
   const initialToolNames = useCallback(
     async () =>

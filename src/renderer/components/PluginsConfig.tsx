@@ -69,8 +69,8 @@ export function PluginsConfig({
   const selectedPackage = packages.find((pkg) => packageKey(pkg) === selected) ?? null;
 
   const groupedPackages = useMemo(() => {
-    return (["project", "global"] as PluginScope[])
-      .map((scope) => ({ scope, packages: packages.filter((pkg) => pkg.scope === scope) }))
+    return (["bundled", "project", "global"] as const)
+      .map((scope) => ({ scope, packages: packages.filter((pkg) => (pkg.bundled ? "bundled" : pkg.scope) === scope) }))
       .filter((group) => group.packages.length > 0);
   }, [packages]);
 

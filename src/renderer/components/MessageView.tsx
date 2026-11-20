@@ -105,6 +105,8 @@ export const MessageView = memo(function MessageView({
         showTimestamp={showTimestamp}
         onLoadDeferredContent={onLoadDeferredContent}
         entryId={entryId}
+        onFork={onFork}
+        forking={forking}
         thinkingExpansionStore={thinkingExpansionStore}
         workStepDisplay={workStepDisplay}
         hideCopy={hideCopy}
@@ -416,6 +418,8 @@ function AssistantMessageView({
   showTimestamp,
   onLoadDeferredContent,
   entryId,
+  onFork,
+  forking,
   thinkingExpansionStore,
   workStepDisplay,
   hideCopy,
@@ -431,6 +435,8 @@ function AssistantMessageView({
   showTimestamp?: boolean;
   onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
   entryId?: string;
+  onFork?: (entryId: string) => void;
+  forking?: boolean;
   thinkingExpansionStore?: ThinkingExpansionStore;
   workStepDisplay?: WorkStepDisplay;
   hideCopy?: boolean;
@@ -498,6 +504,24 @@ function AssistantMessageView({
                   <Check size={15} strokeWidth={1.8} aria-hidden="true" />
                 ) : (
                   <Copy size={15} strokeWidth={1.6} aria-hidden="true" />
+                )}
+              </MessageActionButton>
+            )}
+            {!isStreaming && entryId && onFork && (
+              <MessageActionButton
+                label={
+                  forking
+                    ? t("forkSessionCreating", "Creating new session…")
+                    : t("branchToNewChat", "Branch to new chat")
+                }
+                onClick={() => onFork(entryId)}
+                disabled={forking}
+                active={forking}
+              >
+                {forking ? (
+                  <LoaderCircle size={15} className="execution-spinner" aria-hidden="true" />
+                ) : (
+                  <GitFork size={15} strokeWidth={1.6} aria-hidden="true" />
                 )}
               </MessageActionButton>
             )}

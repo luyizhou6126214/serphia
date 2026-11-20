@@ -67,9 +67,14 @@ type ResourceHandlers = {
 };
 export const resourceHandlers = {
   toolchain: async (params) => {
-    const { cwd } = params as { cwd: string };
-    if (!cwd || !path.isAbsolute(cwd)) throw new RpcError({ code: "BAD_REQUEST", message: "absolute cwd required" });
-    const context = await toolchainRuntime.createExecutionContext({ cwd, intent: "project-command" });
+    const { cwd } = params;
+    if (typeof cwd !== "string" || (cwd !== "" && !path.isAbsolute(cwd)))
+      throw new RpcError({ code: "BAD_REQUEST", message: "absolute cwd or empty draft cwd required" });
+    // Non-project drafts can preview global tools before the Host allocates their workspace.
+    const context = await toolchainRuntime.createExecutionContext({
+      cwd: cwd || path.resolve(getAgentDir()),
+      intent: "project-command",
+    });
     return {
       inventoryRevision: context.inventoryRevision,
       resolutionId: context.resolutionId,

@@ -34,6 +34,7 @@ export function builtinSlashCommands(t: Translate): SlashCommandPaletteItem[] {
       source: "builtin",
     },
     { name: "copy", description: t("slashCommandCopy", "Copy the last assistant message"), source: "builtin" },
+    { name: "todos", description: t("slashCommandTodos", "Show the current branch’s to-do list"), source: "builtin" },
   ];
 }
 

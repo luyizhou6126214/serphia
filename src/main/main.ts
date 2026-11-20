@@ -49,7 +49,9 @@ import { discoverHerdrAgentClis, type HerdrAgentCliDiscoverySnapshot } from "./h
 
 handleClosedStdioPipes();
 
-const packagedStartupValidation = app.isPackaged && process.argv.includes("--validate-packaged-startup");
+const packagedSubagentsValidation = app.isPackaged && process.argv.includes("--validate-packaged-subagents");
+const packagedStartupValidation =
+  packagedSubagentsValidation || (app.isPackaged && process.argv.includes("--validate-packaged-startup"));
 const packagedCleanupFaultValidation = app.isPackaged && process.argv.includes("--validate-packaged-cleanup-fault");
 const validationUserData =
   packagedStartupValidation || packagedCleanupFaultValidation ? app.commandLine.getSwitchValue("user-data-dir") : "";
@@ -207,15 +209,18 @@ function finishPackagedStartupValidation(error?: string): void {
       if (!startupPiRuntimeProbeStarted && hostManager) {
         startupPiRuntimeProbeStarted = true;
         void hostManager
-          .call<PiRuntimeProbeResult>("host.runtimeProbe")
+          .call<PiRuntimeProbeResult>(
+            "host.runtimeProbe",
+            packagedSubagentsValidation ? { bundledSubagentsOnly: true } : undefined,
+          )
           .then((probe) => {
             if (
               probe.piVersion !== expectedPiVersion ||
               !probe.openaiOAuthLoaded ||
               !probe.mcpLoaded ||
-              !probe.codemodeMcpRoundTrip ||
-              !probe.codemodeCancellation ||
-              !probe.mcpStdioRoundTrip
+              !probe.bundledSubagentsRoundTrip ||
+              (!packagedSubagentsValidation &&
+                (!probe.codemodeMcpRoundTrip || !probe.codemodeCancellation || !probe.mcpStdioRoundTrip))
             ) {
               throw new Error("Packaged Pi lazy runtime modules did not load");
             }

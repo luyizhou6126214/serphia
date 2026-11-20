@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from "react";
-import type { ExtensionStatusItem, ExtensionWidgetItem, ExtensionUiRequest } from "@/lib/types";
+import type { ExtensionStatusItem, ExtensionWidgetItem, ExtensionUiRequest, SubagentActivityItem } from "@/lib/types";
 import type { SessionRuntimeState } from "@contract/types";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { NOTICE_VISIBLE_MS, noticeExpiryDelay, noticeReducer, type NoticeType } from "@/lib/notice-queue";
@@ -34,6 +34,7 @@ export function useSessionExtensionUi({
   const [extensionCustomUi, setExtensionCustomUi] = useState<CustomRequest | null>(null);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
+  const [subagents, setSubagents] = useState<SubagentActivityItem[]>([]);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
   const dialogOwnerRef = useRef<RequestOwner<DialogRequest> | null>(null);
   const customOwnerRef = useRef<RequestOwner<CustomRequest> | null>(null);
@@ -75,6 +76,7 @@ export function useSessionExtensionUi({
         ]);
       if (state.extensionWidgets !== undefined && runtimeGate.accept(ticket, "widgets"))
         setExtensionWidgets(state.extensionWidgets ?? []);
+      if (state.subagents !== undefined && runtimeGate.accept(ticket, "subagents")) setSubagents(state.subagents);
     },
     [getViewSignal, runtimeGate, t],
   );
@@ -154,6 +156,10 @@ export function useSessionExtensionUi({
         case "setTitle":
           if (request.title) document.title = request.title;
           break;
+        case "subagentActivity":
+          runtimeGate.touch("subagents");
+          setSubagents(request.subagents);
+          break;
         case "set_editor_text":
           chatInputRef?.current?.insertText(request.text);
           break;
@@ -214,6 +220,7 @@ export function useSessionExtensionUi({
     extensionCustomUi,
     extensionStatuses,
     extensionWidgets,
+    subagents,
     notices: noticeState.visible,
     addNotice,
     applyExtensionSnapshot,

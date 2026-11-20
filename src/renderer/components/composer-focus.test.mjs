@@ -9,8 +9,15 @@ const originals = {
   document: globalThis.document,
   localStorage: globalThis.localStorage,
   navigator: globalThis.navigator,
+  ShadowRoot: globalThis.ShadowRoot,
   window: globalThis.window,
 };
+
+class ShadowRootMock {
+  constructor(host) {
+    this.host = host;
+  }
+}
 
 const storedValues = new Map();
 const localStorageMock = {
@@ -42,6 +49,7 @@ Object.defineProperties(globalThis, {
   document: { configurable: true, value: documentMock },
   localStorage: { configurable: true, value: localStorageMock },
   navigator: { configurable: true, value: windowMock.navigator },
+  ShadowRoot: { configurable: true, value: ShadowRootMock },
   window: { configurable: true, value: windowMock },
 });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -101,7 +109,6 @@ async function mount() {
 test("the composer paints its focus layers outside the hit-testing path", async () => {
   const { renderer, layers } = await mount();
   assert.equal(layers("chat-composer-aura").length, 1);
-  assert.equal(layers("chat-composer-ring").length, 1);
   assert.equal(layers("chat-composer-ripple").length, 2);
   await act(async () => renderer.unmount());
 });
@@ -116,6 +123,15 @@ test("focus lights the composer while it stays inside the card", async () => {
   // Moving between the textarea and the toolbar keeps focus inside the card.
   await act(async () => card().props.onBlur({ currentTarget: { contains: () => true }, relatedTarget: {} }));
   assert.equal(card().props["data-focused"], true, "focus that stays inside the card keeps it lit");
+
+  const menuShadowHost = {};
+  await act(async () =>
+    card().props.onBlur({
+      currentTarget: { contains: (node) => node === menuShadowHost },
+      relatedTarget: { getRootNode: () => new ShadowRootMock(menuShadowHost) },
+    }),
+  );
+  assert.equal(card().props["data-focused"], true, "focus moving into a toolbar menu keeps it lit");
 
   await act(async () => card().props.onBlur({ currentTarget: { contains: () => false }, relatedTarget: null }));
   assert.equal(card().props["data-focused"], undefined, "focus leaving the card releases it");

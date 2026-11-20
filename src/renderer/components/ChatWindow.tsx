@@ -23,6 +23,9 @@ import { LiveProcessRows } from "./LiveProcessRows";
 import { RunningTurnStatus } from "./RunningTurnStatus";
 import { ProcessDetailsGroup } from "./ProcessDetailsGroup";
 import { summarizeActivity } from "./chat/process-activity";
+import { SubagentActivityPanel } from "./chat/SubagentActivityPanel";
+import { SessionTodoPanel } from "./chat/SessionTodoPanel";
+import { ExtensionWidgets } from "./chat/ExtensionWidgets";
 import { SessionProfiler } from "./SessionProfiler";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs, type ChatMinimapMessage } from "./ChatMinimap";
@@ -47,7 +50,9 @@ import { useI18n } from "@/i18n";
 import type { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
 import { skillInvocationCommandText } from "@shared/skill-invocation";
 import { localizedExtensionConfirmCopy } from "@/lib/extension-ui-copy";
-import serphiaMascot from "@/assets/serphia-mascot.png";
+import { isDefaultSessionDirectory } from "@shared/session-workspace";
+import { worktreePathsEqual } from "@shared/worktree-path";
+import { WelcomeOrb } from "./chat/WelcomeOrb";
 
 interface Props {
   session: SessionInfo | null;
@@ -179,6 +184,7 @@ export function ChatWindow({
   const chatRootRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
   const [sessionView, setSessionView] = useState<SessionView>("chat");
+  const [todosExpanded, setTodosExpanded] = useState(false);
   const [mcpServersOpen, setMcpServersOpen] = useState(false);
   const openMcpServers = useCallback(() => setMcpServersOpen(true), []);
   const closeMcpServers = useCallback(() => setMcpServersOpen(false), []);
@@ -201,6 +207,7 @@ export function ChatWindow({
     loading,
     error,
     messages,
+    sessionTodos,
     entryIds,
     streamState,
     agentRunning,
@@ -231,6 +238,7 @@ export function ChatWindow({
     extensionCustomUi,
     extensionStatuses,
     extensionWidgets,
+    subagents,
     respondToExtensionUi,
     sendExtensionCustomInput,
     isAutoModelSelection,
@@ -271,6 +279,14 @@ export function ChatWindow({
     presentationStore,
     onSessionStatsPanelOpen,
   });
+  const handleComposerCommand = useCallback(
+    (text: string) => {
+      if (text !== "/todos") return handleBuiltinSlashCommand(text);
+      setTodosExpanded(true);
+      return Promise.resolve({ handled: true } as const);
+    },
+    [handleBuiltinSlashCommand],
+  );
   useMcpServerListCommand(currentSessionId, openMcpServers);
   const runningToolCallIds = useMemo(
     () => new Set(agentPhase?.kind === "running_tools" ? agentPhase.tools.map((tool) => tool.id) : []),
@@ -327,6 +343,11 @@ export function ChatWindow({
   }, [hasOlder, loadOlder, loadingOlder, messages.length, scrollContainerRef]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
+  const showWorkspace =
+    isEmptyNew &&
+    !!newSessionCwd &&
+    !isDefaultSessionDirectory(newSessionCwd) &&
+    !worktreePathsEqual(newSessionCwd, workspace?.homeDir ?? "");
   const showSessionViews = !isEmptyNew && messages.length > 0;
   const activeSessionView: SessionView = showSessionViews ? sessionView : "chat";
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
@@ -367,6 +388,7 @@ export function ChatWindow({
     <ChatInput
       ref={chatInputRef}
       welcome={isEmptyNew}
+      showWorkspace={showWorkspace}
       onSend={handleSend}
       onAbort={isCompacting ? handleAbortCompaction : handleAbort}
       onSteer={agentRunning && !isCompacting ? handleSteer : undefined}
@@ -383,7 +405,7 @@ export function ChatWindow({
       isCompacting={isCompacting}
       compactResult={compactResult}
       toolPreset={toolPreset}
-      onToolPresetChange={messageCwd && (session || isNew) ? handleToolPresetChange : undefined}
+      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       toolSelectionError={toolSelectionError}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
@@ -397,7 +419,7 @@ export function ChatWindow({
       onLoadSlashCommands={loadSlashCommands}
       onOpenMcpServers={openMcpServers}
       mcpServerList={mcpServerList}
-      onBuiltinCommand={handleBuiltinSlashCommand}
+      onBuiltinCommand={handleComposerCommand}
       draftKey={session?.id ?? (newSessionCwd !== null ? `new:${newSessionCwd}` : undefined)}
       draftPromotionFrom={session ? draftPromotionFrom : undefined}
       cwd={session?.cwd ?? newSessionCwd}
@@ -420,7 +442,9 @@ export function ChatWindow({
   return (
     <div
       ref={chatRootRef}
+      data-welcome={isEmptyNew || undefined}
       className="chat-appearance-scope relative flex h-full flex-col overflow-hidden"
+      data-session-views={showSessionViews || undefined}
       style={{ background: "var(--assistant-bg)" }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -500,34 +524,15 @@ export function ChatWindow({
 
       {isEmptyNew ? (
         <div
-          className="relative z-[1] flex min-h-0 flex-[1_1_0] flex-col items-center justify-end overflow-y-auto px-4 pt-8"
+          className="chat-welcome-region"
           aria-hidden={activeSessionView !== "chat" || undefined}
           inert={activeSessionView !== "chat" || undefined}
           style={{ display: activeSessionView === "chat" ? undefined : "none" }}
         >
           <div className="chat-content-column">
-            <header className="chat-welcome" aria-labelledby="chat-welcome-title">
-              <div className="chat-welcome-scene">
-                <img
-                  className="chat-welcome-mascot"
-                  src={serphiaMascot}
-                  alt=""
-                  width={112}
-                  height={112}
-                  draggable={false}
-                />
-                <h1 className="chat-welcome-heading" id="chat-welcome-title">
-                  {t("sessionWelcomeTagline", "Ideas,\nin motion.")
-                    .split("\n")
-                    .map((line, index) => (
-                      <span className="chat-welcome-line" key={line}>
-                        {index > 0 ? " " : ""}
-                        {line}
-                      </span>
-                    ))}
-                </h1>
-              </div>
-            </header>
+            <div className="chat-welcome">
+              <WelcomeOrb replayLabel={t("sessionWelcomeReplay", "Replay the mascot entrance")} />
+            </div>
             <NoticeShelf notices={notices} align="right" />
           </div>
         </div>
@@ -535,9 +540,10 @@ export function ChatWindow({
         <>
           <div
             id={showSessionViews ? "session-view-chat" : undefined}
-            className="chat-conversation-enter relative z-[1] flex min-h-0 flex-[1_1_0] overflow-hidden"
+            className="session-view-panel chat-conversation-enter relative z-[1] flex min-h-0 flex-[1_1_0] overflow-hidden"
             role={showSessionViews ? "tabpanel" : "region"}
-            aria-label={t("sessionViewChat", "Chat")}
+            aria-labelledby={showSessionViews ? "session-view-tab-chat" : undefined}
+            aria-label={showSessionViews ? undefined : t("sessionViewChat", "Chat")}
             aria-hidden={activeSessionView !== "chat" || undefined}
             inert={activeSessionView !== "chat" || undefined}
             style={{ display: activeSessionView === "chat" ? undefined : "none" }}
@@ -554,7 +560,10 @@ export function ChatWindow({
               }}
             >
               <div className="chat-content-column">
-                <NoticeShelf notices={notices} floating align="right" />
+                <div className="flex flex-col items-end gap-2">
+                  <NoticeShelf notices={notices} floating align="right" />
+                  {subagents.length > 0 && <SubagentActivityPanel subagents={subagents} />}
+                </div>
               </div>
             </div>
             <div ref={scrollContainerRef} className="chat-message-scroll relative z-[1] flex-1 overflow-y-auto">
@@ -646,7 +655,17 @@ export function ChatWindow({
                         const isVisible = msg.role === "user" || msg.role === "assistant";
                         const currentRefIdx = visibleRefIndexByMessage.get(idx);
                         const renderRole = options.renderRole ?? "message";
-                        const renderKey = messageRenderKeys.keyFor(messages[idx], entryIds[idx], renderRole);
+                        const entryId = entryIds[idx];
+                        const isProcessRow = renderRole === "process" || renderRole === "process-final";
+                        const canFork =
+                          !agentRunning &&
+                          !streamState.isStreaming &&
+                          !isCompacting &&
+                          !isNew &&
+                          !isProcessRow &&
+                          (forkingEntryId === null || forkingEntryId === entryId) &&
+                          (msg.role === "user" ? idx > 0 : renderRole === "final" || hasFinalAssistantAnswer(msg));
+                        const renderKey = messageRenderKeys.keyFor(messages[idx], entryId, renderRole);
                         const toolData = toolMessageIndex.get(messages[idx]);
                         let showTimestamp = false;
                         if (msg.role === "assistant") {
@@ -666,11 +685,9 @@ export function ChatWindow({
                               cwd={messageCwd}
                               home={workspace?.homeDir}
                               onOpenFile={onOpenFile}
-                              entryId={entryIds[idx]}
-                              onFork={
-                                agentRunning || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork
-                              }
-                              forking={forkingEntryId === entryIds[idx]}
+                              entryId={entryId}
+                              onFork={canFork ? handleFork : undefined}
+                              forking={forkingEntryId === entryId}
                               onNavigate={agentRunning ? undefined : handleNavigate}
                               prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
                               onEditContent={insertEditedContent}
@@ -678,7 +695,7 @@ export function ChatWindow({
                               showTimestamp={showTimestamp}
                               thinkingExpansionStore={thinkingExpansionStore}
                               workStepDisplay={workStepDisplay}
-                              hideCopy={renderRole === "process" || renderRole === "process-final"}
+                              hideCopy={isProcessRow}
                               footer={options.footer}
                             />
                           </SessionProfiler>
@@ -885,46 +902,52 @@ export function ChatWindow({
         </>
       )}
 
-      {activeSessionView === "trajectory" && (
+      {showSessionViews && (
         <div
           id="session-view-trajectory"
+          className="session-view-panel session-view-inspector"
           role="tabpanel"
-          aria-label={t("sessionViewTrajectory", "Trajectory")}
-          style={{ display: "flex", flex: 1, minHeight: 0 }}
+          aria-labelledby="session-view-tab-trajectory"
+          hidden={activeSessionView !== "trajectory"}
         >
-          <TrajectoryView
-            messages={messages}
-            entryIds={entryIds}
-            runningToolCallIds={runningToolCallIds}
-            streamingMessage={streamState.streamingMessage}
-            agentRunning={agentRunning}
-            agentPhase={agentPhase}
-            hasOlder={hasOlder}
-            loadingOlder={loadingOlder}
-            onLoadOlder={loadOlder}
-            modelNames={modelNames}
-            sessionId={currentSessionId}
-            leafId={activeLeafId}
-          />
+          {activeSessionView === "trajectory" && (
+            <TrajectoryView
+              messages={messages}
+              entryIds={entryIds}
+              runningToolCallIds={runningToolCallIds}
+              streamingMessage={streamState.streamingMessage}
+              agentRunning={agentRunning}
+              agentPhase={agentPhase}
+              hasOlder={hasOlder}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlder}
+              modelNames={modelNames}
+              sessionId={currentSessionId}
+              leafId={activeLeafId}
+            />
+          )}
         </div>
       )}
 
-      {activeSessionView === "context" && (
+      {showSessionViews && (
         <div
           id="session-view-context"
+          className="session-view-panel session-view-inspector"
           role="tabpanel"
-          aria-label={t("sessionViewContext", "Context")}
-          style={{ display: "flex", flex: 1, minHeight: 0 }}
+          aria-labelledby="session-view-tab-context"
+          hidden={activeSessionView !== "context"}
         >
-          <ContextView
-            messages={messages}
-            contextUsage={composerContextUsage}
-            sessionStats={sessionStats}
-            systemPrompt={systemPrompt}
-            toolNames={data?.toolNames}
-            model={displayModelValue}
-            modelNames={modelNames}
-          />
+          {activeSessionView === "context" && (
+            <ContextView
+              messages={messages}
+              contextUsage={composerContextUsage}
+              sessionStats={sessionStats}
+              systemPrompt={systemPrompt}
+              toolNames={data?.toolNames}
+              model={displayModelValue}
+              modelNames={modelNames}
+            />
+          )}
         </div>
       )}
 
@@ -936,7 +959,7 @@ export function ChatWindow({
         inert={activeSessionView !== "chat" || undefined}
         style={{ display: activeSessionView === "chat" ? undefined : "none" }}
       >
-        {!isEmptyNew && belowEditorWidgets.length > 0 && (
+        {((!isEmptyNew && belowEditorWidgets.length > 0) || sessionTodos.length > 0 || todosExpanded) && (
           <div
             style={{
               padding: `0 ${CHAT_COLUMN_PADDING}px`,
@@ -944,7 +967,14 @@ export function ChatWindow({
             }}
           >
             <div className="chat-content-column">
-              <ExtensionWidgets widgets={belowEditorWidgets} />
+              {!isEmptyNew && <ExtensionWidgets widgets={belowEditorWidgets} />}
+              {(sessionTodos.length > 0 || todosExpanded) && (
+                <SessionTodoPanel
+                  todos={sessionTodos}
+                  expanded={todosExpanded}
+                  onToggle={() => setTodosExpanded((value) => !value)}
+                />
+              )}
             </div>
           </div>
         )}
@@ -968,53 +998,8 @@ export function ChatWindow({
       <ChatWidthHandles
         rootRef={chatRootRef}
         visible={!isMobile && activeSessionView === "chat" && !isEmptyNew}
-        top={showSessionViews ? 38 : 0}
+        top={0}
       />
-    </div>
-  );
-}
-
-function ExtensionWidgets({ widgets }: { widgets: Array<{ key: string; lines: string[] }> }) {
-  if (widgets.length === 0) return null;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-      {widgets.map((widget) => (
-        <div
-          key={widget.key}
-          style={{
-            border: "1px solid var(--border)",
-            borderRadius: 7,
-            background: "var(--bg-panel)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "5px 9px",
-              borderBottom: "1px solid var(--border)",
-              color: "var(--text-dim)",
-              fontSize: scaledChatFont(11),
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {widget.key}
-          </div>
-          <pre
-            style={{
-              margin: 0,
-              padding: "8px 9px",
-              color: "var(--text-muted)",
-              fontSize: scaledChatFont(12),
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {widget.lines.join("\n")}
-          </pre>
-        </div>
-      ))}
     </div>
   );
 }

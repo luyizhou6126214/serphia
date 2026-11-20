@@ -214,6 +214,9 @@ test("session watcher refreshes exact session files and rejects traversal", () =
   });
   assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, "../outside.jsonl"), { kind: "ignore" });
   assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, "other/id.jsonl"), { kind: "ignore" });
+  const tasks = "sessions/project/2026-08-06T00-00-00-000Z_01a10000-0123-7abc-8000-0123456789ab/tasks";
+  assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, tasks), { kind: "ignore" });
+  assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, `${tasks}/child.jsonl`), { kind: "ignore" });
 });
 
 test("ambiguous session metadata requests a full refresh while unrelated files are ignored", () => {

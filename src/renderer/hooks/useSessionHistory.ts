@@ -4,7 +4,11 @@ import type { AgentMessage } from "@/lib/types";
 import { getSession, getSessionContext, getSessionContextPage, getSessionEntryContent } from "@/lib/api-client";
 import { LatestRequestGate } from "@/lib/latest-request-gate";
 import { mergeHistoryTail, prependHistoryPage } from "@/lib/session-pagination";
-import { normalizeSessionHistory, type SessionHistoryValue } from "@/lib/session-history-update";
+import {
+  appendLocalHistoryMessage,
+  normalizeSessionHistory,
+  type SessionHistoryValue,
+} from "@/lib/session-history-update";
 import {
   consumeSessionLoadTrace,
   failSessionLoadTrace,
@@ -14,11 +18,13 @@ import {
   type SessionLoadTrace,
 } from "@/lib/session-performance";
 import { sessionClientErrorMessage } from "@/lib/session-error-message";
+import { readTodoResult, type SessionTodo } from "@shared/session-todo";
 import { useI18n } from "@/i18n";
 
 const INITIAL_HISTORY_TURNS = 20;
 const HISTORY_PAGE_MAX_BYTES = 1024 * 1024;
 const DEFERRED_CONTENT_CACHE_SIZE = 12;
+const EMPTY_TODOS: SessionTodo[] = [];
 type HistoryScope = { sessionId: string; generation: number };
 type PageRequest = HistoryScope & { cursor: string; revision: string };
 type DeferredContent = EntryContentResult["content"];
@@ -50,6 +56,8 @@ export function useSessionHistory({
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, publishMessages] = useState<AgentMessage[]>([]);
   const [herdrAgentPaneIds, setHerdrAgentPaneIds] = useState<readonly string[] | undefined>();
+  const [sessionTodos, setSessionTodos] = useState(EMPTY_TODOS);
+  const todoEventVersionRef = useRef(0);
   const [entryIds, setEntryIds] = useState<string[]>([]);
   const [previousCursor, setPreviousCursor] = useState<string | null>(null);
   const [historyRevision, setHistoryRevision] = useState<string | null>(null);
@@ -114,6 +122,18 @@ export function useSessionHistory({
     [commitHistory],
   );
 
+  const appendDeliveredMessage = useCallback(
+    (message: AgentMessage) => {
+      const state = readTodoResult(message);
+      if (state) {
+        todoEventVersionRef.current++;
+        setSessionTodos(state.todos);
+      }
+      updateHistory((current) => appendLocalHistoryMessage(current, message));
+    },
+    [updateHistory],
+  );
+
   const setMessages = useCallback(
     (next: SetStateAction<AgentMessage[]>) => {
       commitHistory(typeof next === "function" ? next(loadedMessagesRef.current) : next, loadedEntryIdsRef.current);
@@ -135,6 +155,7 @@ export function useSessionHistory({
       previousCursorRef.current = null;
       commitHistory([], []);
       setHerdrAgentPaneIds(undefined);
+      setSessionTodos(EMPTY_TODOS);
       setData(null);
       setActiveLeafId(null);
       setError(null);
@@ -184,6 +205,8 @@ export function useSessionHistory({
       }
       const scope = { sessionId: sid, generation: historyGenerationRef.current };
       const request = detailGateRef.current.begin();
+      // A refresh started before a live result can return an older checklist.
+      const todoEventVersion = todoEventVersionRef.current;
       const ownsView = () => isCurrent(scope) && isRelevant() && detailGateRef.current.isCurrent(request);
       const applySnapshot = prepareSessionSnapshot?.() ?? onSessionLoaded;
       if (showSpinner) {
@@ -211,6 +234,7 @@ export function useSessionHistory({
         }
         setData(detail);
         setHerdrAgentPaneIds(detail.context.herdrAgentPaneIds);
+        if (todoEventVersion === todoEventVersionRef.current) setSessionTodos(detail.context.todos ?? EMPTY_TODOS);
         setActiveLeafId(detail.leafId);
         const previousTrace = pendingSessionLoadTraceRef.current;
         if (previousTrace && previousTrace !== trace) failSessionLoadTrace(previousTrace);
@@ -297,6 +321,7 @@ export function useSessionHistory({
         });
         if (!navigation.isCurrent()) return;
         setHerdrAgentPaneIds(result.context.herdrAgentPaneIds);
+        setSessionTodos(result.context.todos ?? EMPTY_TODOS);
         commitHistory(result.context.messages, result.context.entryIds ?? []);
         updatePagingState(result.context.historyRevision, result.context.previousCursor);
         setError(null);
@@ -424,6 +449,8 @@ export function useSessionHistory({
     activeLeafId,
     messages,
     herdrAgentPaneIds,
+    sessionTodos,
+    appendDeliveredMessage,
     entryIds,
     previousCursor,
     historyRevision,

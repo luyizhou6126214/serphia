@@ -708,6 +708,32 @@ test("two submit callbacks before the next render still send only one prompt", a
   assert.equal(fixture.current.messages.length, 1);
 });
 
+test("branching submits once and opens the new chat after creation", async (t) => {
+  const opened = [];
+  const fixture = await mountRuntime(t, runtimeDetail({ running: false }), {
+    onSessionForked: (sessionId) => opened.push(sessionId),
+  });
+  const pending = createDeferred();
+  testApi.queueCommand("fork", pending.promise);
+  let fork;
+  await act(async () => {
+    fork = fixture.current.handleFork("selected-reply");
+    await fixture.current.handleFork("other-reply");
+  });
+  assert.equal(fixture.current.forkingEntryId, "selected-reply");
+  assert.deepEqual(
+    testApi.commands.filter(({ command }) => command.type === "fork").map(({ command }) => command.entryId),
+    ["selected-reply"],
+  );
+  assert.deepEqual(opened, []);
+  await act(async () => {
+    pending.resolve({ cancelled: false, newSessionId: "branched-chat" });
+    await fork;
+  });
+  assert.deepEqual(opened, ["branched-chat"]);
+  assert.equal(fixture.current.forkingEntryId, null);
+});
+
 test("queue recall restores its text without clearing a newer queue event", async (t) => {
   const restored = [],
     pending = createDeferred();

@@ -169,3 +169,44 @@ test("older home and empty workspaces migrate once without moving transcript con
     assert.equal(again.getCwd(), restored.getCwd());
   }
 });
+
+test("forking from an assistant reply copies the conversation through that reply", async (t) => {
+  const root = configure(t);
+  const manager = openSessionWorkspace("", root, root);
+  const promptId = manager.appendMessage({ role: "user", content: "Original prompt", timestamp: 1 });
+  const replyId = manager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "Selected reply" }],
+    api: "openai-completions",
+    provider: "openai",
+    model: "fixture",
+    stopReason: "stop",
+    timestamp: 2,
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  });
+  const laterId = manager.appendMessage({ role: "user", content: "Later prompt", timestamp: 3 });
+  const sourcePath = manager.getSessionFile();
+  const { session } = await startRpcSession(manager.getSessionId(), sourcePath, "");
+  const sourceHistory = readFileSync(sourcePath, "utf8");
+  const fork = await session.send({ type: "fork", entryId: replyId });
+  assert.equal(fork.cancelled, false);
+  assert.notEqual(fork.newSessionId, manager.getSessionId());
+  const childPath = await resolveSessionPath(fork.newSessionId);
+  assert.ok(childPath);
+  const child = SessionManager.open(childPath);
+  assert.equal(child.getHeader().parentSession, sourcePath);
+  assert.equal(child.getCwd(), root);
+  assert.deepEqual(
+    child.getBranch().map((entry) => entry.id),
+    [promptId, replyId],
+  );
+  assert.ok(sourceHistory.includes(laterId));
+  assert.equal(readFileSync(sourcePath, "utf8"), sourceHistory);
+});

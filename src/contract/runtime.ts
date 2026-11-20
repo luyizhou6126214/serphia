@@ -5,4 +5,5 @@ export interface PiRuntimeProbeResult {
   codemodeMcpRoundTrip?: true;
   codemodeCancellation?: true;
   mcpStdioRoundTrip?: true;
+  bundledSubagentsRoundTrip?: true;
 }

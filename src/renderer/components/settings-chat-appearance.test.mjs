@@ -58,6 +58,7 @@ test("the full-width dock applies the chat width once after reserving the minima
 });
 
 test("the new conversation composer uses a fixed width independent of chat width preferences", () => {
+  assert.doesNotMatch(chatWindowSource, /sessionWelcomeTagline|chat-welcome-heading/);
   assert.match(chatWindowSource, /data-position=\{isEmptyNew \? "welcome" : "conversation"\}/);
   assert.match(
     cssSource,
@@ -84,8 +85,6 @@ test("the composer dock reserves the same minimap gutter as the message column",
 });
 
 test("chat text uses the shared scale while glyph-only icons remain fixed", () => {
-  assert.match(chatWindowSource, /className="chat-welcome-heading"/);
-  assert.match(cssSource, /\.chat-welcome-heading\s*\{[^}]*font-size:\s*calc\(24px \* var\(--chat-font-scale, 1\)\)/);
   assert.match(chatInputSource, /fontSize:\s*scaledChatFont\(14\)/);
   // The transcript's text sizes come from the DSH token ladder, not inline props.
   assert.match(cssSource, /\.dsh-user-bubble\s*\{[^}]*font-size:\s*var\(--dsh-content-font-size/);

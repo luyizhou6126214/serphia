@@ -27,6 +27,7 @@ const { MarkdownBody, getMarkdownComponentIdentityForTest, parseStats } = await 
           build.onResolve({ filter: /^\.\/SessionProfiler$/ }, () => ({ path: "profiler", namespace: "stub" }));
           build.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({
             loader: "js",
+            resolveDir: import.meta.dirname,
             contents:
               args.path === "@/hooks/useTheme"
                 ? "export const useTheme = () => ({ isDark: false });"
@@ -35,7 +36,10 @@ const { MarkdownBody, getMarkdownComponentIdentityForTest, parseStats } = await 
                   : args.path === "@/lib/file-links"
                     ? "export const resolveLocalFileHref = () => null;"
                     : args.path === "@/lib/markdown"
-                      ? "export const parseStats = { count: 0 }; const remarkPlugins = [() => () => { parseStats.count++; }]; const rehypePlugins = []; export const useMarkdownPlugins = () => ({ remarkPlugins, rehypePlugins });"
+                      ? `import { markdownRemarkPlugins, markdownRehypePlugins } from "../../shared/markdown.ts";
+                         export const parseStats = { count: 0 };
+                         const remarkPlugins = [...markdownRemarkPlugins, () => () => { parseStats.count++; }];
+                         export const useMarkdownPlugins = () => ({ remarkPlugins, rehypePlugins: markdownRehypePlugins });`
                       : args.path === "@/lib/code-highlight-policy"
                         ? "export const shouldHighlightCode = () => false;"
                         : args.path === "@/lib/chat-appearance"
@@ -83,16 +87,21 @@ test("long streams coalesce parses, keep formatting live, and flush immediately 
     source += ` ${i}`;
     await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: true }, source)));
   }
+  source += "\n\n1. **产能和价格竞争：*";
+  await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: true }, source)));
+  source += "*新增产能。";
+  await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: true }, source)));
   assert.equal(parseStats.count, before + 1);
   await act(async () => new Promise((resolve) => setTimeout(resolve, 150)));
   assert.equal(parseStats.count, before + 2);
   assert.ok(JSON.stringify(renderer.toJSON()).includes("0 1 2 3 4 5 6 7 8 9"));
+  assert.equal(renderer.root.findByType("strong").children.join(""), "产能和价格竞争：");
   const replacement = "# Replacement\n\n" + "new ".repeat(800);
   await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: true }, replacement)));
   assert.equal(renderer.root.findByType("h1").children.join(""), "Replacement");
-  source = replacement + " **finished**";
+  source = replacement + "\n\n**总体判断：**需求有支撑。";
   await act(async () => renderer.update(createElement(MarkdownBody, { isStreaming: false }, source)));
-  assert.equal(renderer.root.findByType("strong").children.join(""), "finished");
+  assert.equal(renderer.root.findByType("strong").children.join(""), "总体判断：");
   const settled = parseStats.count;
   await act(async () => new Promise((resolve) => setTimeout(resolve, 150)));
   assert.equal(parseStats.count, settled);

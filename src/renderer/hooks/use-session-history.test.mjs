@@ -165,6 +165,40 @@ async function mount(t) {
   };
 }
 
+test("live Todo updates survive an older refresh and branch navigation can replace the list", async (t) => {
+  const fixture = await mount(t);
+  const item = { id: 1, text: "Check the brief", done: false };
+  const initial = detail("a", "rev", "initial");
+  initial.context.todos = [item];
+  await fixture.load(initial);
+  assert.deepEqual(fixture.current.sessionTodos, [item]);
+
+  const olderRefresh = createDeferred();
+  testApi.enqueue("session", olderRefresh.promise);
+  let pending;
+  const completed = { ...item, done: true };
+  await act(async () => {
+    pending = fixture.current.loadSession("a");
+    fixture.current.appendDeliveredMessage({
+      role: "toolResult",
+      toolName: "todo",
+      toolCallId: "toggle",
+      content: [],
+      details: { todos: [completed], nextId: 2 },
+    });
+  });
+  assert.deepEqual(fixture.current.sessionTodos, [completed]);
+  await act(async () => {
+    olderRefresh.resolve(initial);
+    await pending;
+  });
+  assert.deepEqual(fixture.current.sessionTodos, [completed]);
+
+  testApi.enqueue("context", { context: page("rev", "other", "before Todo") });
+  await act(async () => fixture.current.loadContext("a", "other"));
+  assert.deepEqual(fixture.current.sessionTodos, []);
+});
+
 test("newer history wins while the initial caller can still inspect its runtime snapshot", async (t) => {
   const fixture = await mount(t),
     older = createDeferred(),

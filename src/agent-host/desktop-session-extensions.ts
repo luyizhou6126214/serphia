@@ -8,6 +8,7 @@ import { desktopMcpExtensions } from "./mcp/extensions";
 import { sessionOrchestrationExtensions } from "./session-orchestration";
 import { createAgentSettlementExtension } from "./agent-settlement";
 import { createAdditionalSkillReferencesExtension } from "./additional-skill-references";
+import { createSessionTodoExtension } from "./session-todo";
 
 export function desktopSessionExtensions(
   policy: SessionToolPolicy,
@@ -21,6 +22,7 @@ export function desktopSessionExtensions(
     createAgentSettlementExtension(),
     policy.extension(),
     history.extension(),
+    createSessionTodoExtension(),
     ...sessionOrchestrationExtensions(undefined, { isAllowed: () => policy.isAllowed("codemode"), history }),
     ...(hasDirectory ? desktopMcpExtensions(policy, running, history) : []),
     createLegacyChannelContextExtension(),

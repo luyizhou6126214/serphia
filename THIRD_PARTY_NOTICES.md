@@ -32,6 +32,14 @@ application.
 | `windows-link`                         | 0.2.1            | Windows import-link support                          | [Apache-2.0 OR MIT](https://github.com/microsoft/windows-rs/tree/0.61.2/license-mit)                                             | [microsoft/windows-rs](https://github.com/microsoft/windows-rs/tree/0.61.2)                                               |
 | Microsoft Visual C++ runtime           | Per release SBOM | Statically linked into the Windows helper            | [Microsoft software license terms](https://go.microsoft.com/fwlink/?LinkId=2086102)                                              | The authoritative native toolset version is recorded in the Windows CycloneDX SBOM                                        |
 
+Serphia bundles [`@gotgenes/pi-subagents`](https://github.com/gotgenes/pi-packages/tree/main/packages/pi-subagents)
+25.0.5 under the MIT License (Copyright © 2026 tintinweb). The license text ships at
+`resources/licenses/pi-subagents.txt`.
+
+The Markdown renderer bundles `remark-cjk-friendly` and `remark-cjk-friendly-gfm-strikethrough` 2.3.1 and their
+Micromark extensions from [markdown-cjk-friendly](https://github.com/tats-u/markdown-cjk-friendly) under the
+[MIT License](https://spdx.org/licenses/MIT.html). Copyright © 2025 Tatsunori Uchino and Titus Wormer.
+
 ## Pi 1.4.0 runtime dependencies
 
 The 1.4.0 SDK does not depend on `@earendil-works/chord`. The experimental

@@ -1,8 +1,8 @@
 import { useSidebarWorkspace } from "@/hooks/useSidebarWorkspace";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
-import { CalendarClock, Layers3, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
-import { ArrowLeftOutlined, ArrowRightOutlined, HomeFilled, SettingOutlined } from "@ant-design/icons/es";
+import { Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
+import { ArrowLeftOutlined, ArrowRightOutlined } from "@ant-design/icons/es";
 import {
   initialRightPanelPreferredWidth,
   persistRightPanelPreferredWidth,
@@ -14,6 +14,7 @@ import { call, subscribe } from "@/lib/api-client";
 import { useState, useReducer, useCallback, useRef, useEffect, useSyncExternalStore, type CSSProperties } from "react";
 import { SessionPanelResize } from "./elastic-panel-resize/SessionPanelResize";
 import { SessionSidebar } from "./SessionSidebar";
+import { SidebarIcon } from "./sidebar/SidebarIcon";
 import { ChatWindow } from "./ChatWindow";
 import { ScheduledTasksPage } from "./schedule/ScheduledTasksPage";
 import { SessionInfoPanel } from "./SessionInfoPanel";
@@ -746,6 +747,8 @@ export function AppShell({
       setSelectedSession((prev) => ({
         ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
         id: newSessionId,
+        isFork: true,
+        parentSessionId: prev?.id,
       }));
       hydrateSelectedSession(newSessionId);
       router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
@@ -998,15 +1001,11 @@ export function AppShell({
       <div className="sidebar-rail-top">
         {(
           [
-            ["sessions", t("sessions", "Sessions"), <HomeFilled />],
-            [
-              "schedule",
-              t("scheduledTasks", "Scheduled tasks"),
-              <CalendarClock size={18} strokeWidth={1.7} aria-hidden="true" />,
-            ],
-            ["herdr", "Herdr", <Layers3 size={18} strokeWidth={1.7} aria-hidden="true" />],
+            ["sessions", t("sessions", "Sessions")],
+            ["schedule", t("scheduledTasks", "Scheduled tasks")],
+            ["herdr", "Herdr"],
           ] as const
-        ).map(([view, label, icon]) => (
+        ).map(([view, label]) => (
           <button
             key={view}
             type="button"
@@ -1022,7 +1021,7 @@ export function AppShell({
               })
             }
           >
-            {icon}
+            <SidebarIcon name={view} />
           </button>
         ))}
       </div>
@@ -1035,8 +1034,9 @@ export function AppShell({
         }}
         title={t("settings", "Settings")}
         aria-label={t("settings", "Settings")}
+        aria-current={settingsOpen ? "page" : undefined}
       >
-        <SettingOutlined />
+        <SidebarIcon name="settings" />
       </button>
     </div>
   );

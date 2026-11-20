@@ -131,6 +131,11 @@ export function PackageDetail({
   const busy = busyKey?.endsWith(key) ?? false;
   const reloadBusy = busyKey === "reload";
   const enabled = !pkg.disabled;
+  const installedLocation = pkg.bundled
+    ? t("pluginScopeBundled", "Bundled with Serphia")
+    : pkg.installedPath
+      ? shortenHomePath(pkg.installedPath)
+      : t("pluginNotFound", "Not found");
   useRiseIn(ref, `${key}:${pkg.status}`);
 
   const meta: Array<{ label: string; value: ReactNode; mono?: boolean; tone?: string }> = [
@@ -154,7 +159,7 @@ export function PackageDetail({
     },
     {
       label: t("pluginInstalledPath", "Installed path"),
-      value: pkg.installedPath ? shortenHomePath(pkg.installedPath) : t("pluginNotFound", "Not found"),
+      value: installedLocation,
       mono: true,
       tone: pkg.installedPath ? "var(--text-muted)" : "var(--danger)",
     },
@@ -182,10 +187,10 @@ export function PackageDetail({
                   whiteSpace: "nowrap",
                 }}
               >
-                {pkg.source}
+                {pkg.bundled ? pkg.packageName : pkg.source}
               </span>
               <StatusPill status={pkg.status} />
-              <ScopeTag scope={pkg.scope} />
+              {!pkg.bundled && <ScopeTag scope={pkg.scope} />}
               {pkg.filtered && !pkg.disabled && (
                 <span
                   style={{
@@ -203,7 +208,7 @@ export function PackageDetail({
               )}
             </div>
             <div style={{ fontSize: 11.5, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-              {pkg.installedPath ? shortenHomePath(pkg.installedPath) : t("pluginNotFound", "Not found")}
+              {installedLocation}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -215,21 +220,25 @@ export function PackageDetail({
                 pkg.disabled ? t("pluginEnablePackage", "Enable package") : t("pluginDisablePackage", "Disable package")
               }
             />
-            <ActionButton
-              onClick={() => onAction("update", pkg)}
-              disabled={busy || reloadBusy}
-              ariaLabel={t("pluginUpdate", "Update")}
-            >
-              {busyKey === `update:${key}` ? t("pluginUpdating", "Updating…") : t("pluginUpdate", "Update")}
-            </ActionButton>
-            <ActionButton
-              tone="danger"
-              onClick={() => onAction("remove", pkg)}
-              disabled={busy || reloadBusy}
-              ariaLabel={t("pluginRemove", "Remove")}
-            >
-              {busyKey === `remove:${key}` ? t("pluginRemoving", "Removing…") : t("pluginRemove", "Remove")}
-            </ActionButton>
+            {!pkg.bundled && (
+              <>
+                <ActionButton
+                  onClick={() => onAction("update", pkg)}
+                  disabled={busy || reloadBusy}
+                  ariaLabel={t("pluginUpdate", "Update")}
+                >
+                  {busyKey === `update:${key}` ? t("pluginUpdating", "Updating…") : t("pluginUpdate", "Update")}
+                </ActionButton>
+                <ActionButton
+                  tone="danger"
+                  onClick={() => onAction("remove", pkg)}
+                  disabled={busy || reloadBusy}
+                  ariaLabel={t("pluginRemove", "Remove")}
+                >
+                  {busyKey === `remove:${key}` ? t("pluginRemoving", "Removing…") : t("pluginRemove", "Remove")}
+                </ActionButton>
+              </>
+            )}
           </div>
         </div>
 

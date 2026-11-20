@@ -20,6 +20,8 @@ import { sessionIndex } from "./session-index";
 import { readSessionSnapshot } from "./session-readonly.ts";
 import { abortedAssistantEntryIds } from "./agent-settlement";
 import { isDefaultSessionDirectory } from "../shared/session-workspace";
+import { dirname } from "node:path";
+import { isSubagentSessionDirectory } from "./subagent-session-path";
 
 export { getAgentDir };
 
@@ -34,7 +36,9 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 }
 
 async function listAllSessionsFallback(): Promise<SessionInfo[]> {
-  const piSessions: PiSessionInfo[] = await SessionManager.listAll();
+  const piSessions: PiSessionInfo[] = (await SessionManager.listAll()).filter(
+    (session) => !isSubagentSessionDirectory(dirname(session.path)),
+  );
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(s.path, s.id);
 
@@ -62,6 +66,7 @@ async function listAllSessionsFallback(): Promise<SessionInfo[]> {
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
       firstMessage: skillInvocationCommandText(s.firstMessage || "(no messages)"),
+      ...(s.parentSessionPath ? { isFork: true } : {}),
       parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
       projectRoot: project?.projectRoot ?? s.cwd,
       ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
@@ -176,6 +181,7 @@ export async function buildSessionInfoFromManager(
     modified,
     messageCount,
     firstMessage: firstMessage || "(no messages)",
+    ...(header.parentSession ? { isFork: true } : {}),
     ...(parentSessionId ? { parentSessionId } : {}),
     projectRoot: project?.projectRoot ?? header.cwd,
     ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),

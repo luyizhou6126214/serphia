@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isSubagentSessionDirectory } from "./subagent-session-path.ts";
 
 export type SessionWatchChange = { kind: "ignore" } | { kind: "refresh-all" } | { kind: "refresh-path"; path: string };
 
@@ -14,7 +15,10 @@ export function classifySessionWatchChange(
   if (candidate !== resolvedAgentDir && !candidate.startsWith(`${resolvedAgentDir}${path.sep}`))
     return { kind: "ignore" };
   const resolvedSessionsRoot = path.resolve(sessionsRoot);
-  if (candidate.endsWith(".jsonl") && candidate.startsWith(`${resolvedSessionsRoot}${path.sep}`)) {
+  const inSessions = candidate.startsWith(`${resolvedSessionsRoot}${path.sep}`);
+  if (inSessions && (isSubagentSessionDirectory(candidate) || isSubagentSessionDirectory(path.dirname(candidate))))
+    return { kind: "ignore" };
+  if (inSessions && candidate.endsWith(".jsonl")) {
     return { kind: "refresh-path", path: candidate };
   }
   if (name.endsWith(".json") || name.includes("session")) return { kind: "refresh-all" };

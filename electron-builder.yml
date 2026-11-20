@@ -54,6 +54,8 @@ npmRebuild: false
 extraResources:
   - from: THIRD_PARTY_NOTICES.md
     to: THIRD_PARTY_NOTICES.md
+  - from: node_modules/@gotgenes/pi-subagents/LICENSE
+    to: licenses/pi-subagents.txt
   - from: build/toolchains/runtime-catalog.json
     to: toolchains/runtime-catalog.json
   - from: build/toolchains/core-catalog.json

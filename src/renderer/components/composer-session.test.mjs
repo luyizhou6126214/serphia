@@ -298,11 +298,14 @@ test("a skill-first prompt generates a title from user text without changing the
   await f.reply("generate_title", { title: "ROS2 介绍视频" });
 });
 
-test("a non-project conversation promotes the actual working directory allocated by the host", async (t) => {
+test("a non-project conversation starts with the draft permissions and promotes the allocated directory", async (t) => {
   const f = await mount(t, { directory: "" });
+  await act(async () => f.current.handleToolPresetChange("none"));
+  assert.equal(f.count("ensure_session"), 0);
   await f.type("chat without a project");
   await f.click("Send");
   assert.equal(f.next("ensure_session").params.cwd, "");
+  assert.deepEqual(f.next("ensure_session").params.toolNames, []);
   assert.equal(f.next("ensure_session").params.thinkingLevel, "low");
   const cwd = "/Users/demo/Documents/Serphia/2026-11-04/0123456789abcdef0123456789abcdef";
   await f.reply("ensure_session", { sessionId: "no-project", cwd });

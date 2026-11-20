@@ -23,6 +23,8 @@ const {
   setAgentSessionSource,
   SessionPromptPolicy,
   createDesktopPromptExtension,
+  createSessionTodoExtension,
+  readBranchTodoState,
 } = await importTestBundle("pi-104-runtime-regression", {
   packages: "external",
   stdin: {
@@ -33,7 +35,9 @@ const {
     export {SessionExecutionHistory} from './session-execution-history.ts';
     export {ExecutionLogStore} from './execution-log-store.ts';
     export {setAgentSessionSource} from './session-source.ts';
-    export {SessionPromptPolicy,createDesktopPromptExtension} from './session-prompt-policy.ts';`,
+    export {SessionPromptPolicy,createDesktopPromptExtension} from './session-prompt-policy.ts';
+    export {createSessionTodoExtension} from './session-todo.ts';
+    export {readBranchTodoState} from '../shared/session-todo.ts';`,
   },
 });
 const { loadPhoton } = await import(
@@ -47,7 +51,10 @@ const usage = {
   totalTokens: 2,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
-async function fixture(t, { tools, excludeTools, customTools = [], settings = {}, persist = false } = {}) {
+async function fixture(
+  t,
+  { tools, excludeTools, customTools = [], extensions = [], settings = {}, persist = false } = {},
+) {
   const root = mkdtempSync(path.join(tmpdir(), "pi-104-runtime-")),
     manager = persist ? SessionManager.create(root, path.join(root, "sessions")) : SessionManager.inMemory(root);
   setAgentSessionSource(manager, "local");
@@ -87,6 +94,7 @@ async function fixture(t, { tools, excludeTools, customTools = [], settings = {}
         { name: "codemode", builtin: true, factory: createCodemodeExtension({ models: false }) },
         { name: "tool-search", builtin: true, factory: createToolSearchExtension() },
         policy.extension(),
+        ...extensions,
         createDesktopPromptExtension(prompt),
       ],
     },
@@ -107,7 +115,7 @@ async function fixture(t, { tools, excludeTools, customTools = [], settings = {}
   });
   return { root, manager, session, policy, history, prompt, requests: [] };
 }
-async function run(f, code, id) {
+async function runToolBatch(f, toolCalls) {
   let calls = 0;
   f.session.agent.streamFunction = (model, context) => {
     f.requests.push(context);
@@ -115,9 +123,7 @@ async function run(f, code, id) {
       stream = createAssistantMessageEventStream();
     const message = {
       role: "assistant",
-      content: first
-        ? [{ type: "toolCall", id, name: "codemode", arguments: { code } }]
-        : [{ type: "text", text: "done" }],
+      content: first ? toolCalls : [{ type: "text", text: "done" }],
       api: model.api,
       provider: model.provider,
       model: model.id,
@@ -131,7 +137,11 @@ async function run(f, code, id) {
     });
     return stream;
   };
-  await f.session.prompt("Offline runtime fixture " + id, { source: "rpc" });
+  await f.session.prompt("Offline runtime fixture " + toolCalls[0].id, { source: "rpc" });
+}
+
+async function run(f, code, id) {
+  await runToolBatch(f, [{ type: "toolCall", id, name: "codemode", arguments: { code } }]);
   return f.manager
     .getEntries()
     .filter(
@@ -139,6 +149,44 @@ async function run(f, code, id) {
     )
     .at(-1)?.message;
 }
+
+test("Todo calls in one model batch persist in order and resume from the selected branch", async (t) => {
+  const f = await fixture(t, { extensions: [createSessionTodoExtension()], persist: true });
+  assert.ok(f.session.getActiveToolNames().includes("todo"));
+  assert.ok(!f.session.getCallableToolNames().includes("todo"));
+  const call = (id, args) => ({ type: "toolCall", id, name: "todo", arguments: args });
+  await runToolBatch(f, [
+    call("first", { action: "add", text: "Read the brief" }),
+    call("second", { action: "add", text: "Implement the change" }),
+    call("toggle", { action: "toggle", id: 1 }),
+    call("invalid", { action: "toggle", id: 999 }),
+    call("list", { action: "list" }),
+  ]);
+  const reopened = SessionManager.open(f.manager.getSessionFile());
+  const results = reopened
+    .getBranch()
+    .filter((entry) => entry.type === "message" && entry.message.role === "toolResult");
+  assert.equal(results.length, 5);
+  assert.equal(results[3].message.isError, true);
+  assert.deepEqual(readBranchTodoState(reopened.getBranch()), {
+    todos: [
+      { id: 1, text: "Read the brief", done: true },
+      { id: 2, text: "Implement the change", done: false },
+    ],
+    nextId: 3,
+  });
+  const fork = SessionManager.open(reopened.createBranchedSession(results[0].id));
+  assert.deepEqual(readBranchTodoState(fork.getBranch()), {
+    todos: [{ id: 1, text: "Read the brief", done: false }],
+    nextId: 2,
+  });
+
+  await runToolBatch(f, [call("clear", { action: "clear" }), call("restart", { action: "add", text: "New task" })]);
+  assert.deepEqual(readBranchTodoState(f.manager.getBranch()), {
+    todos: [{ id: 1, text: "New task", done: false }],
+    nextId: 2,
+  });
+});
 
 test(
   "1.2.0 Codemode preserves many text outputs and distinguishes structured failures from rejected calls",

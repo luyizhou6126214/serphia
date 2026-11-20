@@ -52,6 +52,7 @@ import { SessionModelSelection } from "./session-model-selection";
 import { sessionWorkspaceOptions, openSessionWorkspace, forkSessionWorkspace } from "./session-workspace";
 import { DIRECTORY_TOOL_NAMES, requiresSessionDirectory } from "../shared/session-workspace";
 import { allowFileRoot } from "./file-access";
+import type { SubagentActivity } from "./subagent-activity";
 
 // ============================================================================
 // Types
@@ -158,6 +159,7 @@ export class AgentSessionWrapper {
     private readonly toolPolicy?: SessionToolPolicy,
     private readonly disposeMcp?: () => Promise<void>,
     readonly modelSelection = new SessionModelSelection(),
+    private readonly subagentActivity?: SubagentActivity,
   ) {
     this.inner = inner;
     this.toolPolicy?.setResourceReady(() => this.resourceReload.executionReady());
@@ -194,6 +196,13 @@ export class AgentSessionWrapper {
   }
 
   start(): void {
+    if (this.subagentActivity) {
+      this.onDestroy(
+        this.subagentActivity.subscribe((subagents) =>
+          this.emit({ type: "extension_ui_request", id: randomUUID(), method: "subagentActivity", subagents }),
+        ),
+      );
+    }
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
       if (event.type === "agent_start") this.agentSettled = undefined;
@@ -658,6 +667,7 @@ export class AgentSessionWrapper {
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
+          subagents: this.subagentActivity?.snapshot() ?? [],
         };
       }
 
@@ -680,6 +690,7 @@ export class AgentSessionWrapper {
         const sessionManager = this.inner.sessionManager;
         const currentSessionFile = this.inner.sessionFile;
 
+        if (this.isRunning()) throw new Error("Wait for the current turn before branching");
         if (!sessionManager.isPersisted()) return { cancelled: true };
         if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
 
@@ -687,7 +698,9 @@ export class AgentSessionWrapper {
         if (!entry) throw new Error("Invalid entry ID for forking");
 
         const sessionDir = sessionManager.getSessionDir();
-        const newSessionFile = forkSessionWorkspace(sessionManager, currentSessionFile, entry.parentId);
+        // Assistant replies are kept in the new chat. User-message forks keep their pre-prompt cutoff.
+        const leafId = entry.type === "message" && entry.message.role === "assistant" ? entry.id : entry.parentId;
+        const newSessionFile = forkSessionWorkspace(sessionManager, currentSessionFile, leafId);
 
         const forkManager = SessionManager.open(newSessionFile, sessionDir);
         const newSessionId = forkManager.getSessionId();
@@ -706,7 +719,7 @@ export class AgentSessionWrapper {
         if (execution) setDesktopSessionExecutionTools(newSessionId, execution);
         copyDesktopMcpTools(this.sessionId, newSessionId);
         cacheSessionPath(newSessionId, newSessionFile);
-        await this.dispose({ abort: true, reason: "fork" });
+        if (!this.isRunning()) await this.dispose({ abort: true, reason: "fork" });
         return { cancelled: false, newSessionId };
       }
 
@@ -1525,7 +1538,7 @@ export async function startRpcSession(
             ),
         ),
       ]),
-      { project: hasDirectory, sessionManager },
+      { project: hasDirectory, sessionManager, toolPolicy },
     );
     const desktopTools = await createDesktopSessionTools(
       cwd,
@@ -1562,6 +1575,7 @@ export async function startRpcSession(
       toolPolicy,
       () => peekMcpService()?.detach(realSessionId) ?? Promise.resolve(),
       modelSelection,
+      services.subagentActivity,
     );
     wrapper.setRuntimeDiagnostics(services.diagnostics);
     desktopTools.attach(wrapper, toolPolicy);

@@ -188,6 +188,17 @@ test("extension snapshots preserve newer status/widget events, including removal
   assert.deepEqual(fixture.current.extensionWidgets, []);
 });
 
+test("the live subagent panel is restored by a snapshot and stays closed when a stale snapshot arrives", async (t) => {
+  const fixture = await mount(t);
+  const subagents = [{ id: "one", description: "Explore the workspace", status: "running" }];
+  await act(async () => fixture.current.applyExtensionSnapshot({ subagents }, fixture.runtimeGate.capture()));
+  assert.deepEqual(fixture.current.subagents, subagents);
+  const old = fixture.runtimeGate.capture();
+  await fixture.emit({ id: "settled", method: "subagentActivity", subagents: [] });
+  await act(async () => fixture.current.applyExtensionSnapshot({ subagents }, old));
+  assert.deepEqual(fixture.current.subagents, []);
+});
+
 test("model restore notices show the requested and actual provider until an explicit selection clears them", async (t) => {
   const fixture = await mount(t);
   await act(async () =>

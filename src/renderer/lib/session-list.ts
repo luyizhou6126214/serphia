@@ -1,4 +1,5 @@
 import type { SessionInfo } from "./types";
+import { translate } from "../i18n.ts";
 import { sessionTitleFallback } from "../../shared/session-title-source.ts";
 
 export type SessionDateGroup = "today" | "recent" | "older";
@@ -21,9 +22,11 @@ export function resolveInitialSessionRestore(
 
 export function getSessionDisplayTitle(session: SessionInfo, maxLength = 72): string {
   const source = session.name?.trim() || sessionTitleFallback(session.firstMessage ?? "") || session.id;
-  const normalized = source.replace(/\s+/g, " ");
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+  const title = source.replace(/\s+/g, " ");
+  const displayTitle =
+    session.isFork || session.parentSessionId ? `${translate("sessionForkLabel", "Branch")} · ${title}` : title;
+  if (displayTitle.length <= maxLength) return displayTitle;
+  return `${displayTitle.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
 }
 
 export function sessionDateGroup(modified: string, now = new Date()): SessionDateGroup {
@@ -44,7 +47,14 @@ export function sessionMatchesQuery(session: SessionInfo, rawQuery: string): boo
   const query = rawQuery.trim().toLocaleLowerCase();
   return (
     !query ||
-    [session.name, session.firstMessage, session.id, session.cwd, session.worktreeBranch]
+    [
+      getSessionDisplayTitle(session, Infinity),
+      session.name,
+      session.firstMessage,
+      session.id,
+      session.cwd,
+      session.worktreeBranch,
+    ]
       .filter(Boolean)
       .join("\n")
       .toLocaleLowerCase()

@@ -52,8 +52,10 @@ import type { CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hook
 import { buildAtInsertText, extractAtQuery, type AtQueryMatch, type FileIndexEntry } from "@/lib/file-fuzzy";
 import { useFileSuggestions } from "@/hooks/useFileSuggestions";
 import { FolderIcon, getFileIcon } from "./FileIcons";
+import { ProjectFolderIcon } from "./ProjectFolderIcon";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/i18n";
+import { getFileName } from "@shared/file-paths";
 import type { ContextUsage, SessionStatsInfo } from "@shared/pi-types";
 
 export type { AttachedImage } from "@/hooks/useComposerDraft";
@@ -75,6 +77,7 @@ interface Props extends ComposerActions, ComposerToolbarOptions {
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
   welcome?: boolean;
+  showWorkspace?: boolean;
   sessionStats?: SessionStatsInfo | null;
   contextUsage?: ContextUsage | null;
 }
@@ -123,6 +126,7 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
     draftPromotionFrom,
     cwd,
     welcome = false,
+    showWorkspace = false,
     sessionStats,
     contextUsage,
     ...toolbarOptions
@@ -1081,7 +1085,15 @@ const ChatInputComponent = forwardRef<ChatInputHandle, Props>(function ChatInput
             />
           </div>
         )}
-        <ComposerFocusSurface cardRef={slashAnchorRef} streaming={isStreaming}>
+        {showWorkspace && cwd && (
+          <div className="chat-composer-workspace" title={cwd}>
+            <ProjectFolderIcon size={15} />
+            <span className="truncate" dir="auto">
+              {getFileName(cwd) || cwd}
+            </span>
+          </div>
+        )}
+        <ComposerFocusSurface cardRef={slashAnchorRef} streaming={isStreaming} liftOnFocus={!welcome}>
           {slashMenuOpen && slashQuery !== null && (
             <div
               ref={slashMenuRef}

@@ -190,6 +190,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     extensionCustomUi,
     extensionStatuses,
     extensionWidgets,
+    subagents,
     notices,
     addNotice,
     applyExtensionSnapshot,
@@ -234,6 +235,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   } | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
+  const forkRequestSessionRef = useRef<string | null>(null);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
@@ -339,6 +341,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     resetHistory,
     invalidateHistory,
     beginNavigation,
+    sessionTodos,
+    appendDeliveredMessage,
     herdrAgentPaneIds: persistedHerdrPaneIds,
   } = useSessionHistory({
     isNew,
@@ -698,9 +702,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               }
               return appendLocalHistoryMessage(current, delivered);
             });
-          } else if (completed) {
-            updateHistory((current) => appendLocalHistoryMessage(current, normalizeToolCalls(completed)));
-          }
+          } else if (completed) appendDeliveredMessage(normalizeToolCalls(completed));
           break;
         }
         case "auto_compaction_end":
@@ -714,6 +716,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     },
     [
       addNotice,
+      appendDeliveredMessage,
       beginExternalTurn,
       endExternalTurn,
       finishPromptWithoutStream,
@@ -880,7 +883,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     async (entryId: string) => {
       const sid = sessionIdRef.current;
       const ownsView = captureCommandView();
-      if (!sid || !ownsView()) return;
+      if (!sid || agentRunningRef.current || isCompacting || !ownsView() || forkRequestSessionRef.current === sid)
+        return;
+      forkRequestSessionRef.current = sid;
       setForkingEntryId(entryId);
       try {
         const result = await sendAgentCommand(sid, {
@@ -892,11 +897,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       } catch (e) {
         console.error("Fork failed:", e);
+        if (ownsView()) addNotice({ type: "error", message: t("forkSessionFailed", "Could not branch to a new chat") });
       } finally {
+        if (forkRequestSessionRef.current === sid) forkRequestSessionRef.current = null;
         if (ownsView()) setForkingEntryId(null);
       }
     },
-    [captureCommandView, onSessionForked],
+    [addNotice, captureCommandView, isCompacting, onSessionForked, t],
   );
 
   const handleNavigate = useCallback(
@@ -1334,6 +1341,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     error,
     activeLeafId,
     messages,
+    sessionTodos,
     entryIds,
     streamState,
     agentRunning,
@@ -1366,6 +1374,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     extensionCustomUi,
     extensionStatuses,
     extensionWidgets,
+    subagents,
     respondToExtensionUi,
     sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,

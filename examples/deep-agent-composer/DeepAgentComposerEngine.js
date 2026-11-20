@@ -2027,7 +2027,7 @@ function mountDeepAgent(target, options, variant) {
         let disposed = false;
         let timeline;
         let resize;
-        let restoreFocus = container.contains(document.activeElement);
+        const moveFocus = container.contains(document.activeElement);
         const floating = __deepAgentBridge.embedded;
         const compactSize = () => {
           if (triggerLayout === "block") compact.style.width = `${anchor.clientWidth}px`;
@@ -2051,8 +2051,7 @@ function mountDeepAgent(target, options, variant) {
           anchor.style.height = "";
           if (triggerLayout === "block") compact.style.width = "100%";
         };
-        compact.inert = open;
-        if (panel) panel.inert = !open;
+        if (!open) compact.inert = false;
         if (!showPanel || !panel || !content) {
           restClosed();
           return;
@@ -2096,6 +2095,11 @@ function mountDeepAgent(target, options, variant) {
           bottom: panelPlacement === "above" ? 0 : "auto",
           top: panelPlacement === "below" ? 0 : "auto"
         });
+        // Transfer focus before making the previously focused view inert.
+        if (open) panel.inert = false;
+        if (moveFocus) (open ? panel : compact.querySelector("button"))?.focus({ preventScroll: true });
+        compact.inert = open;
+        panel.inert = !open;
         const expandedSize = () => {
           panel.style.width = "";
           const scrollTop = content.scrollTop;
@@ -2127,11 +2131,6 @@ function mountDeepAgent(target, options, variant) {
             setPresent(false);
           }
         };
-        const focus = () => {
-          if (!disposed && restoreFocus && document.activeElement === document.body && latest.current.open === open) {
-            (open ? panel : compact.querySelector("button"))?.focus({ preventScroll: true });
-          }
-        };
         const play = () => {
           timeline?.kill();
           resize?.kill();
@@ -2150,7 +2149,6 @@ function mountDeepAgent(target, options, variant) {
             import_gsap6.default.set(panel, { opacity: open ? 1 : 0, filter: "blur(0px)" });
             if (keepTriggerInFlow) import_gsap6.default.set(shell, { opacity: open ? 1 : 0 });
             finish();
-            focus();
             return;
           }
           setLayoutAnimating(true);
@@ -2176,15 +2174,18 @@ function mountDeepAgent(target, options, variant) {
             duration: 0.22,
             ease: "power2.out"
           }, 0);
-          if (keepTriggerInFlow) {
-            timeline.to(shell, { opacity: open ? 1 : 0, duration: 0.12, ease: "power2.out" }, open ? 0 : 0.18);
-          }
-          timeline.to(compact, { opacity: open ? 0 : 1, duration: 0.14, ease: "power2.out" }, open ? 0 : keepTriggerInFlow ? 0.3 : 0.2);
-          if (!open && !keepTriggerInFlow) timeline.fromTo(compact, { scale: 0.95 }, {
+          const triggerReveal = 0.2;
+          const triggerFade = 0.14;
+          timeline.to(compact, { opacity: open ? 0 : 1, duration: triggerFade, ease: "power2.out" }, open ? 0 : triggerReveal);
+          if (!open) timeline.fromTo(compact, { scale: 0.95 }, {
             scale: 1,
             duration: 0.48,
             ease: springEase(300, 21, 0.48)
-          }, 0.2);
+          }, triggerReveal);
+          if (keepTriggerInFlow) {
+            // Leave the popover visible as it contracts, then reveal the in-flow trigger underneath.
+            timeline.to(shell, { opacity: open ? 1 : 0, duration: 0.12, ease: "power2.out" }, open ? 0 : triggerReveal + triggerFade);
+          }
           timeline.to(panel, {
             opacity: open ? 1 : 0,
             filter: open ? "blur(0px)" : "blur(5px)",
@@ -2201,7 +2202,6 @@ function mountDeepAgent(target, options, variant) {
               ease: springEase(280, 24, 0.5)
             }, 0.13);
           }
-          timeline.call(focus, [], 0.36);
         };
         play();
         const retarget = () => {
@@ -2228,11 +2228,7 @@ function mountDeepAgent(target, options, variant) {
         observer.observe(content);
         observer.observe(compact);
         if (floating) observer.observe(anchor);
-        const outsideFocus = (event) => {
-          if (!container.contains(event.target)) restoreFocus = false;
-        };
         const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-        document.addEventListener("focusin", outsideFocus);
         window.addEventListener("resize", retarget);
         if (floating) window.addEventListener("scroll", retarget, true);
         media.addEventListener("change", play);
@@ -2241,7 +2237,6 @@ function mountDeepAgent(target, options, variant) {
           timeline?.kill();
           resize?.kill();
           observer.disconnect();
-          document.removeEventListener("focusin", outsideFocus);
           window.removeEventListener("resize", retarget);
           if (floating) window.removeEventListener("scroll", retarget, true);
           media.removeEventListener("change", play);

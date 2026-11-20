@@ -140,7 +140,7 @@ export interface Api {
     result: { value?: unknown; chunk?: ExecutionContentChunk };
   };
   "host.ping": { params: void; result: { ok: true; ts: number } };
-  "host.runtimeProbe": { params: void; result: PiRuntimeProbeResult };
+  "host.runtimeProbe": { params: void | { bundledSubagentsOnly: true }; result: PiRuntimeProbeResult };
   "host.toolchain": {
     params: { cwd: string };
     result: {

@@ -3,9 +3,12 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { PiRuntimeProbeResult } from "../contract/runtime";
 import { readPiRuntimeVersion } from "./runtime-version";
 import { probePiToolRuntime } from "./pi-tool-runtime-probe";
+import { probeBundledSubagents } from "./bundled-subagents-probe";
 
 /** Exercises the real lazy login import without a callback server or network request. */
-export async function probePiRuntimeModules(exerciseTools = false): Promise<PiRuntimeProbeResult> {
+export async function probePiRuntimeModules(
+  exerciseTools: boolean | "subagents" = false,
+): Promise<PiRuntimeProbeResult> {
   const credentials: CredentialStore = {
     async read() {
       return undefined;
@@ -46,6 +49,13 @@ export async function probePiRuntimeModules(exerciseTools = false): Promise<PiRu
   if (typeof mcp.McpClient !== "function" || typeof oauth.authorizeMcp !== "function") {
     throw new Error("MCP client or OAuth public entry is missing");
   }
-  const tools = exerciseTools ? await probePiToolRuntime(runtime) : {};
-  return { piVersion: readPiRuntimeVersion(), openaiOAuthLoaded: true, mcpLoaded: true, ...tools };
+  const tools = exerciseTools === true ? await probePiToolRuntime(runtime) : {};
+  const bundledSubagentsRoundTrip = exerciseTools ? await probeBundledSubagents(runtime) : undefined;
+  return {
+    piVersion: readPiRuntimeVersion(),
+    openaiOAuthLoaded: true,
+    mcpLoaded: true,
+    ...tools,
+    bundledSubagentsRoundTrip,
+  };
 }

@@ -87,6 +87,33 @@ test("work-step modes control settled reasoning previews but never auto-expand r
   }
 });
 
+test("completed assistant replies expose a branch action only for eligible transcript entries", async (t) => {
+  const opened = [];
+  const props = {
+    message: { role: "assistant", content: [{ type: "text", text: "Assistant reply" }], timestamp: 1 },
+    entryId: "assistant-entry",
+    onFork: (entryId) => opened.push(entryId),
+    showTimestamp: true,
+  };
+  const render = (overrides) => renderToStaticMarkup(createElement(MessageView, { ...props, ...overrides }));
+  assert.match(render(), /data-tooltip="Copy message".*aria-label="Branch to new chat".*<time/s);
+  assert.match(render({ forking: true }), /aria-label="Creating new session…" disabled=""/);
+  for (const overrides of [{ entryId: undefined }, { onFork: undefined }, { isStreaming: true }, { hideCopy: true }]) {
+    assert.doesNotMatch(render(overrides), /Branch to new chat/);
+  }
+
+  let renderer;
+  t.after(async () => {
+    if (renderer) await act(async () => renderer.unmount());
+  });
+  await act(async () => {
+    renderer = create(createElement(MessageView, props));
+  });
+  const button = renderer.root.findByProps({ "aria-label": "Branch to new chat" });
+  await act(async () => button.props.onClick());
+  assert.deepEqual(opened, ["assistant-entry"]);
+});
+
 test("intermediate process messages do not render the assistant copy action", () => {
   const html = renderToStaticMarkup(
     createElement(MessageView, {

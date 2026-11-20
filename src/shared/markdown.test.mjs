@@ -4,6 +4,8 @@ import test from "node:test";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
+import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
+import remarkCjkFriendlyStrikethrough from "remark-cjk-friendly-gfm-strikethrough/parseOnly";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import {
@@ -14,8 +16,14 @@ import {
   remarkLocalFileLinks,
 } from "./markdown.ts";
 
-test("Markdown plugins preserve GFM/math, add AST path links, and sanitize raw HTML", () => {
-  assert.deepEqual(markdownRemarkPlugins, [remarkGfm, remarkMath, remarkLocalFileLinks]);
+test("Markdown plugins preserve GFM/math, support CJK emphasis and path links, and sanitize raw HTML", () => {
+  assert.deepEqual(markdownRemarkPlugins, [
+    remarkGfm,
+    remarkMath,
+    remarkCjkFriendly,
+    remarkCjkFriendlyStrikethrough,
+    remarkLocalFileLinks,
+  ]);
   assert.equal(markdownRehypePlugins.length, 1);
   assert.equal(markdownRehypePlugins[0][0], rehypeSanitize);
   const richPlugins = createMarkdownRehypePlugins({ raw: rehypeRaw, katex: rehypeKatex });

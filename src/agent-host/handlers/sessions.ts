@@ -160,9 +160,10 @@ export function createSessionHandlers({
 
         const resolveStartedAt = performance.now();
         const persistedPath = await resolveSessionPath(id);
+        const liveSession = getRpcSession(id);
+        const liveManager = liveSession?.isAlive() ? liveSession.inner.sessionManager : undefined;
         // A newly opened session may have no transcript file before its first user message.
-        const pendingSession = !persistedPath ? getRpcSession(id) : undefined;
-        const pendingManager = pendingSession?.isAlive() ? pendingSession.inner.sessionManager : undefined;
+        const pendingManager = !persistedPath ? liveManager : undefined;
         const filePath = persistedPath ?? pendingManager?.getSessionFile();
         const resolvePathMs = performance.now() - resolveStartedAt;
         if (!filePath) throw new RpcError({ code: "NOT_FOUND", message: "Session not found" });
@@ -174,7 +175,9 @@ export function createSessionHandlers({
         const openMs = performance.now() - openStartedAt;
 
         const contextStartedAt = performance.now();
-        const leafId = sm.getLeafId();
+        // Navigation changes the live leaf before Pi appends anything to the transcript.
+        const liveLeafId = liveManager?.getLeafId();
+        const leafId = liveLeafId === null || (liveLeafId && sm.getEntry(liveLeafId)) ? liveLeafId : sm.getLeafId();
         const tree = projectSessionTreeForResponse(sm.getTree() as never) as SessionTreeNode[];
         const historyRevision = persistedPath ? buildHistoryRevision(filePath, id) : `pending:${id}`;
         const context = buildSessionHistoryPage({ entries, leafId, historyWindow, historyRevision });

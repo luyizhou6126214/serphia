@@ -4,10 +4,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { importTestBundle } from "#test-bundle";
 
-const { MarkdownBody, loadMarkdownPlugins } = await importTestBundle("markdown-body-math", {
+const { MarkdownBody, HerdrMarkdownBody, loadMarkdownPlugins } = await importTestBundle("markdown-body-math", {
   stdin: {
-    contents:
-      'export { MarkdownBody } from "./MarkdownBody.tsx"; export { loadMarkdownPlugins } from "@/lib/markdown";',
+    contents: `
+      export { MarkdownBody } from "./MarkdownBody.tsx";
+      export { MarkdownBody as HerdrMarkdownBody } from "./herdr/conversation/MarkdownBody.tsx";
+      export { loadMarkdownPlugins } from "@/lib/markdown";
+    `,
     resolveDir: import.meta.dirname,
     loader: "tsx",
   },
@@ -41,6 +44,52 @@ await loadMarkdownPlugins({ math: true, html: true });
 function render(markdown) {
   return renderToStaticMarkup(createElement(MarkdownBody, null, markdown));
 }
+
+test("conversation history renders Chinese emphasis and strikethrough next to punctuation and prose", () => {
+  const source = [
+    "1. **产能和价格竞争：**新增产能释放快于实际需求。",
+    "2. **原料价格冲击：**六氟磷酸锂价格波动。",
+    "",
+    "**总体判断：**国内电解液仍有需求支撑。",
+    "",
+    "> 数据**（关键）**直接展示，中文***结论：***正文，*参考：*后续报告。",
+    "",
+    "| 名称 | 观察 |",
+    "| --- | --- |",
+    "| 产能 | **结论：**供给增加，~~原预测：~~供给减少 |",
+  ].join("\n");
+  for (const Body of [MarkdownBody, HerdrMarkdownBody]) {
+    const html = renderToStaticMarkup(createElement(Body, null, source));
+    assert.match(html, /<li><strong>产能和价格竞争：<\/strong>新增产能释放快于实际需求。<\/li>/);
+    assert.match(html, /<li><strong>原料价格冲击：<\/strong>六氟磷酸锂价格波动。<\/li>/);
+    assert.match(html, /<p><strong>总体判断：<\/strong>国内电解液仍有需求支撑。<\/p>/);
+    assert.match(html, /数据<strong>（关键）<\/strong>直接展示，中文<em><strong>结论：<\/strong><\/em>正文，/);
+    assert.match(html, /<em>参考：<\/em>后续报告。/);
+    assert.match(html, /<td><strong>结论：<\/strong>供给增加，<del>原预测：<\/del>供给减少<\/td>/);
+  }
+});
+
+test("Chinese emphasis preserves escapes, code, links, and ordinary CommonMark text", () => {
+  const source = [
+    String.raw`\*\*示例：\*\*原文`,
+    "`**示例：**原文`",
+    "```text\n**示例：**原文\n```",
+    "a**(word)**b and foo_bar_baz",
+    "~old~ and ~~older~~",
+    "`~~原预测：~~结果`",
+    "中文**[链接](https://example.com)：**正文",
+    "中文**$x^2$：**正文",
+  ].join("\n\n");
+  const html = render(source);
+  assert.match(html, /<p>\*\*示例：\*\*原文<\/p>/);
+  assert.match(html, /<code class="markdown-inline-code">\*\*示例：\*\*原文<\/code>/);
+  assert.match(html, /<pre data-highlighted="true">\*\*示例：\*\*原文<\/pre>/);
+  assert.match(html, /<p>a\*\*\(word\)\*\*b and foo_bar_baz<\/p>/);
+  assert.match(html, /<p><del>old<\/del> and <del>older<\/del><\/p>/);
+  assert.match(html, /<code class="markdown-inline-code">~~原预测：~~结果<\/code>/);
+  assert.match(html, /<strong><a href="https:\/\/example\.com">链接<\/a>：<\/strong>正文/);
+  assert.match(html, /<strong><span class="katex">.*<\/span>：<\/strong>正文/);
+});
 
 const followingMarkdown = `
 

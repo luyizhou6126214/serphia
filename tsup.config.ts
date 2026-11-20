@@ -1,5 +1,6 @@
 import { defineConfig } from "tsup";
 import { readFileSync } from "node:fs";
+import { piSubagentsBuild } from "./scripts/pi-subagents-build.mjs";
 
 const packageJson = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
   dependencies?: Record<string, string>;
@@ -63,6 +64,7 @@ export default defineConfig([
     ],
     // Preserve lazy adapter boundaries, including external SDK imports.
     splitting: true,
+    esbuildPlugins: [piSubagentsBuild()],
     treeshake: true,
     define: piVersionDefine,
     banner: {

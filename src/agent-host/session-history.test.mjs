@@ -42,6 +42,35 @@ function toolResult(toolCallId, text) {
   };
 }
 
+test("history projects the latest Todo snapshot even when its tool result is outside the page", () => {
+  const todos = [{ id: 1, text: "Check the brief", done: false }];
+  const todo = (details, toolCallId) => ({
+    type: "message",
+    message: { ...toolResult(toolCallId, "todo output").message, toolName: "todo", details },
+  });
+  const entries = chain([
+    user("add a task"),
+    todo({ todos, nextId: 2 }, "add"),
+    user("continue"),
+    {
+      type: "compaction",
+      summary: "Prior work",
+      firstKeptEntryId: "entry-2",
+      tokensBefore: 100,
+    },
+    assistant([{ type: "text", text: "answer" }]),
+    todo({ todos: [], nextId: 1 }, "clear"),
+    { ...user("continue from before the clear"), parentId: "entry-4" },
+  ]);
+  const options = { entries, historyWindow: { maxTurns: 1 }, historyRevision: "todo-branches" };
+  const latest = buildSessionHistoryPage({ ...options, leafId: "entry-6" });
+  assert.ok(latest.messages.every((message) => message.role !== "toolResult"));
+  assert.deepEqual(latest.todos, todos);
+  assert.deepEqual(buildSessionHistoryPage({ ...options, leafId: "entry-5" }).todos, []);
+  assert.equal(buildSessionHistoryPage({ ...options, leafId: "entry-0" }).todos, undefined);
+  assert.equal(buildSessionHistoryPage({ ...options, leafId: null }).todos, undefined);
+});
+
 test("trajectory context projects system prompts, custom context and context edits only", () => {
   const entries = chain([
     {

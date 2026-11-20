@@ -35,6 +35,7 @@ export function useComposerFocusMotion(
   rippleARef: RefObject<HTMLDivElement | null>,
   rippleBRef: RefObject<HTMLDivElement | null>,
   active: boolean,
+  liftOnFocus = true,
 ): void {
   const engagedRef = useRef(false);
   const timelineRef = useRef<Timeline | null>(null);
@@ -63,9 +64,10 @@ export function useComposerFocusMotion(
         if (disposed || request !== requestRef.current) return;
         timelineRef.current?.kill();
         timelineRef.current = null;
+        const lift = liftOnFocus ? FOCUSED_LIFT : 0;
 
         if (reducedMotion) {
-          gsap.set(card, { y: active ? FOCUSED_LIFT : 0, scale: 1 });
+          gsap.set(card, { y: active ? lift : 0, scale: 1 });
           gsap.set(aura, { autoAlpha: active ? 1 : 0 });
           gsap.set([rippleA, rippleB], { autoAlpha: 0 });
           return;
@@ -76,7 +78,7 @@ export function useComposerFocusMotion(
 
         if (active) {
           timeline
-            .to(card, { y: FOCUSED_LIFT, duration: 0.55, ease: "expo.out" }, 0)
+            .to(card, { y: lift, duration: 0.55, ease: "expo.out" }, 0)
             .to(card, { scale: FOCUSED_SCALE, duration: 0.4, ease: "power2.out" }, 0)
             .to(card, { scale: 1, duration: 0.6, ease: "power2.inOut" }, 0.45)
             .fromTo(
@@ -114,5 +116,5 @@ export function useComposerFocusMotion(
       timelineRef.current?.kill();
       timelineRef.current = null;
     };
-  }, [active, cardRef, auraRef, rippleARef, rippleBRef]);
+  }, [active, liftOnFocus, cardRef, auraRef, rippleARef, rippleBRef]);
 }

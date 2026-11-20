@@ -165,6 +165,17 @@ export type ExtensionUiConfirmLocalization =
   | { id: "herdr.closeAgentPane"; paneId: string; agentKind: string }
   | { id: "mcp.authorize"; servers: string; tools: string; toolCount: number };
 
+export type SubagentActivityStatus = "queued" | "running" | "completed" | "aborted" | "stopped" | "error";
+
+export interface SubagentActivityItem {
+  id: string;
+  description: string;
+  status: SubagentActivityStatus;
+  startedAt?: number;
+  durationMs?: number;
+  update?: string;
+}
+
 export type ExtensionUiRequest =
   | {
       type: "extension_ui_request";
@@ -224,6 +235,12 @@ export type ExtensionUiRequest =
       widgetKey: string;
       widgetLines?: string[];
       widgetPlacement?: "aboveEditor" | "belowEditor";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "subagentActivity";
+      subagents: SubagentActivityItem[];
     }
   | {
       type: "extension_ui_request";
@@ -375,7 +392,8 @@ export interface SessionInfo {
   modified: string;
   messageCount: number;
   firstMessage: string;
-  parentSessionId?: string; // set if this session was forked from another
+  isFork?: boolean;
+  parentSessionId?: string; // set when the parent session is available
   /** Main repo root shared by all worktrees of this cwd (cwd itself for non-git dirs).
    *  Always set by the server; optional because the client builds transient
    *  SessionInfo objects before the first refresh. Fall back to cwd. */

@@ -6,29 +6,34 @@ import { useComposerFocusMotion } from "@/hooks/useComposerFocusMotion";
  * and toolbar — and paints the focus layers: two light ripples that scatter
  * outward on focus, a breathing aurora behind the card around the card.
  *
- * Focus is tracked here rather than in the input so moving between the textarea
- * and its controls never releases the lit state; only focus that leaves the card
- * (including a portaled menu taking it) does.
+ * Focus stays engaged across the textarea, toolbar, and menus hosted in the
+ * toolbar's shadow roots.
  */
 export function ComposerFocusSurface({
   cardRef,
   streaming,
+  liftOnFocus,
   children,
 }: {
   cardRef: RefObject<HTMLDivElement | null>;
   streaming: boolean;
+  liftOnFocus?: boolean;
   children: ReactNode;
 }) {
   const auraRef = useRef<HTMLDivElement>(null);
   const rippleARef = useRef<HTMLDivElement>(null);
   const rippleBRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
-  useComposerFocusMotion(cardRef, auraRef, rippleARef, rippleBRef, focused);
+  useComposerFocusMotion(cardRef, auraRef, rippleARef, rippleBRef, focused, liftOnFocus);
 
   const handleFocus = useCallback(() => setFocused(true), []);
   const handleBlur = useCallback((event: FocusEvent<HTMLDivElement>) => {
-    const next = event.relatedTarget as Node | null;
-    if (next && event.currentTarget.contains(next)) return;
+    let next = event.relatedTarget as Node | null;
+    while (next) {
+      if (event.currentTarget.contains(next)) return;
+      const root = next.getRootNode();
+      next = root instanceof ShadowRoot ? root.host : null;
+    }
     setFocused(false);
   }, []);
 

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setAppLanguage } from "../i18n.ts";
 
 import {
   filterSessionsForQuery,
   getSessionDisplayTitle,
   resolveInitialSessionRestore,
   sessionDateGroup,
+  sessionMatchesQuery,
 } from "./session-list.ts";
 
 function session(id, overrides = {}) {
@@ -63,6 +65,20 @@ test("builds stable compact titles from names, prompts, and ids", () => {
     getSessionDisplayTitle(session("id", { firstMessage: "A long title for truncation" }), 12),
     "A long titl…",
   );
+});
+
+test("shows a localized branch prefix on renamed and existing branches", (t) => {
+  const renamed = session("branch", { isFork: true, name: "市场调研" });
+  assert.equal(getSessionDisplayTitle(renamed), "Branch · 市场调研");
+  setAppLanguage("zh-CN");
+  t.after(() => setAppLanguage("en-US"));
+  assert.equal(getSessionDisplayTitle(renamed), "分支 · 市场调研");
+  assert.equal(
+    getSessionDisplayTitle(session("older", { parentSessionId: "root", firstMessage: "市场调研" })),
+    "分支 · 市场调研",
+  );
+  assert.equal(getSessionDisplayTitle(session("root", { name: "市场调研" })), "市场调研");
+  assert.equal(sessionMatchesQuery(renamed, "分支 · 市场调研"), true);
 });
 
 test("shows the user request instead of skill syntax while the automatic title is pending", () => {

@@ -9,6 +9,7 @@ import {
   writeFileSync,
   chmodSync,
   readFileSync,
+  rmdirSync,
   statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,7 +31,7 @@ const { SessionIndex } = await importTestBundle("src/agent-host/session-index", 
 });
 
 function writeSession(id, options = {}) {
-  const filePath = path.join(sessionsRoot, "project", `${id}.jsonl`);
+  const filePath = path.join(options.directory ?? path.join(sessionsRoot, "project"), `${id}.jsonl`);
   const timestamp = options.timestamp ?? "2026-08-06T00:00:00.000Z";
   const entries = [
     {
@@ -53,6 +54,41 @@ function writeSession(id, options = {}) {
   return filePath;
 }
 
+test("keeps subagent transcripts out of discovery and incremental refresh, including orphaned tasks", async (t) => {
+  const generatedParent = "2026-08-06T00-00-00-000Z_01a10000-0123-7abc-8000-0123456789ab";
+  const parentDirectory = path.join(sessionsRoot, "project");
+  const tasksDirectory = path.join(parentDirectory, generatedParent, "tasks");
+  const ordinaryDirectory = path.join(parentDirectory, "tasks");
+  mkdirSync(tasksDirectory, { recursive: true });
+  mkdirSync(ordinaryDirectory);
+  const parent = writeSession(generatedParent);
+  const taskPaths = Array.from({ length: 4 }, (_, i) =>
+    writeSession(`subagent-${i}`, {
+      directory: tasksDirectory,
+      parentSession: generatedParent,
+    }),
+  );
+  const ordinary = writeSession("ordinary-in-tasks", { directory: ordinaryDirectory });
+  t.after(() => {
+    for (const filePath of [parent, ordinary, ...taskPaths]) rmSync(filePath, { force: true });
+    for (const directory of [tasksDirectory, path.dirname(tasksDirectory), ordinaryDirectory]) rmdirSync(directory);
+  });
+
+  const index = new SessionIndex();
+  await index.refreshAll();
+  assert.equal(await index.resolvePath(generatedParent), parent);
+  assert.equal(await index.resolvePath("ordinary-in-tasks"), ordinary);
+  assert.equal(await index.refreshPath(taskPaths[0]), null);
+  unlinkSync(parent);
+  await index.refreshAll();
+  assert.equal(
+    (await index.getAll()).some(({ id }) => id.startsWith("subagent-")),
+    false,
+  );
+  assert.equal(await index.resolvePath("subagent-3"), null);
+  assert.equal(readFileSync(taskPaths[3], "utf8").includes("subagent-3"), true);
+});
+
 test("refreshAll reuses unchanged records and derives parent ids", async () => {
   const parentPath = writeSession("parent", { timestamp: "2026-08-01T00:00:00.000Z" });
   writeSession("child", { timestamp: "2026-08-02T00:00:00.000Z", parentSession: parentPath });
@@ -61,6 +97,7 @@ test("refreshAll reuses unchanged records and derives parent ids", async () => {
   assert.equal(index.getMetrics().filesParsed, 2);
   const first = await index.getAll();
   assert.equal(first.find((session) => session.id === "child").parentSessionId, "parent");
+  assert.equal(first.find((session) => session.id === "child").isFork, true);
   const piSessions = await SessionManager.listAll();
   for (const indexed of first) {
     const piSession = piSessions.find((session) => session.id === indexed.id);
@@ -121,6 +158,9 @@ test("refreshPath updates only one changed file and removePath deletes it", asyn
   unlinkSync(parentPath);
   assert.equal(index.removePath(parentPath).id, "parent");
   assert.equal(await index.resolvePath("parent"), null);
+  const child = (await index.getAll()).find((session) => session.id === "child");
+  assert.equal(child.parentSessionId, undefined);
+  assert.equal(child.isFork, true);
 });
 
 test("unchanged invalid files are recorded without repeated parsing", async () => {

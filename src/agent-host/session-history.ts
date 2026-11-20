@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { abortedAssistantEntryIds } from "./agent-settlement";
 import type { HistoryWindow, PagedContextInfo, TrajectoryContextEntry } from "../contract/types";
 import { getInvokedHerdrPaneIds } from "../shared/herdr/session-invocations";
+import { readBranchTodoState } from "../shared/session-todo";
 import type {
   AgentMessage,
   DeferredContentRef,
@@ -395,8 +396,10 @@ export function buildSessionHistoryPage(options: {
   cursor?: HistoryCursorPayload;
 }): PagedContextInfo {
   const { entries, historyWindow, historyRevision, cursor } = options;
-  const anchorLeafId = cursor?.anchorLeafId ?? options.leafId ?? entries.at(-1)?.id ?? null;
+  const anchorLeafId =
+    cursor?.anchorLeafId ?? (options.leafId === undefined ? (entries.at(-1)?.id ?? null) : options.leafId);
   const path = buildEntryPath(entries, anchorLeafId);
+  const todos = cursor ? undefined : readBranchTodoState(path)?.todos;
   const selection = path.findLast((entry) => entry.type === "model_change");
   const selectedModel =
     selection?.type === "model_change" ? { provider: selection.provider, modelId: selection.modelId } : undefined;
@@ -412,6 +415,7 @@ export function buildSessionHistoryPage(options: {
     return {
       ...context,
       herdrAgentPaneIds: getInvokedHerdrPaneIds(context.messages),
+      ...(todos ? { todos } : {}),
       selectedModel,
       totalMessages: context.messages.length,
       loadedMessages: context.messages.length,
@@ -461,6 +465,7 @@ export function buildSessionHistoryPage(options: {
     messages: selected.map((item) => item.message),
     entryIds: selected.map((item) => item.entryId),
     ...(cursor ? {} : { herdrAgentPaneIds: getInvokedHerdrPaneIds(allMessages.map(({ message }) => message)) }),
+    ...(todos ? { todos } : {}),
     ...settings,
     selectedModel,
     totalMessages: allMessages.length,

@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSync } from "esbuild";
+import { build as buildBundle } from "esbuild";
+import { piSubagentsBuild } from "./pi-subagents-build.mjs";
 import {
   createProjectBuildTemp,
   projectNodePath,
@@ -20,7 +21,7 @@ const runtimeRoot = path.join(temp, "runtime");
 fs.mkdirSync(runtimeRoot, { recursive: true });
 
 function build(entry, outfile, format, externals) {
-  buildSync({
+  return buildBundle({
     absWorkingDir: root,
     entryPoints: [entry],
     bundle: true,
@@ -28,13 +29,14 @@ function build(entry, outfile, format, externals) {
     packages: "external",
     format,
     external: externals,
+    plugins: [piSubagentsBuild()],
     outfile,
     logLevel: "info",
   });
 }
 
 try {
-  build("src/smoke/browser-agent-host.ts", hostOutfile, "esm", [
+  await build("src/smoke/browser-agent-host.ts", hostOutfile, "esm", [
     "electron",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
@@ -42,8 +44,10 @@ try {
     "@earendil-works/pi-tui",
     "silk-wasm",
   ]);
-  build("src/agent-host/managed-process/worker.ts", managedWorkerOutfile, "esm", []);
-  build("src/smoke/browser-agent-e2e-harness.ts", mainOutfile, "cjs", ["electron"]);
+  await Promise.all([
+    build("src/agent-host/managed-process/worker.ts", managedWorkerOutfile, "esm", []),
+    build("src/smoke/browser-agent-e2e-harness.ts", mainOutfile, "cjs", ["electron"]),
+  ]);
 
   const electronBinary = resolveElectronBinary(root);
   const child = spawn(electronBinary, [mainOutfile], {

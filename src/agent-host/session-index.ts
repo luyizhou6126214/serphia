@@ -6,6 +6,7 @@ import type { SessionInfo } from "../shared/types";
 import { buildSessionInfoFromManager } from "./session-reader";
 import { getProjectCacheRevision, resolveProject } from "../shared/worktree";
 import { isDefaultSessionDirectory } from "../shared/session-workspace";
+import { isSubagentSessionDirectory } from "./subagent-session-path";
 
 const PROJECT_VIEW_TTL_MS = 60_000;
 
@@ -60,8 +61,9 @@ function discoverSessionFiles(root: string): string[] {
     }
     for (const entry of entries) {
       const candidate = path.join(directory, entry.name);
-      if (entry.isDirectory()) directories.push(candidate);
-      else if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push(candidate);
+      if (entry.isDirectory()) {
+        if (!isSubagentSessionDirectory(candidate)) directories.push(candidate);
+      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push(candidate);
     }
   }
   return files;
@@ -228,6 +230,7 @@ export class SessionIndex {
     const resolved = path.resolve(filePath);
     const root = this.sessionsRoot();
     if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
+    if (isSubagentSessionDirectory(path.dirname(resolved))) return null;
     if (!resolved.endsWith(".jsonl") || !existsSync(resolved)) {
       this.removePath(resolved);
       return null;

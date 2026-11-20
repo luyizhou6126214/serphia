@@ -54,6 +54,7 @@ export function toolRowTitle(toolName: string, t: Translate): string {
       return t("toolTitleWebSearch", "Search");
     case "web_fetch":
       return t("toolTitleWebFetch", "Fetch");
+    case "todo":
     case "todowrite":
     case "todo_write":
       return t("toolTitleTodo", "Update to-do list");

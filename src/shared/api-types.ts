@@ -67,6 +67,7 @@ export interface PluginResourceInfo {
 export interface PluginPackageInfo {
   source: string;
   scope: PluginScope;
+  bundled?: boolean;
   filtered: boolean;
   disabled: boolean;
   installedPath?: string;

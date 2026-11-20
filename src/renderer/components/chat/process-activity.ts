@@ -51,6 +51,7 @@ const TOOL_ACTIVITY: Record<string, ProcessActivityKind> = {
   bg_wait: "subagents",
   contact_supervisor: "subagents",
   ask_user_question: "questions",
+  todo: "plan",
   todowrite: "plan",
   todo_write: "plan",
 };

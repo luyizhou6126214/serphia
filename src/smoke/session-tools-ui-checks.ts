@@ -19,24 +19,39 @@ export async function runSessionToolsUiChecks(window: BrowserWindow, call: Call,
     }
     throw new Error("Conversation tool preset did not update its registered tools");
   };
-  const select = String.raw`async (labels) => {
-    const until = async (read) => {
+  const select = String.raw`async (presets, draft = false) => {
+    const until = async (read, description) => {
       const deadline = Date.now() + 10000;
       while (Date.now() < deadline) { const value = read(); if(value) return value; await new Promise(resolve => setTimeout(resolve,25)); }
-      throw new Error('Conversation tool menu did not appear');
+      throw new Error('Conversation tool preset: ' + description);
     };
-    const sidebar = await until(() => Array.from(document.querySelectorAll('button[aria-label]')).find(button => button.getAttribute('aria-label')?.includes('MCP smoke session')));
-    sidebar.click();
-    await until(() => document.body.innerText.includes('MCP_BOOTSTRAP'));
-    const trigger = await until(() => Array.from(document.querySelectorAll('button[aria-haspopup="menu"]')).find(button => ['Change permission settings','更改权限设置','變更權限設定'].some(label => button.getAttribute('aria-label')?.startsWith(label))));
-    trigger.click();
-    (await until(() => Array.from(document.querySelectorAll('[role="menuitemradio"]')).find(button => labels.some(label => button.textContent?.trim().startsWith(label))))).click();
+    if (draft) {
+      (await until(() => document.querySelector('.project-sidebar-new'), 'new chat button did not appear')).click();
+      await until(() => document.querySelector('[data-welcome="true"]'), 'draft did not appear');
+    } else {
+      const sidebar = await until(() => Array.from(document.querySelectorAll('button[aria-label]')).find(button => button.getAttribute('aria-label')?.includes('MCP smoke session')), 'fixture session did not appear');
+      sidebar.click();
+      await until(() => document.body.innerText.includes('MCP_BOOTSTRAP'), 'fixture messages did not load');
+    }
+    const menuRoot = () => document.querySelector('.composer-toolbar-primary [data-deep-agent-original]')?.shadowRoot;
+    const trigger = () => menuRoot()?.querySelector('button[aria-haspopup="dialog"]');
+    const option = (preset) => menuRoot()?.querySelector('.serphia-approval-panel [data-menu-item="' + preset + '"]');
+    for (const preset of presets) {
+      (await until(() => trigger()?.getAttribute('aria-expanded') === 'false' && trigger(), 'menu did not appear')).click();
+      (await until(() => trigger()?.getAttribute('aria-expanded') === 'true' && option(preset), preset + ' did not appear')).click();
+      if (draft) {
+        (await until(() => trigger()?.getAttribute('aria-expanded') === 'false' && trigger(), 'menu did not close')).click();
+        await until(() => trigger()?.getAttribute('aria-expanded') === 'true' && option(preset)?.getAttribute('aria-pressed') === 'true', preset + ' was not selected');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      }
+    }
   }`;
-  await window.webContents.executeJavaScript(`(${select})(["Full access","完全访问","完整存取"])`);
+  await window.webContents.executeJavaScript(`(${select})(["full","none","default"], true)`);
+  await window.webContents.executeJavaScript(`(${select})(["full"])`);
   await until(["codemode", "tool_search"], true);
-  await window.webContents.executeJavaScript(`(${select})(["Read only","只读","唯讀"])`);
+  await window.webContents.executeJavaScript(`(${select})(["none"])`);
   await until(["read", "codemode", "tool_search"], false);
-  await window.webContents.executeJavaScript(`(${select})(["Full access","完全访问","完整存取"])`);
+  await window.webContents.executeJavaScript(`(${select})(["full"])`);
   await until(["codemode", "tool_search"], true);
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("Conversation tool preset reload timed out")), 15000);

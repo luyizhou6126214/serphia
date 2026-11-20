@@ -4,6 +4,7 @@ import { after } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { createProjectBuildTemp } from "./process-utils.mjs";
+import { piSubagentsBuild } from "./pi-subagents-build.mjs";
 
 // Tests should import Node-compatible .ts modules directly through Node 22 type
 // stripping. Use this bundle path only for JSX, path aliases, virtual mocks, or
@@ -36,6 +37,7 @@ export async function importTestBundle(name, buildOptions, runtimeOptions = {}) 
       sourcemap: false,
       logLevel: "silent",
       ...buildOptions,
+      plugins: [...(buildOptions.plugins ?? []), piSubagentsBuild()],
       outfile: outputFile,
     });
     const module = await import(`${pathToFileURL(outputFile).href}?bundle=${Date.now()}`);

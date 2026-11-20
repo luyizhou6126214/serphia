@@ -1,114 +1,204 @@
-/* A quiet text switcher that belongs to the title, not to a second toolbar:
-   no track, no top divider, one accent line under the selected label. */
-.session-view-tabs {
-  --svt-accent: #4a68dd;
-  --svt-accent-soft: #6d86ef;
-  --svt-muted: color-mix(in srgb, var(--text-dim) 74%, var(--text));
+[data-session-views] {
+  --session-view-offset: 12px;
+  --session-view-button-size: 32px;
+  --session-view-inset: 3px;
+  --session-view-gutter: calc(
+    var(--session-view-offset) + var(--session-view-button-size) + 2 * var(--session-view-inset) + 12px
+  );
+}
 
-  position: relative;
-  z-index: 4;
+/* Keep the transcript and composer aligned, even when the centered column is
+   wide enough to reach the floating controls. Both have 16px outer padding. */
+[data-session-views] .chat-content-column {
+  width: auto;
+  margin-inline-start: max(calc(var(--session-view-gutter) - 16px), calc((100% - var(--chat-content-max-width)) / 2));
+}
+
+.session-view-inspector:not([hidden]) {
   display: flex;
-  flex: none;
-  align-items: stretch;
-  gap: 28px;
-  height: 38px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
+  flex: 1;
+  min-height: 0;
+  padding-inline-start: var(--session-view-gutter);
+}
+
+.session-view-tabs {
+  --session-view-ink: #202020;
+  --session-view-muted: #666;
+  --session-view-corner: 10px;
+  --session-glass-line: rgb(0 0 0 / 11%);
+  --session-lens-line: rgb(0 0 0 / 28%);
+
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-start: var(--session-view-offset);
+  z-index: 32;
+  display: grid;
+  gap: 2px;
+  padding: var(--session-view-inset);
+  border: 1px solid var(--session-glass-line);
+  border-radius: calc(var(--session-view-corner) + var(--session-view-inset) + 1px);
+}
+
+.session-view-tabs-indicator {
+  --session-lens-radius: calc(var(--session-view-corner) + var(--session-lens-curve, 0px));
+  --session-lens-top: calc(var(--session-lens-radius) + var(--session-lens-taper, 0px));
+  --session-lens-bottom: calc(var(--session-lens-radius) - var(--session-lens-taper, 0px));
+
+  position: absolute;
+  inset-block-start: var(--session-view-inset);
+  inset-inline-start: var(--session-view-inset);
+  width: var(--session-view-button-size);
+  height: var(--session-view-button-size);
+  border: 1px solid var(--session-lens-line);
+  border-radius: var(--session-lens-radius) / var(--session-lens-top) var(--session-lens-top) var(--session-lens-bottom)
+    var(--session-lens-bottom);
+  backdrop-filter: var(--session-lens-filter, none);
+  pointer-events: none;
 }
 
 .session-view-tab {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  height: 100%;
+  display: grid;
+  place-items: center;
+  width: var(--session-view-button-size);
+  height: var(--session-view-button-size);
   padding: 0;
   border: 0;
+  border-radius: var(--session-view-corner);
   background: transparent;
-  color: var(--svt-muted);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  line-height: 16px;
-  white-space: nowrap;
+  color: var(--session-view-muted);
   cursor: pointer;
-  transition: color 180ms ease;
   -webkit-tap-highlight-color: transparent;
+  transition: color 180ms ease;
+}
+
+.session-view-tab > svg {
+  transition: transform 220ms cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 
 .session-view-tab:hover {
-  color: var(--text);
+  color: var(--session-view-ink);
 }
 
 .session-view-tab[aria-selected="true"] {
-  color: var(--svt-accent);
-  /* The ink catches up with the line rather than arriving before it. */
-  transition-delay: 60ms;
+  color: var(--session-view-ink);
+}
+
+.session-view-tab[aria-selected="true"] > svg {
+  transform: scale(1.06);
+}
+
+.session-view-tab:active > svg {
+  transform: scale(0.88);
 }
 
 .session-view-tab:focus-visible {
-  border-radius: 4px;
-  outline-offset: 3px;
+  outline-color: var(--session-view-ink) !important;
+  outline-offset: -2px;
 }
 
-.session-view-tab-label {
-  display: inline-block;
-  will-change: transform;
-}
-
-/* The line is 1px proud of the row's border so it covers the hairline. */
-.session-view-tabs-indicator {
+.session-view-tab::after {
   position: absolute;
-  bottom: -1px;
-  left: 0;
-  z-index: 3;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--svt-accent-soft), var(--svt-accent));
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--svt-accent) 26%, transparent);
+  inset-inline-start: calc(100% + 12px);
+  z-index: 1;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--assistant-bg);
+  content: attr(data-tooltip);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform-origin: 50% 50%;
-  will-change: transform, width;
+  transform: translateX(-3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms;
 }
 
-/* A breath of light that blooms once when the line lands on a new label. */
-.session-view-tabs-halo {
-  position: absolute;
-  bottom: -3px;
-  left: 0;
-  z-index: 2;
-  height: 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--svt-accent) 38%, transparent);
-  filter: blur(7px);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform-origin: 50% 50%;
-}
-
-html.dark .session-view-tabs {
-  --svt-accent: #93abff;
-  --svt-accent-soft: #bdcaff;
-  --svt-muted: color-mix(in srgb, var(--text-dim) 82%, var(--text));
-}
-
-html.dark .session-view-tabs-indicator {
-  box-shadow: 0 1px 8px color-mix(in srgb, var(--svt-accent) 32%, transparent);
-}
-
-@media (max-width: 760px) {
-  .session-view-tabs {
-    gap: 24px;
-    padding: 0 12px;
+@media (hover: hover) {
+  .session-view-tab:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+    transition-delay: 350ms;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .session-view-tab {
+.session-view-tab:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+html.dark .session-view-tabs {
+  --session-view-ink: #f5f5f5;
+  --session-view-muted: #bdbdbd;
+  --session-glass-line: rgb(255 255 255 / 18%);
+  --session-lens-line: rgb(255 255 255 / 44%);
+}
+
+[data-session-views] .session-view-panel:not([hidden]) {
+  animation: session-view-panel-enter 260ms cubic-bezier(0.2, 0.75, 0.25, 1) backwards;
+}
+
+@keyframes session-view-panel-enter {
+  from {
+    opacity: 0.82;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-session-views] {
+    --session-view-offset: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  [data-session-views] .session-view-panel:not([hidden]) {
+    animation: none;
+  }
+
+  .session-view-tab,
+  .session-view-tab::after,
+  .session-view-tab > svg {
     transition: none;
+  }
+
+  .session-view-tab[aria-selected] > svg {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .session-view-tabs {
+    border-color: ButtonText;
+  }
+
+  .session-view-tabs-indicator {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    backdrop-filter: none;
+  }
+
+  .session-view-tab[aria-selected="true"] {
+    forced-color-adjust: none;
+    color: Highlight;
+  }
+
+  .session-view-tab:focus-visible {
+    outline-color: ButtonText !important;
+  }
+
+  .session-view-tab[aria-selected="true"]:focus-visible {
+    outline-color: Highlight !important;
+  }
+
+  .session-view-tab::after {
+    background: CanvasText;
+    color: Canvas;
   }
 }

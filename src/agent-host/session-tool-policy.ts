@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ToolInfo } from "../shared/pi-types";
 import { excludedPiTools, filterDesktopToolNames } from "../shared/pi-tool-policy";
 import { getAgentSessionSource } from "./session-source";
@@ -77,6 +77,25 @@ export class SessionToolPolicy {
   }
   getExecution(): string[] | undefined {
     return this.execution ? [...this.execution] : undefined;
+  }
+  delegatedCodingTools(names: readonly string[]): ToolDefinition[] {
+    const isAllowed = (name: string) =>
+      getAgentSessionSource(this.manager) === "local" && CODING_TOOL_NAMES.has(name) && this.isAllowed(name);
+    return names.flatMap((name) => {
+      if (!isAllowed(name)) return [];
+      const tool = this.session?.getToolDefinition?.(name);
+      if (!tool) return [];
+      return [
+        {
+          ...tool,
+          execute: (...args: Parameters<ToolDefinition["execute"]>) => {
+            if (!isAllowed(name))
+              throw new Error(`TOOL_PERMISSION_DENIED: ${name} is not authorized for this session/source`);
+            return tool.execute(...args);
+          },
+        },
+      ];
+    });
   }
   isAllowed(name: string): boolean {
     if (!this.hasDirectory && requiresSessionDirectory(name)) return false;
