@@ -207,9 +207,8 @@ export function ChatWindow({
     modelNames,
     modelList,
     modelCatalog,
-    modelRefreshing,
-    modelThinkingLevels,
-    modelThinkingLevelMaps,
+    availableThinkingLevels,
+    thinkingLevelMap,
     toolPreset,
     thinkingLevel,
     retryInfo,
@@ -247,8 +246,6 @@ export function ChatWindow({
     handleFork,
     handleNavigate,
     handleModelChange,
-    refreshModels,
-    cancelModelRefresh,
     handleSteer,
     handleFollowUp,
     handlePromptWithStreamingBehavior,
@@ -336,14 +333,6 @@ export function ChatWindow({
   const turnFooters = useTurnChangeFooters(messages, messageCwd, workspace?.homeDir, onOpenFile);
   const chatViewportHeight = useObservedElementHeight(scrollContainerRef);
 
-  const availableThinkingLevels = displayModelValue
-    ? (modelThinkingLevels[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
-    : null;
-
-  const currentThinkingLevelMap = displayModelValue
-    ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
-    : null;
-
   // Reduce to a string so new messages only re-render the composer when the routed model changes.
   const routedModel = isVirtualSelection(modelList, displayModelValue) ? lastRoutedModel(messages) : null;
   const modelStatus = useMemo(() => <ModelRoutingStatus route={routedModel} />, [routedModel]);
@@ -390,10 +379,7 @@ export function ChatWindow({
       modelNames={modelNames}
       modelList={modelList}
       modelCatalog={modelCatalog}
-      modelRefreshing={modelRefreshing}
       onModelChange={handleModelChange}
-      onModelsRefresh={refreshModels}
-      onModelsRefreshCancel={cancelModelRefresh}
       isCompacting={isCompacting}
       compactResult={compactResult}
       toolPreset={toolPreset}
@@ -402,7 +388,7 @@ export function ChatWindow({
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
-      thinkingLevelMap={currentThinkingLevelMap}
+      thinkingLevelMap={thinkingLevelMap}
       retryInfo={retryInfo}
       queuedMessages={queuedMessages}
       onRecallQueue={handleRecallQueue}

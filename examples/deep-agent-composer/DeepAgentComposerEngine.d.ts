@@ -78,7 +78,7 @@ export interface ApprovalMenuProps<T extends string> extends MenuProps {
 export interface ModelThinkingSelectorProps<T extends string> extends MenuProps {
   models: string[];
   selectedModel?: string;
-  selectedThinking: T;
+  selectedThinking?: T;
   thinkingOptions: { id: T; label: string; icon: MenuIcon }[];
   selectModelLabel: string;
   noModelsLabel: string;

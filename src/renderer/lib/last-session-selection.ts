@@ -1,4 +1,4 @@
-import { THINKING_LEVELS, type ThinkingLevelOption } from "@shared/thinking-levels";
+import { DEFAULT_REASONING_LEVEL, REASONING_LEVELS, type ReasoningLevel } from "@shared/thinking-levels";
 
 export type SelectedModel = { provider: string; modelId: string };
 const MODEL_KEY = "serphia-last-model";
@@ -23,18 +23,16 @@ export function saveLastModel(model: SelectedModel): void {
   }
 }
 
-export function readLastThinkingLevel(): ThinkingLevelOption {
+export function readLastThinkingLevel(): ReasoningLevel {
   try {
     const value = localStorage.getItem(THINKING_KEY);
-    return value === "auto" || THINKING_LEVELS.some((level) => level === value)
-      ? (value as ThinkingLevelOption)
-      : "auto";
+    return REASONING_LEVELS.find((level) => level === value) ?? DEFAULT_REASONING_LEVEL;
   } catch {
-    return "auto";
+    return DEFAULT_REASONING_LEVEL;
   }
 }
 
-export function saveLastThinkingLevel(level: ThinkingLevelOption): void {
+export function saveLastThinkingLevel(level: ReasoningLevel): void {
   try {
     localStorage.setItem(THINKING_KEY, level);
   } catch {

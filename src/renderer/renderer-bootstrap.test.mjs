@@ -3,7 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import { importTestBundle } from "#test-bundle";
 
-test("Renderer boot connects RPC and mounts without replacing browser networking", async (t) => {
+test("Renderer boot mounts without replacing browser networking", async (t) => {
   const previous = new Map(
     ["window", "document"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
   );
@@ -18,10 +18,9 @@ test("Renderer boot connects RPC and mounts without replacing browser networking
       else delete globalThis[key];
     }
   });
-  const { connectionAttempts, mounted } = await importTestBundle("renderer-bootstrap", {
+  const { mounted } = await importTestBundle("renderer-bootstrap", {
     stdin: {
-      contents:
-        'import "./main.tsx"; export {connectionAttempts} from "./lib/api-client"; export {mounted} from "react-dom/client";',
+      contents: 'import "./main.tsx"; export {mounted} from "react-dom/client";',
       resolveDir: import.meta.dirname,
       loader: "ts",
     },
@@ -31,7 +30,7 @@ test("Renderer boot connects RPC and mounts without replacing browser networking
       {
         name: "bootstrap-fixture",
         setup(build) {
-          build.onResolve({ filter: /(?:\.css$|^\.\/App$|^\.\/lib\/api-client$|^react-dom\/client$)/ }, ({ path }) => ({
+          build.onResolve({ filter: /(?:\.css$|^\.\/App$|^react-dom\/client$)/ }, ({ path }) => ({
             path,
             namespace: "bootstrap-test",
           }));
@@ -40,15 +39,12 @@ test("Renderer boot connects RPC and mounts without replacing browser networking
               ? ""
               : path === "./App"
                 ? "export const App = () => null;"
-                : path === "./lib/api-client"
-                  ? "export let connectionAttempts = 0; export async function ensureRpc() {connectionAttempts++;}"
-                  : "export const mounted = []; export function createRoot(root) {return {render: (element) => mounted.push({root, element})};}",
+                : "export const mounted = []; export function createRoot(root) {return {render: (element) => mounted.push({root, element})};}",
           }));
         },
       },
     ],
   });
-  assert.equal(connectionAttempts, 1);
   assert.equal(mounted.length, 1);
   assert.equal(mounted[0].root, root);
   assert.equal(globalThis.window.fetch, fetch);

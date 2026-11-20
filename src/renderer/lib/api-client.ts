@@ -4,23 +4,20 @@
  */
 import { createRpcClient, type PiRpc } from "@contract/rpc";
 import type { ApiMethod, ApiParams, ApiResult, StreamTopic, Streams } from "@contract/api";
+import type { HostStatus, PiBridge } from "@contract/desktop";
 import type { AgentCommand } from "@contract/types";
 
 let rpc: PiRpc | null = null;
-let connectPromise: Promise<PiRpc> | null = null;
+let connection: { controller: AbortController; promise: Promise<PiRpc> } | null = null;
 
 /** Drop RPC client so the next ensureRpc() re-connects (Host crash recovery). */
 export function resetRpc(): void {
-  try {
-    rpc?.close();
-  } catch {
-    /* ignore */
-  }
+  connection?.controller.abort(new Error("Agent Host connection reset"));
+  connection = null;
+  rpc?.close();
   rpc = null;
-  connectPromise = null;
 }
 
-const HOST_READY_TIMEOUT_MS = 30_000;
 const PORT_TIMEOUT_MS = 15_000;
 const PING_TIMEOUT_MS = 10_000;
 
@@ -41,17 +38,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /** Receive Host MessagePort transferred from preload via window.postMessage. */
-function requestHostPort(): Promise<MessagePort> {
+function requestHostPort(bridge: PiBridge, signal: AbortSignal): Promise<MessagePort> {
+  signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    if (!window.piBridge) {
-      reject(new Error("piBridge not available — not running inside Electron?"));
-      return;
-    }
-
-    const timer = setTimeout(() => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
       window.removeEventListener("message", onMessage);
-      reject(new Error("Timed out waiting for host MessagePort"));
-    }, PORT_TIMEOUT_MS);
+    };
+    const fail = (error: unknown) => {
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => fail(signal.reason);
+    const timer = setTimeout(() => fail(new Error("Timed out waiting for host MessagePort")), PORT_TIMEOUT_MS);
 
     const onMessage = (event: MessageEvent) => {
       // Only accept messages from our own window (preload → page)
@@ -62,82 +62,86 @@ function requestHostPort(): Promise<MessagePort> {
       if (!isPortMsg) return;
       const port = event.ports[0];
       if (!port) return;
-      clearTimeout(timer);
-      window.removeEventListener("message", onMessage);
+      cleanup();
       resolve(port);
     };
 
+    signal.addEventListener("abort", onAbort, { once: true });
     window.addEventListener("message", onMessage);
-    window.piBridge.requestHostPort();
+    try {
+      bridge.requestHostPort();
+    } catch (error) {
+      fail(error);
+    }
   });
 }
 
-async function waitForHostReady(): Promise<void> {
-  if (!window.piBridge) {
-    throw new Error("piBridge not available — not running inside Electron?");
-  }
-  let status = await window.piBridge.getHostStatus();
-  if (status === "ready") return;
-  if (status === "crashed") {
-    throw new Error("Agent Host crashed before UI connected");
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
+function waitForHostReady(bridge: PiBridge, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let receivedStatus = false;
+    const cleanup = () => {
+      signal.removeEventListener("abort", onAbort);
       off();
-      reject(new Error(`Agent Host not ready (status=${status})`));
-    }, HOST_READY_TIMEOUT_MS);
-
-    const off = window.piBridge!.onHostStatus((s) => {
-      status = s.status;
-      if (s.status === "ready") {
-        clearTimeout(timer);
-        off();
+    };
+    const fail = (error: unknown) => {
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => fail(signal.reason);
+    const handleStatus = (status: HostStatus, detail?: string) => {
+      if (status === "ready") {
+        cleanup();
         resolve();
-      } else if (s.status === "crashed") {
-        clearTimeout(timer);
-        off();
-        reject(new Error(s.detail || "Agent Host crashed"));
+      } else if (status === "crashed" || status === "stopped") {
+        fail(new Error(detail || `Agent Host ${status}`));
       }
-    });
+    };
 
-    // Race: status may flip ready between getHostStatus and subscribe
-    void window.piBridge!.getHostStatus().then((s) => {
-      if (s === "ready") {
-        clearTimeout(timer);
-        off();
-        resolve();
-      } else if (s === "crashed") {
-        clearTimeout(timer);
-        off();
-        reject(new Error("Agent Host crashed"));
-      }
+    const off = bridge.onHostStatus(({ status, detail }) => {
+      receivedStatus = true;
+      handleStatus(status, detail);
     });
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    void bridge.getHostStatus().then((status) => {
+      if (!receivedStatus && !signal.aborted) handleStatus(status);
+    }, fail);
   });
+}
+
+async function connectToHost(signal: AbortSignal): Promise<PiRpc> {
+  const bridge = window.piBridge;
+  if (!bridge) throw new Error("Desktop bridge unavailable");
+  await waitForHostReady(bridge, signal);
+  const port = await requestHostPort(bridge, signal);
+  const client = createRpcClient(port);
+  const closeOnAbort = () => client.close();
+  signal.addEventListener("abort", closeOnAbort, { once: true });
+  try {
+    signal.throwIfAborted();
+    await withTimeout(client.call("host.ping"), PING_TIMEOUT_MS, "host.ping failed");
+    signal.throwIfAborted();
+    rpc = client;
+    return client;
+  } catch (error) {
+    client.close();
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", closeOnAbort);
+  }
 }
 
 export async function ensureRpc(): Promise<PiRpc> {
   if (rpc) return rpc;
-  if (connectPromise) return connectPromise;
+  if (connection) return connection.promise;
 
-  connectPromise = (async () => {
-    if (!window.piBridge) {
-      throw new Error("piBridge not available — not running inside Electron?");
-    }
-    await waitForHostReady();
-    const port = await requestHostPort();
-    const client = createRpcClient(port);
-    await withTimeout(client.call("host.ping"), PING_TIMEOUT_MS, "host.ping failed");
-    rpc = client;
-    return client;
-  })();
-
+  const controller = new AbortController();
+  const promise = connectToHost(controller.signal);
+  connection = { controller, promise };
   try {
-    return await connectPromise;
-  } catch (e) {
-    connectPromise = null;
-    rpc = null;
-    throw e;
+    return await promise;
+  } finally {
+    if (connection?.controller === controller) connection = null;
   }
 }
 

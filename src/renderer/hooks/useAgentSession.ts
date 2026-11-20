@@ -1,6 +1,11 @@
 import { readLastThinkingLevel, saveLastModel, saveLastThinkingLevel } from "@/lib/last-session-selection";
 import { sessionModelForDisplay, sessionStatsForDisplay } from "@shared/session-model-display";
-import type { ThinkingLevelOption } from "@shared/thinking-levels";
+import {
+  resolveReasoningLevel,
+  thinkingMenuLevels,
+  type ReasoningLevel,
+  type ThinkingLevelOption,
+} from "@shared/thinking-levels";
 import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
 import { getInvokedHerdrPaneIds } from "@shared/herdr/session-invocations";
 import type { AgentMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode } from "@/lib/types";
@@ -238,15 +243,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     modelNames,
     modelList,
     modelCatalog,
-    modelRefreshing,
     modelThinkingLevels,
     modelThinkingLevelMaps,
     newSessionModel,
     newSessionDefaultModel,
     setNewSessionModel,
     loadModels,
-    refreshModels,
-    cancelModelRefresh,
   } = useSessionModels({ isNew, cwd: newSessionCwd ?? session?.cwd, refreshKey: modelsRefreshKey, addNotice });
   const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(null);
   // Preserve the existing imperative handle while publishing render state through the reducer.
@@ -306,12 +308,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (d.toolNames !== undefined) setToolPresetState(getPresetFromToolNames(d.toolNames));
       setCurrentModelOverride(null);
       applyRuntimeSnapshot(d.agentState, ticket);
-      if (
-        !d.agentState?.state?.thinkingLevel &&
-        d.context.thinkingLevel &&
-        d.context.thinkingLevel !== "off" &&
-        runtimeGate.accept(ticket, "thinking")
-      ) {
+      if (!d.agentState?.state?.thinkingLevel && d.context.thinkingLevel && runtimeGate.accept(ticket, "thinking")) {
         setThinkingLevel(d.context.thinkingLevel as ThinkingLevelOption);
       }
     },
@@ -378,6 +375,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const currentModel = sessionModelForDisplay(currentModelOverride, data, modelList, pendingModel);
   const displayModel = isNew ? (newSessionModel ?? newSessionDefaultModel) : currentModel;
+  const thinkingModelKey = displayModel ? `${displayModel.provider}:${displayModel.modelId}` : undefined;
+  const availableThinkingLevels = thinkingModelKey ? modelThinkingLevels[thinkingModelKey] : undefined;
+  const effectiveThinkingLevel = resolveReasoningLevel(thinkingMenuLevels(availableThinkingLevels), thinkingLevel);
+  const reasoningFallback =
+    availableThinkingLevels && effectiveThinkingLevel !== thinkingLevel ? effectiveThinkingLevel : undefined;
 
   const sessionStats = sessionStatsForDisplay(sessionStatsOverride, data, session?.name, contextUsage);
   const herdrAgentPaneIds = useMemo(
@@ -431,7 +433,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               modelSelectionExplicit: newSessionModel !== null,
             }
           : {}),
-        ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
+        ...(effectiveThinkingLevel ? { thinkingLevel: effectiveThinkingLevel } : {}),
       });
       const realId = result.sessionId;
       resolvedNewSessionCwdRef.current = result.cwd ?? newSessionCwd;
@@ -445,7 +447,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [isNew, newSessionCwd, newSessionModel, newSessionDefaultModel, initialToolNames, thinkingLevel]);
+  }, [isNew, newSessionCwd, newSessionModel, newSessionDefaultModel, initialToolNames, effectiveThinkingLevel]);
 
   const loadSlashCommands = useCallback(async () => {
     const ownsView = captureCommandView(),
@@ -777,6 +779,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
                 });
               }
             }
+            if (existingSid && reasoningFallback) {
+              await sendAgentCommand(sid, { type: "set_thinking_level", level: reasoningFallback });
+            }
             await ensureEventsConnected(sid);
             await sendAgentCommand(sid, {
               type: "prompt",
@@ -799,6 +804,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
         } else if (session) {
           sentSessionId = session.id;
+          if (reasoningFallback) {
+            await sendAgentCommand(session.id, { type: "set_thinking_level", level: reasoningFallback });
+            if (ownsView()) {
+              runtimeGate.touch("thinking");
+              setThinkingLevel(reasoningFallback);
+            }
+          }
           await ensureEventsConnected(session.id);
           await sendAgentCommand(session.id, {
             type: "prompt",
@@ -846,6 +858,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ensureNewSession,
       ensureEventsConnected,
       promoteNewSession,
+      reasoningFallback,
       runtimeGate,
       waitForPromptSettlement,
       addNotice,
@@ -1240,12 +1253,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [captureCommandView, opts.chatInputRef, addNotice, runtimeGate, t]);
 
   const handleThinkingLevelChange = useCallback(
-    async (level: ThinkingLevelOption) => {
+    async (level: ReasoningLevel) => {
       if (!isActive()) return;
       runtimeGate.touch("thinking");
       saveLastThinkingLevel(level);
       setThinkingLevel(level);
-      if (level === "auto") return; // "auto" leaves pi's current setting untouched
       const sid = sessionIdRef.current ?? (await ensuringNewSessionRef.current);
       if (!sid) return;
       try {
@@ -1328,9 +1340,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     modelNames,
     modelList,
     modelCatalog,
-    modelRefreshing,
-    modelThinkingLevels,
-    modelThinkingLevelMaps,
+    availableThinkingLevels,
+    thinkingLevelMap: thinkingModelKey ? modelThinkingLevelMaps[thinkingModelKey] : undefined,
     newSessionModel,
     toolPreset,
     thinkingLevel,
@@ -1379,8 +1390,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleFork,
     handleNavigate,
     handleModelChange,
-    refreshModels,
-    cancelModelRefresh,
     handleCompact,
     handleSteer,
     handleFollowUp,

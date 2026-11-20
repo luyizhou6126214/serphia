@@ -137,14 +137,8 @@ export function useSessionModels({ isNew, cwd, refreshKey, addNotice }: SessionM
         type: "warning",
         message:
           modelListSizeRef.current > 0
-            ? t(
-                "modelDirectoryLoadFailedCached",
-                "Unable to load the model directory. Cached models remain available; retry from the model picker.",
-              )
-            : t(
-                "modelDirectoryLoadFailed",
-                "Unable to load the model directory. Retry from the model picker or check the Agent Host connection.",
-              ),
+            ? t("modelDirectoryLoadFailedCached", "Unable to load the model directory. Cached models remain available.")
+            : t("modelDirectoryLoadFailed", "Unable to load the model directory. Check the Agent Host connection."),
       });
     });
     return () => controller.abort();

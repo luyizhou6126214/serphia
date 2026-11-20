@@ -5,10 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google" content="notranslate" />
     <title>Serphia</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      .startup-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 12px;
+        background: var(--bg, light-dark(#f7f6f3, #141210));
+        color: var(--text-muted, light-dark(#57534a, #a19d92));
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+      }
+      .startup-screen p {
+        margin: 0;
+      }
+    </style>
     <script type="module" src="./theme-init.ts"></script>
   </head>
   <body translate="no" class="notranslate">
-    <div id="root"></div>
+    <div id="root">
+      <div class="startup-screen"><p role="status">Starting Serphia…</p></div>
+    </div>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

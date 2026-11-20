@@ -135,7 +135,7 @@ test("an initial load failure reports the empty-catalog recovery path", async (t
   });
   assert.deepEqual(fixture.current.modelList, []);
   assert.equal(fixture.notices.length, 1);
-  assert.match(fixture.notices[0].message, /check the Agent Host connection/);
+  assert.match(fixture.notices[0].message, /Check the Agent Host connection/);
 });
 
 test("a superseded read cannot publish its failure or replace a newer catalog", async (t) => {

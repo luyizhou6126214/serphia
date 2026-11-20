@@ -53,8 +53,6 @@ async function mount(t) {
     availableThinkingLevels: ["off", "high"],
     toolPreset: "default",
     onModelChange: (...args) => actions.push(["model", ...args]),
-    onModelsRefresh: () => actions.push(["refresh"]),
-    onModelsRefreshCancel: () => actions.push(["cancel-refresh"]),
     onThinkingLevelChange: (level) => actions.push(["thinking", level]),
     onToolPresetChange: (preset) => actions.push(["permission", preset]),
     onAbort: () => actions.push(["stop"]),
@@ -117,16 +115,14 @@ test("choosing a model preserves provider identity and keeps the menu open", asy
   assert.equal(fixture.model.open, true);
 });
 
-test("menus are exclusive and closing the model menu cancels the active refresh once", async (t) => {
+test("menus stay exclusive and a stale model close leaves the permission menu open", async (t) => {
   const fixture = await mount(t);
   await act(async () => fixture.model.onOpenChange(true));
-  await fixture.update({ modelRefreshing: true });
   await act(async () => fixture.permission.onOpenChange(true));
   assert.equal(fixture.permission.open, true);
   assert.equal(fixture.model.open, false);
   await act(async () => fixture.model.onOpenChange(false));
   assert.equal(fixture.permission.open, true, "a stale close must not dismiss the other control");
-  assert.deepEqual(fixture.actions, [["cancel-refresh"]]);
   await fixture.update({ isStreaming: true });
   assert.equal(fixture.permission.open, false);
   assert.equal(fixture.permission.disabled, true);
@@ -144,17 +140,29 @@ test("reasoning exposes supported levels and keeps mapped labels distinct from t
   });
   assert.deepEqual(
     fixture.model.thinkingOptions.map(({ id }) => id),
-    ["auto", "off", "xhigh", "max"],
+    ["xhigh", "max"],
   );
   assert.equal(fixture.model.selectedThinking, "xhigh");
-  assert.equal(fixture.model.thinkingOptions[2].label, "Extra high → extended");
+  assert.equal(fixture.model.thinkingOptions[0].label, "Extra high → extended");
   await act(async () => fixture.model.onChooseThinking("max"));
   assert.deepEqual(fixture.actions, [["thinking", "max"]]);
   await fixture.update({ availableThinkingLevels: ["off", "high"], thinkingLevel: "high" });
   await act(async () => fixture.model.onChooseThinking("max"));
   assert.equal(fixture.actions.length, 1);
   await act(async () => fixture.model.onChooseThinking("auto"));
-  assert.deepEqual(fixture.actions.at(-1), ["thinking", "auto"]);
+  await act(async () => fixture.model.onChooseThinking("off"));
+  assert.deepEqual(fixture.actions, [["thinking", "max"]]);
+});
+
+test("reasoning defaults to low and is hidden when the model has no reasoning levels", async (t) => {
+  const fixture = await mount(t);
+  await fixture.update({ availableThinkingLevels: ["off", "minimal", "low", "high"] });
+  assert.equal(fixture.model.selectedThinking, "low");
+  await fixture.update({ thinkingLevel: "auto", availableThinkingLevels: ["off", "medium", "high"] });
+  assert.equal(fixture.model.selectedThinking, "medium");
+  await fixture.update({ availableThinkingLevels: ["off"] });
+  assert.equal(fixture.model.showThinking, false);
+  assert.deepEqual(fixture.model.thinkingOptions, []);
 });
 
 test("equivalent options skip rendering, and model controls occupy the right side", async (t) => {

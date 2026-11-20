@@ -78,8 +78,6 @@ export const enUS: Record<string, string> = {
   queued: "Queued",
   recallQueueDescription: "Remove all queued messages and put them back into the input box for editing",
   recallToInput: "Recall to input",
-  refreshingModels: "Refreshing model directory…",
-  refreshModels: "Refresh model directory",
   retrying: "Retrying",
   steer: "Steer",
   steerDescription: "Interrupt the current run and inject this message now",
@@ -89,7 +87,6 @@ export const enUS: Record<string, string> = {
   pendingPersistenceFailed: "The pending message is only saved until this app closes.",
   removePendingMessage: "Remove pending message",
   stopAgent: "Stop agent",
-  thinkingAuto: "Auto",
 };
 
 export const zhCN: Record<string, string> = {
@@ -169,8 +166,6 @@ export const zhCN: Record<string, string> = {
   queued: "已排队",
   recallQueueDescription: "移除所有排队消息并放回输入框编辑",
   recallToInput: "撤回到输入框",
-  refreshingModels: "正在刷新模型目录…",
-  refreshModels: "刷新模型目录",
   retrying: "正在重试",
   steer: "立即引导",
   steerDescription: "中断当前运行并立即注入此消息",
@@ -180,7 +175,6 @@ export const zhCN: Record<string, string> = {
   pendingPersistenceFailed: "待处理消息仅保留到应用关闭。",
   removePendingMessage: "移除待处理消息",
   stopAgent: "停止 Agent",
-  thinkingAuto: "自动",
 };
 
 export const zhTW: Record<string, string> = {
@@ -260,8 +254,6 @@ export const zhTW: Record<string, string> = {
   queued: "已排入佇列",
   recallQueueDescription: "移除所有佇列中的訊息並放回輸入框編輯",
   recallToInput: "撤回到輸入框",
-  refreshingModels: "正在重新整理模型目錄…",
-  refreshModels: "重新整理模型目錄",
   retrying: "重試中",
   steer: "即時引導",
   steerDescription: "中斷目前的執行並立即插入這則訊息",
@@ -271,5 +263,4 @@ export const zhTW: Record<string, string> = {
   pendingPersistenceFailed: "待處理訊息僅保留至應用程式關閉。",
   removePendingMessage: "移除待處理訊息",
   stopAgent: "停止 Agent",
-  thinkingAuto: "自動",
 };

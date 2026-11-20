@@ -8,17 +8,18 @@ const selection = await importTestBundle("last-session-selection", {
   tsconfig: path.join(import.meta.dirname, "../../../tsconfig.renderer.json"),
 });
 
-test("last reasoning choice persists, including auto, and invalid data falls back safely", (t) => {
+test("last reasoning choice persists and missing or legacy settings fall back to low", (t) => {
   const values = new Map();
   globalThis.localStorage = {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value),
   };
   t.after(() => delete globalThis.localStorage);
-  selection.saveLastThinkingLevel("high");
-  assert.equal(selection.readLastThinkingLevel(), "high");
-  selection.saveLastThinkingLevel("auto");
-  assert.equal(selection.readLastThinkingLevel(), "auto");
-  values.set("serphia-last-thinking-level", "invalid");
-  assert.equal(selection.readLastThinkingLevel(), "auto");
+  assert.equal(selection.readLastThinkingLevel(), "low");
+  selection.saveLastThinkingLevel("max");
+  assert.equal(selection.readLastThinkingLevel(), "max");
+  for (const value of ["auto", "off", "invalid"]) {
+    values.set("serphia-last-thinking-level", value);
+    assert.equal(selection.readLastThinkingLevel(), "low");
+  }
 });

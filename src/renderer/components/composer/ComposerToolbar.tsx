@@ -1,10 +1,15 @@
-import { Brain, CircleAlert, Feather, Hand, Lightbulb, Plus, RefreshCw, ShieldHalf } from "lucide-react";
-import { type ReactNode, memo, useEffect, useId, useRef, useState } from "react";
+import { Brain, CircleAlert, Feather, Hand, Lightbulb, Plus, ShieldHalf } from "lucide-react";
+import { type ReactNode, memo, useEffect, useId, useState } from "react";
 import { DeepAgentMenuScope } from "./DeepAgentMenuScope";
 import type { ModelCatalogStatus } from "@contract/types";
 import { useI18n } from "@/i18n";
 import type { ToolPreset } from "@shared/tool-presets";
-import { thinkingMenuLevels, type ThinkingLevelOption } from "@shared/thinking-levels";
+import {
+  resolveReasoningLevel,
+  thinkingMenuLevels,
+  type ReasoningLevel,
+  type ThinkingLevelOption,
+} from "@shared/thinking-levels";
 
 interface ModelOption {
   provider: string;
@@ -21,15 +26,12 @@ export interface ComposerToolbarOptions {
   modelStatus?: ReactNode;
   modelList?: { id: string; name: string; provider: string }[];
   modelCatalog?: ModelCatalogStatus;
-  modelRefreshing?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
-  onModelsRefresh?: () => Promise<void> | void;
-  onModelsRefreshCancel?: () => void;
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
   toolSelectionError?: string;
   thinkingLevel?: ThinkingLevelOption;
-  onThinkingLevelChange?: (level: ThinkingLevelOption) => void;
+  onThinkingLevelChange?: (level: ReasoningLevel) => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
 }
@@ -37,8 +39,6 @@ export interface ComposerToolbarOptions {
 const TOOL_PRESETS = ["none", "default", "full"] as const;
 const PERMISSION_ICONS = { none: Hand, default: ShieldHalf, full: CircleAlert };
 const THINKING_ICONS = {
-  auto: Lightbulb,
-  off: Feather,
   minimal: Feather,
   low: Feather,
   medium: Lightbulb,
@@ -79,10 +79,7 @@ function ComposerToolbarView({
     modelStatus,
     modelList,
     modelCatalog,
-    modelRefreshing,
     onModelChange,
-    onModelsRefresh,
-    onModelsRefreshCancel,
     toolPreset,
     onToolPresetChange,
     toolSelectionError,
@@ -94,12 +91,6 @@ function ComposerToolbarView({
   const permissionLayoutId = useId();
   const [activeMenu, setActiveMenu] = useState<"model" | "permission" | null>(null);
   const currentMenu = isStreaming ? null : activeMenu;
-  const modelWasOpen = useRef(false);
-
-  useEffect(() => {
-    if (modelWasOpen.current && currentMenu !== "model" && modelRefreshing) onModelsRefreshCancel?.();
-    modelWasOpen.current = currentMenu === "model";
-  }, [currentMenu, modelRefreshing, onModelsRefreshCancel]);
 
   useEffect(() => setActiveMenu(null), [isMobile, isStreaming]);
 
@@ -132,9 +123,7 @@ function ComposerToolbarView({
   const currentModelName = selectedModelKey ? (modelsByKey.get(selectedModelKey)?.name ?? model?.modelId) : undefined;
   const multipleProviders = modelsByProvider.size > 1;
 
-  const thinkingLabels: Record<ThinkingLevelOption, string> = {
-    auto: t("thinkingAuto", "Auto"),
-    off: t("thinkingOff", "Off"),
+  const thinkingLabels: Record<ReasoningLevel, string> = {
     minimal: t("thinkingMinimal", "Minimal"),
     low: t("thinkingLow", "Low"),
     medium: t("thinkingMedium", "Medium"),
@@ -142,12 +131,12 @@ function ComposerToolbarView({
     xhigh: t("thinkingXHigh", "Extra high"),
     max: t("thinkingMax", "Maximum"),
   };
-  const thinkingChoiceLabel = (level: ThinkingLevelOption): string => {
-    const mapped = level === "auto" ? undefined : thinkingLevelMap?.[level];
+  const thinkingChoiceLabel = (level: ReasoningLevel): string => {
+    const mapped = thinkingLevelMap?.[level];
     return mapped != null && mapped !== level ? `${thinkingLabels[level]} → ${mapped}` : thinkingLabels[level];
   };
   const thinkingSteps = thinkingMenuLevels(availableThinkingLevels);
-  const currentThinking = thinkingLevel && thinkingSteps.includes(thinkingLevel) ? thinkingLevel : "auto";
+  const currentThinking = resolveReasoningLevel(thinkingSteps, thinkingLevel);
   const thinkingOptions = thinkingSteps.map((id) => ({ id, label: thinkingChoiceLabel(id), icon: THINKING_ICONS[id] }));
   const labels: Record<ToolPreset, string> = {
     none: t("permissionReadOnly", "Read only"),
@@ -165,19 +154,8 @@ function ComposerToolbarView({
     desc: descriptions[id],
     icon: PERMISSION_ICONS[id],
   }));
-  const modelCatalogControls = onModelsRefresh && (
+  const modelCatalogStatus = (modelCatalog?.source === "offline" || Boolean(modelCatalog?.warnings.length)) && (
     <div className="pt-1">
-      <button
-        type="button"
-        disabled={modelRefreshing}
-        onClick={() => void onModelsRefresh()}
-        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] text-text-secondary hover:bg-ui-tint"
-      >
-        <RefreshCw size={14} strokeWidth={1.7} aria-hidden="true" />
-        {modelRefreshing
-          ? t("refreshingModels", "Refreshing model directory…")
-          : t("refreshModels", "Refresh model directory")}
-      </button>
       {modelCatalog?.source === "offline" && (
         <div className="px-2 py-1 text-[11px] text-text-secondary">
           {t("modelsOfflineCache", "Offline: using the cached model directory.")}
@@ -253,9 +231,7 @@ function ComposerToolbarView({
       </div>
       <div className="composer-toolbar-settings">
         {modelStatus}
-        {(onThinkingLevelChange ||
-          onModelsRefresh ||
-          (modelOptions.length > 0 && currentModelName && onModelChange)) && (
+        {(onThinkingLevelChange || onModelChange) && (
           <DeepAgentMenuScope>
             {({ ModelThinkingSelector }) => (
               <ModelThinkingSelector
@@ -267,7 +243,7 @@ function ComposerToolbarView({
                 noModelsLabel={t("composerNoModels", "No models available")}
                 reasoningLabel={t("composerEffortTitle", "Reasoning effort")}
                 disabled={isStreaming}
-                showThinking={Boolean(onThinkingLevelChange)}
+                showThinking={Boolean(onThinkingLevelChange && currentThinking)}
                 thinkingDisabled={isStreaming}
                 models={[...modelsByKey.keys()]}
                 selectedModel={selectedModelKey}
@@ -275,7 +251,7 @@ function ComposerToolbarView({
                 getModelGroup={multipleProviders ? (id) => modelsByKey.get(id)?.provider : undefined}
                 selectedThinking={currentThinking}
                 thinkingOptions={thinkingOptions}
-                modelStatus={modelCatalogControls}
+                modelStatus={modelCatalogStatus}
                 onChooseModel={(id) => {
                   const option = modelsByKey.get(id);
                   if (option && (id !== selectedModelKey || isAutoModelSelection)) {

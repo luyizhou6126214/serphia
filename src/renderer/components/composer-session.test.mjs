@@ -33,8 +33,9 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
     `
               : `
       export const requests = [], streams = [], toolReadRequests = [];
-      let cwd, running;
-      export function reset(directory, active) {requests.length = streams.length = toolReadRequests.length = 0; cwd=directory; running=active;}
+      const model = { provider: 'fixture', modelId: 'model' };
+      let cwd, running, reasoningLevels;
+      export function reset(directory, active, levels) {requests.length = streams.length = toolReadRequests.length = 0; cwd=directory; running=active; reasoningLevels=levels;}
       function pending(method, params, commandType) {
         return new Promise((resolve,reject) => requests.push({method,params,commandType,resolve,reject,settled:false}));
       }
@@ -46,8 +47,12 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
       }
       export const agentState = async () => ({running, state:{isStreaming:running, isPromptRunning:running}});
       export const getSession = async (id) => ({sessionId:id,toolNames:[],info:{id,cwd,firstMessage:'fixture',messageCount:0},tree:[],leafId:null,
-        context:{messages:[],entryIds:[],model:null,thinkingLevel:'off',historyRevision:'fixture',totalMessages:0,loadedMessages:0,truncatedBefore:false},agentState:await agentState()});
-      export const listModels = async () => ({models:[],catalog:{source:'cache',refreshed:false,aborted:false,warnings:[]}});
+        context:{messages:[],entryIds:[],model:reasoningLevels?model:null,thinkingLevel:'off',historyRevision:'fixture',totalMessages:0,loadedMessages:0,truncatedBefore:false},agentState:await agentState()});
+      export const listModels = async () => ({
+        models:reasoningLevels?[{id:model.modelId,provider:model.provider,name:'Fixture model'}]:[],
+        thinkingLevels:reasoningLevels?{'fixture:model':reasoningLevels}:{},
+        catalog:{source:'cache',refreshed:false,aborted:false,warnings:[]},
+      });
       export async function subscribeAgentEvents(key, on) {const stream={key,on,closed:0}; streams.push(stream); return()=>stream.closed++;}
       export async function subscribeSessionsChanged(on) {const stream={key:'*',on,closed:0}; streams.push(stream); return()=>stream.closed++;}
       export const fileIndex = async () => ({files:[],truncated:false});
@@ -64,7 +69,7 @@ const { ChatInput, useAgentSession, api } = await importTestBundle("composer-ses
 
 let fixtureNumber = 0;
 const text = (node) => (typeof node === "string" ? node : (node?.children?.map(text).join("") ?? ""));
-async function mount(t, { existing = false, running = false, directory, autoTitle = false } = {}) {
+async function mount(t, { existing = false, running = false, directory, autoTitle = false, reasoningLevels } = {}) {
   const cwd = directory ?? `/composer-fixture-${++fixtureNumber}`;
   const initialId = `existing-${fixtureNumber}`;
   const previous = new Map(
@@ -118,7 +123,7 @@ async function mount(t, { existing = false, running = false, directory, autoTitl
   });
   install("cancelAnimationFrame", (id) => frames.delete(id));
   t.mock.method(console, "error", () => {});
-  api.reset(cwd, running);
+  api.reset(cwd, running, reasoningLevels);
   const promotions = [];
   let current, renderer;
   function Harness() {
@@ -271,6 +276,16 @@ test("the composer send icon submits the draft and creates the session", async (
   assert.equal(f.value(), "");
 });
 
+test("an existing reasoning model with a legacy off setting sends the next message at low", async (t) => {
+  const f = await mount(t, { existing: true, reasoningLevels: ["off", "minimal", "low", "high"] });
+  await f.type("hello again");
+  await f.enter();
+  assert.equal(f.count("prompt"), 0);
+  assert.equal(f.next("set_thinking_level").params.command.level, "low");
+  await f.reply("set_thinking_level", null);
+  await f.reply("prompt", null);
+});
+
 test("a skill-first prompt generates a title from user text without changing the sent message", async (t) => {
   const f = await mount(t, { autoTitle: true });
   const message = "/skill:hyperframes /skill:design 生成 ROS2 介绍视频";
@@ -288,6 +303,7 @@ test("a non-project conversation promotes the actual working directory allocated
   await f.type("chat without a project");
   await f.click("Send");
   assert.equal(f.next("ensure_session").params.cwd, "");
+  assert.equal(f.next("ensure_session").params.thinkingLevel, "low");
   const cwd = "/Users/demo/Documents/Serphia/2026-11-04/0123456789abcdef0123456789abcdef";
   await f.reply("ensure_session", { sessionId: "no-project", cwd });
   await f.reply("prompt", null);

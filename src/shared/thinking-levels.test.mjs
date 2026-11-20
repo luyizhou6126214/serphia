@@ -4,8 +4,8 @@ import { stripThinkingSuffix, thinkingMenuLevels, configuredThinkingLevels } fro
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 
 test("max is a distinct, capability-gated reasoning choice", () => {
-  assert.deepEqual(thinkingMenuLevels(["off", "high", "xhigh", "max"]), ["auto", "off", "high", "xhigh", "max"]);
-  assert.deepEqual(thinkingMenuLevels(["off", "high"]), ["auto", "off", "high"]);
+  assert.deepEqual(thinkingMenuLevels(["off", "high", "xhigh", "max"]), ["high", "xhigh", "max"]);
+  assert.deepEqual(thinkingMenuLevels(["off", "high"]), ["high"]);
   assert.ok(!thinkingMenuLevels().includes("max"));
   assert.equal(stripThinkingSuffix("openai/model:max"), "openai/model");
   assert.equal(stripThinkingSuffix("local/model:8b"), "local/model:8b");

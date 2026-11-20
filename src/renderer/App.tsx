@@ -1,7 +1,17 @@
-import { Component, type CSSProperties, type ErrorInfo, type ReactNode, useEffect, useState } from "react";
-import { AppShell } from "@/components/AppShell";
+import {
+  Component,
+  lazy,
+  Suspense,
+  type CSSProperties,
+  type ErrorInfo,
+  type ReactNode,
+  useEffect,
+  useState,
+} from "react";
 import { ensureRpc, resetRpc } from "@/lib/api-client";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
+
+const AppShell = lazy(() => import("@/components/AppShell").then(({ AppShell }) => ({ default: AppShell })));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -37,49 +47,41 @@ export function App() {
   const chatAppearance = useChatAppearance();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("Connecting…");
 
   useEffect(() => {
-    let cancelled = false;
-    setStatus(window.piBridge ? "Waiting for Agent Host…" : "piBridge missing (preload failed?)");
+    let attempt = 0;
 
     const connect = () => {
-      ensureRpc()
-        .then(() => {
-          if (!cancelled) {
+      const current = ++attempt;
+      void ensureRpc().then(
+        () => {
+          if (attempt === current) {
             setReady(true);
             setError(null);
           }
-        })
-        .catch((err) => {
-          if (!cancelled) {
+        },
+        (err: unknown) => {
+          if (attempt === current) {
             setError(err instanceof Error ? err.message : String(err));
             setReady(false);
           }
-        });
+        },
+      );
     };
 
+    const offStatus = window.piBridge?.onHostStatus(({ status, detail }) => {
+      if (status === "ready") return;
+      ++attempt;
+      resetRpc();
+      setReady(false);
+      if (status === "starting") {
+        setError(null);
+        connect();
+      } else {
+        setError(detail || `Agent Host ${status}`);
+      }
+    });
     connect();
-
-    // A slow host may become ready after the initial connection attempt timed out.
-    const offStatus = window.piBridge?.onHostStatus?.((payload) => {
-      if (payload.status === "ready") connect();
-    });
-
-    const offRestart = window.piBridge?.onHostRestarted?.((payload) => {
-      console.warn("[pi-desktop] host restarted:", payload.reason);
-      resetRpc();
-      setReady(false);
-      setStatus("Agent Host restarted — reconnecting…");
-      setError(null);
-      connect();
-    });
-
-    const offCrash = window.piBridge?.onHostCrashed?.((payload) => {
-      resetRpc();
-      setReady(false);
-      setError(payload.detail || "Agent Host crashed and could not recover");
-    });
 
     const offMenuDiag = window.piBridge?.onMenu?.("export-diagnostics", () => {
       void window.piBridge?.exportDiagnostics?.();
@@ -90,10 +92,8 @@ export function App() {
     window.addEventListener("focus", onFocus);
 
     return () => {
-      cancelled = true;
+      ++attempt;
       offStatus?.();
-      offRestart?.();
-      offCrash?.();
       offMenuDiag?.();
       window.removeEventListener("focus", onFocus);
     };
@@ -105,9 +105,6 @@ export function App() {
         <div style={cardStyle}>
           <h1 style={titleStyle}>Cannot connect to Agent Host</h1>
           <p style={bodyStyle}>{error}</p>
-          <p style={{ ...bodyStyle, fontSize: 12 }}>
-            Host must be running (utilityProcess). Check logs if this persists.
-          </p>
           <button type="button" onClick={() => window.location.reload()} style={btnPrimary}>
             Retry
           </button>
@@ -119,25 +116,39 @@ export function App() {
     );
   }
 
-  if (!ready || !chatAppearance.loaded) {
-    return (
-      <div style={centerStyle}>
-        <div style={{ ...cardStyle, textAlign: "center" }}>
-          <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8 }}>{status}</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>serphia</div>
-        </div>
-      </div>
-    );
-  }
+  if (!ready || !chatAppearance.loaded) return <StartupScreen waitingForHost={!ready} />;
 
   return (
     <ErrorBoundary>
-      <AppShell
-        chatAppearance={chatAppearance.preferences}
-        chatAppearanceSaving={chatAppearance.saving}
-        onChatAppearanceChange={chatAppearance.update}
-      />
+      <Suspense fallback={<StartupScreen />}>
+        <AppShell
+          chatAppearance={chatAppearance.preferences}
+          chatAppearanceSaving={chatAppearance.saving}
+          onChatAppearanceChange={chatAppearance.update}
+        />
+      </Suspense>
     </ErrorBoundary>
+  );
+}
+
+function StartupScreen({ waitingForHost = false }: { waitingForHost?: boolean }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 10_000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="startup-screen">
+      <p role="status">
+        {waitingForHost ? (slow ? "Agent Host is still starting…" : "Starting Agent Host…") : "Starting Serphia…"}
+      </p>
+      {slow && (
+        <button type="button" onClick={() => void window.piBridge.openLogs()} style={btnSecondary}>
+          Open logs
+        </button>
+      )}
+    </div>
   );
 }
 

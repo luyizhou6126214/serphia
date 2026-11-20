@@ -302,7 +302,13 @@ const ACCESSIBILITY_STYLE = `
 const EMBEDDED_STYLE = `
   [popover].morph-menu-shell { margin: 0; border: 0; padding: 0; }
   .morph-menu-shell[data-state=closed] .morph-menu-compact { pointer-events: auto; }
-  [data-serphia-model-trigger] > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-serphia-model-trigger] { min-height: 32px; max-width: 100%; padding-block: 4px; }
+  [data-serphia-model-trigger] > .model-trigger-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+    text-align: start;
+  }
   [data-serphia-model-trigger] > svg { flex-shrink: 0; }
   .reasoning-effort[data-many-stops] .reasoning-effort-stops { display: flex; justify-content: space-between; gap: 1px; }
   .reasoning-effort[data-many-stops] .reasoning-effort-stops button { white-space: nowrap; }
@@ -319,6 +325,26 @@ const EMBEDDED_STYLE = `
   }
   .serphia-approval-panel { width: min(288px, calc(100vw - 32px)); }
   .serphia-model-panel { width: min(264px, calc(100vw - 32px)); }
+  .serphia-model-panel .model-list-scroll { max-height: clamp(96px, calc(50vh - 128px), 288px); overscroll-behavior-y: contain; }
+  .model-provider-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-block: 6px 4px;
+    padding-inline: 8px 4px;
+    color: var(--theme-text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+  }
+  .model-provider-label > span {
+    min-width: 0;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--theme-accent) 9%, transparent);
+    overflow-wrap: anywhere;
+  }
+  .model-provider-label::after { content: ""; flex: 1 0 8px; height: 1px; background: var(--theme-border); }
 `;
 var dependencies = Object.fromEntries(Object.entries({ "react": external0, "react/jsx-runtime": external1, "react-dom": external2, "react-dom/client": external3, "gsap": external4, "deep-agent-base-ui/preview-card": external5, "deep-agent-lucide": external6, "@fortawesome/fontawesome-svg-core": external7, "@fortawesome/free-solid-svg-icons": external8, "@fortawesome/react-fontawesome": external9, "@radix-ui/react-slider": external10, "react-circular-progressbar": external11, "clsx": external12, "tailwind-merge": external13 }).map(([key, value]) => [key, { ...value, __esModule: true, default: value.default ?? value }]));
 function mountDeepAgent(target, options, variant) {
@@ -1958,6 +1984,7 @@ function mountDeepAgent(target, options, variant) {
       staggerContent = false,
       unstyled = false,
       triggerLayout = "inline",
+      keepTriggerInFlow = false,
       menuLabel,
       children
     }) {
@@ -1992,15 +2019,15 @@ function mountDeepAgent(target, options, variant) {
         };
       }, [open]);
       (0, import_react12.useLayoutEffect)(() => {
-        const shell = shellRef.current, anchor = anchorRef.current, compact = compactRef.current;
+        const container = containerRef.current, shell = shellRef.current, anchor = anchorRef.current, compact = compactRef.current;
         const panel = panelRef.current, content = contentRef.current;
-        if (!shell || !anchor || !compact) return;
+        if (!container || !shell || !anchor || !compact) return;
         const first = previousOpen.current === void 0;
         previousOpen.current = open;
         let disposed = false;
         let timeline;
         let resize;
-        let restoreFocus = shell.contains(document.activeElement);
+        let restoreFocus = container.contains(document.activeElement);
         const floating = __deepAgentBridge.embedded;
         const compactSize = () => {
           if (triggerLayout === "block") compact.style.width = `${anchor.clientWidth}px`;
@@ -2019,7 +2046,7 @@ function mountDeepAgent(target, options, variant) {
         const restClosed = () => {
           if (floating && shell.matches(":popover-open")) shell.hidePopover();
           import_gsap6.default.set(compact, { opacity: 1, clearProps: "position,left,right,top,bottom,transform" });
-          import_gsap6.default.set(shell, { clearProps: "position,left,right,top,bottom,width,height,maxWidth,maxHeight,overflow,borderRadius,backgroundColor,boxShadow,transform,--morph-corner-curvature" });
+          import_gsap6.default.set(shell, { clearProps: "position,left,right,top,bottom,width,height,maxWidth,maxHeight,opacity,overflow,borderRadius,backgroundColor,boxShadow,transform,--morph-corner-curvature" });
           anchor.style.width = "";
           anchor.style.height = "";
           if (triggerLayout === "block") compact.style.width = "100%";
@@ -2031,8 +2058,10 @@ function mountDeepAgent(target, options, variant) {
           return;
         }
         if (open) setPresent(true);
-        anchor.style.width = triggerLayout === "block" ? "100%" : `${closed.width}px`;
-        anchor.style.height = `${closed.height}px`;
+        if (!keepTriggerInFlow) {
+          anchor.style.width = triggerLayout === "block" ? "100%" : `${closed.width}px`;
+          anchor.style.height = `${closed.height}px`;
+        }
         const position = floating ? "fixed" : "absolute";
         if (shell.style.position !== position) {
           import_gsap6.default.set(shell, {
@@ -2060,7 +2089,7 @@ function mountDeepAgent(target, options, variant) {
         };
         placeShell();
         if (floating && !shell.matches(":popover-open")) shell.showPopover();
-        import_gsap6.default.set(compact, {
+        if (!keepTriggerInFlow) import_gsap6.default.set(compact, {
           position: "absolute",
           left: panelAlign === "left" ? 0 : "auto",
           right: panelAlign === "right" ? 0 : "auto",
@@ -2094,7 +2123,7 @@ function mountDeepAgent(target, options, variant) {
           setLayoutAnimating(false);
           if (open) shell.style.overflow = "visible";
           else {
-            restClosed();
+            // Reset positioning only after the closed render removes the popover attribute.
             setPresent(false);
           }
         };
@@ -2119,6 +2148,7 @@ function mountDeepAgent(target, options, variant) {
             });
             import_gsap6.default.set(compact, { opacity: open ? 0 : 1, scale: 1 });
             import_gsap6.default.set(panel, { opacity: open ? 1 : 0, filter: "blur(0px)" });
+            if (keepTriggerInFlow) import_gsap6.default.set(shell, { opacity: open ? 1 : 0 });
             finish();
             focus();
             return;
@@ -2146,8 +2176,11 @@ function mountDeepAgent(target, options, variant) {
             duration: 0.22,
             ease: "power2.out"
           }, 0);
-          timeline.to(compact, { opacity: open ? 0 : 1, duration: 0.14, ease: "power2.out" }, open ? 0 : 0.2);
-          if (!open) timeline.fromTo(compact, { scale: 0.95 }, {
+          if (keepTriggerInFlow) {
+            timeline.to(shell, { opacity: open ? 1 : 0, duration: 0.12, ease: "power2.out" }, open ? 0 : 0.18);
+          }
+          timeline.to(compact, { opacity: open ? 0 : 1, duration: 0.14, ease: "power2.out" }, open ? 0 : keepTriggerInFlow ? 0.3 : 0.2);
+          if (!open && !keepTriggerInFlow) timeline.fromTo(compact, { scale: 0.95 }, {
             scale: 1,
             duration: 0.48,
             ease: springEase(300, 21, 0.48)
@@ -2196,7 +2229,7 @@ function mountDeepAgent(target, options, variant) {
         observer.observe(compact);
         if (floating) observer.observe(anchor);
         const outsideFocus = (event) => {
-          if (!shell.contains(event.target)) restoreFocus = false;
+          if (!container.contains(event.target)) restoreFocus = false;
         };
         const media = window.matchMedia("(prefers-reduced-motion: reduce)");
         document.addEventListener("focusin", outsideFocus);
@@ -2213,8 +2246,17 @@ function mountDeepAgent(target, options, variant) {
           if (floating) window.removeEventListener("scroll", retarget, true);
           media.removeEventListener("change", play);
         };
-      }, [open, showPanel, panelAlign, panelPlacement, panelShadow, triggerLayout]);
-      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { ref: containerRef, className: cn("relative", className), children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { ref: anchorRef, className: cn("relative max-w-full align-top", triggerLayout === "block" ? "flex w-full" : "inline-flex"), children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+      }, [open, showPanel, panelAlign, panelPlacement, panelShadow, triggerLayout, keepTriggerInFlow]);
+      const compactView = /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+        "div",
+        {
+          ref: compactRef,
+          className: cn("morph-menu-compact pointer-events-auto inline-flex max-w-full", triggerLayout === "block" ? "w-full" : "w-max"),
+          "aria-hidden": open,
+          children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(MenuTriggerOpenContext.Provider, { value: open, children: trigger })
+        }
+      );
+      const shellView = /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
         "div",
         {
           ref: shellRef,
@@ -2223,17 +2265,13 @@ function mountDeepAgent(target, options, variant) {
           popover: __deepAgentBridge.embedded && showPanel ? "manual" : void 0,
           "data-morph-placement": panelPlacement,
           className: cn("morph-menu-shell relative inline-flex max-w-full", triggerLayout === "block" && "w-full"),
-          style: { zIndex: showPanel ? zIndex : void 0, pointerEvents: !open && present ? "none" : void 0 },
+          style: {
+            display: keepTriggerInFlow && !showPanel ? "none" : void 0,
+            zIndex: showPanel ? zIndex : void 0,
+            pointerEvents: !open && present ? "none" : void 0
+          },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-              "div",
-              {
-                ref: compactRef,
-                className: cn("morph-menu-compact pointer-events-auto inline-flex max-w-full", triggerLayout === "block" ? "w-full" : "w-max"),
-                "aria-hidden": open,
-                children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(MenuTriggerOpenContext.Provider, { value: open, children: trigger })
-              }
-            ),
+            !keepTriggerInFlow && compactView,
             showPanel && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
               "div",
               {
@@ -2251,7 +2289,16 @@ function mountDeepAgent(target, options, variant) {
             )
           ]
         }
-      ) }) });
+      );
+      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", {
+        ref: containerRef,
+        className: cn("relative", className),
+        children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", {
+          ref: anchorRef,
+          className: cn("morph-menu-anchor relative max-w-full align-top", triggerLayout === "block" ? "flex w-full" : "inline-flex"),
+          children: [keepTriggerInFlow && compactView, shellView]
+        })
+      });
     }
     function navigateMenu(event) {
       if (event.target.closest("[role=slider]") || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -2298,23 +2345,41 @@ function mountDeepAgent(target, options, variant) {
       showThinking = true
     }) {
       const morphLayoutId = (0, import_react13.useId)().replace(/:/g, "");
+      const modelListRef = (0, import_react13.useRef)(null);
+      const locatedSelection = (0, import_react13.useRef)(false);
+      (0, import_react13.useLayoutEffect)(() => {
+        if (!open) {
+          locatedSelection.current = false;
+          return;
+        }
+        if (locatedSelection.current) return;
+        const list = modelListRef.current;
+        const row = list?.querySelector('button[aria-pressed="true"]');
+        if (!row) return;
+        const listBox = list.getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        list.scrollTop += rowBox.top - listBox.top - (list.clientHeight - rowBox.height) / 2;
+        locatedSelection.current = true;
+      }, [open, selectedModel, models]);
       const selectedThinkingOption = thinkingOptions.find((option) => option.id === selectedThinking) ?? thinkingOptions[0];
+      const showReasoning = showThinking && selectedThinkingOption != null;
       const pillModel = selectedModel ? getModelLabel(selectedModel) : selectModelLabel;
-      const trigger = /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(HoverInfo, { content: `${selectModelLabel} / ${selectedThinkingOption.label}`, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+      const embedded = __deepAgentBridge.embedded;
+      const trigger = /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(HoverInfo, { content: showReasoning ? `${selectModelLabel} / ${selectedThinkingOption.label}` : selectModelLabel, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
         TintButton,
         {
           type: "button",
           disabled,
           "aria-haspopup": "dialog",
           "aria-expanded": open,
-          "aria-label": `${menuLabel}: ${pillModel}${showThinking ? ` · ${selectedThinkingOption.label}` : ""}`,
-          "data-serphia-model-trigger": __deepAgentBridge.embedded || void 0,
+          "aria-label": `${menuLabel}: ${pillModel}${showReasoning ? ` · ${selectedThinkingOption.label}` : ""}`,
+          "data-serphia-model-trigger": embedded || void 0,
           onClick: () => onOpenChange(!open),
-          className: cn("flex h-8 max-w-[210px] min-w-0 items-center rounded-full px-3 text-xs", triggerClassName),
+          className: cn("flex min-w-0 items-center rounded-full px-3 text-xs", !embedded && "h-8 max-w-[210px]", triggerClassName),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(selectedThinkingOption.icon, { size: 12, className: "mr-1.5 shrink-0 text-text-secondary", "aria-hidden": true }),
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "min-w-0 truncate font-medium", children: pillModel }),
-            showThinking && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "ml-1.5 shrink-0 text-text-secondary", children: selectedThinkingOption.label }),
+            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(showReasoning ? selectedThinkingOption.icon : import_lucide_react.Brain, { size: 12, className: "mr-1.5 shrink-0 text-text-secondary", "aria-hidden": true }),
+            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: cn("model-trigger-name min-w-0 font-medium", !embedded && "truncate"), children: pillModel }),
+            showReasoning && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "ml-1.5 shrink-0 text-text-secondary", children: selectedThinkingOption.label }),
             /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_lucide_react.ChevronDown, { size: 10, className: "ml-2 shrink-0 text-text-secondary", "aria-hidden": true })
           ]
         }
@@ -2327,14 +2392,15 @@ function mountDeepAgent(target, options, variant) {
           layoutId: morphLayoutId,
           menuLabel,
           trigger,
-          className: "flex h-8 min-w-0 max-w-full items-center",
+          className: cn("flex min-w-0 max-w-full items-center", !embedded && "h-8"),
+          keepTriggerInFlow: embedded,
           panelClassName: "w-[264px] serphia-model-panel",
           panelAlign: "right",
           zIndex: 50,
           children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "py-2", children: [
             /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: cn(MODEL_MENU.padX, "pb-1"), children: [
               /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: MODEL_MENU.section, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "font-medium text-text-base", children: modelsLabel }) }),
-              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "max-h-[96px] overflow-y-auto", children: models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "rounded-lg px-2.5 py-2 text-[12px] text-text-secondary", children: noModelsLabel }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(SlidingMenuList, { activeId: selectedModel, pillClassName: MODEL_MENU.pill, className: "w-full py-0.5", role: "group", "aria-label": modelsLabel, children: models.map((id, index) => {
+              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { ref: modelListRef, className: "model-list-scroll max-h-[96px] overflow-y-auto", children: models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "rounded-lg px-2.5 py-2 text-[12px] text-text-secondary", children: noModelsLabel }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(SlidingMenuList, { activeId: selectedModel, pillClassName: MODEL_MENU.pill, className: "w-full py-0.5", role: "group", "aria-label": modelsLabel, children: models.map((id, index) => {
                 const selected = id === selectedModel;
                 const group = getModelGroup?.(id);
                 const row = /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
@@ -2361,12 +2427,12 @@ function mountDeepAgent(target, options, variant) {
                 );
                 if (!group || (index > 0 && group === getModelGroup(models[index - 1]))) return row;
                 return (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-                  (0, import_jsx_runtime15.jsx)("div", { className: "px-2 py-1 text-[11px] text-text-secondary", children: group }), row
+                  (0, import_jsx_runtime15.jsx)("div", { className: "model-provider-label", children: (0, import_jsx_runtime15.jsx)("span", { children: group }) }), row
                 ] }, id);
               }) }) }),
               modelStatus
             ] }),
-            showThinking && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
+            showReasoning && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
             /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: MODEL_MENU.divider }),
             /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "px-3 pb-1 pt-0.5", children: [
               /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "mb-2.5 flex items-center text-[12px]", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "font-medium text-text-base", children: reasoningLabel }) }),
@@ -2378,7 +2444,7 @@ function mountDeepAgent(target, options, variant) {
                     label: option.label,
                     icon: option.icon
                   })),
-                  value: selectedThinking,
+                  value: selectedThinkingOption.id,
                   onChange: (value) => onChooseThinking(value),
                   ariaLabel: reasoningLabel,
                   disabled: thinkingDisabled
