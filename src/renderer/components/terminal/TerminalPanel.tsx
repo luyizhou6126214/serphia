@@ -39,14 +39,12 @@ function writeInput(terminalId: string, data: string): void {
 export function TerminalPanel({
   terminalId,
   visible,
-  onTitleChange,
   onExited,
   onNewTerminal,
   onClose,
 }: {
   terminalId: string;
   visible: boolean;
-  onTitleChange?: (title: string) => void;
   onExited?: (exitCode: number | null) => void;
   onNewTerminal?: () => void;
   onClose?: () => void;
@@ -60,8 +58,8 @@ export function TerminalPanel({
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const callbacksRef = useRef({ onTitleChange, onExited });
-  callbacksRef.current = { onTitleChange, onExited };
+  const onExitedRef = useRef(onExited);
+  onExitedRef.current = onExited;
 
   /** Fit the emulator to its container and report the size to the pty. */
   const fitAndReport = useCallback(() => {
@@ -103,9 +101,6 @@ export function TerminalPanel({
     const input = xterm.onData((data) => {
       writeInput(terminalId, data);
     });
-    const title = xterm.onTitleChange((value) => {
-      if (value.trim() !== "") callbacksRef.current.onTitleChange?.(value);
-    });
     const observer = new ResizeObserver(() => {
       if (resizeTimerRef.current !== null) clearTimeout(resizeTimerRef.current);
       resizeTimerRef.current = setTimeout(() => {
@@ -121,7 +116,6 @@ export function TerminalPanel({
         resizeTimerRef.current = null;
       }
       input.dispose();
-      title.dispose();
       xterm.dispose();
       terminalRef.current = null;
       fitRef.current = null;
@@ -145,7 +139,7 @@ export function TerminalPanel({
       }
       if (event.type === "exited") {
         setInfo((current) => (current === null ? current : { ...current, state: "exited", exitCode: event.exitCode }));
-        callbacksRef.current.onExited?.(event.exitCode);
+        onExitedRef.current?.(event.exitCode);
         return;
       }
       setPhase("missing");

@@ -71,10 +71,11 @@
   },
   "dependencies": {
     "@ant-design/icons": "6.3.2",
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-coding-agent": "1.4.0",
-    "@earendil-works/pi-mcp": "1.4.0",
-    "@earendil-works/pi-telemetry": "1.4.0",
+    "@aora-bot/react": "0.2.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-coding-agent": "1.6.0",
+    "@earendil-works/pi-mcp": "1.6.0",
+    "@earendil-works/pi-telemetry": "1.6.0",
     "@fortawesome/fontawesome-svg-core": "6.7.2",
     "@fortawesome/free-solid-svg-icons": "6.7.2",
     "@fortawesome/react-fontawesome": "0.2.6",
@@ -119,10 +120,10 @@
     "yauzl": "3.4.0"
   },
   "overrides": {
-    "@earendil-works/pi-agent-core": "1.4.0",
-    "@earendil-works/pi-codemode": "1.4.0",
-    "@earendil-works/pi-telemetry": "1.4.0",
-    "@earendil-works/pi-tui": "1.4.0",
+    "@earendil-works/pi-agent-core": "1.6.0",
+    "@earendil-works/pi-codemode": "1.6.0",
+    "@earendil-works/pi-telemetry": "1.6.0",
+    "@earendil-works/pi-tui": "1.6.0",
     "@xmldom/xmldom": "0.8.15"
   },
   "devDependencies": {

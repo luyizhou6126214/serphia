@@ -13,7 +13,8 @@ const buildOptions = {
   packages: "external",
   format: "esm",
   tsconfig: "tsconfig.renderer.json",
-  loader: { ".css": "empty", ".png": "empty" },
+  loader: { ".css": "empty", ".png": "dataurl", ".svg": "dataurl" },
+  alias: { "@lobehub/icons": path.join(root, "node_modules/@lobehub/icons") },
 };
 
 test("Herdr owns its message renderer and composer", async () => {
@@ -54,6 +55,7 @@ test("Herdr drafts stay editable when the transport cannot send", async () => {
         canInterrupt: false,
         working: false,
         agent: "pi",
+        agentName: "Pi",
         state: "idle",
       }),
     );
@@ -61,6 +63,8 @@ test("Herdr drafts stay editable when the transport cannot send", async () => {
     assert.ok(textarea);
     assert.doesNotMatch(textarea, /disabled|readOnly/i);
     assert.match(html, /多行\n草稿<\/textarea>/u);
+    assert.match(html, /data-agent="pi"/);
+    assert.match(html, /class="hd-compose-agent-name">Pi</);
     assert.equal(/disabled/.test(html.match(/<button type="submit"[^>]*>/)[0]), !canSend);
   }
 });

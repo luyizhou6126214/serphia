@@ -21,6 +21,10 @@
   padding-inline-start: var(--session-view-gutter);
 }
 
+.session-view-trajectory:not([hidden]) {
+  padding-inline: calc(var(--session-view-gutter) + 16px);
+}
+
 .session-view-tabs {
   --session-view-ink: #202020;
   --session-view-muted: #666;

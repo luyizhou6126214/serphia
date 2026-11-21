@@ -24,7 +24,7 @@ test("global cache warming defaults without a write and preserves other Pi setti
     },
   );
   assert.deepEqual(await service.get(), {
-    mode: "streaming",
+    mode: "idle",
     scope: "global",
     loadFailed: false,
     pendingSessionCount: 0,
@@ -42,11 +42,11 @@ test("global cache warming defaults without a write and preserves other Pi setti
     defaultProvider: "anthropic",
     cacheWarming: "off",
   });
-  writeFileSync(file, JSON.stringify({ cacheWarming: "idle" }));
-  assert.equal((await service.get()).mode, "idle");
+  writeFileSync(file, JSON.stringify({ cacheWarming: "streaming" }));
+  assert.equal((await service.get()).mode, "streaming");
   assert.equal(isCacheWarmingMode("unknown"), false);
   await assert.rejects(service.set("unknown"), /Invalid cache warming mode/);
-  assert.equal(JSON.parse(readFileSync(file, "utf8")).cacheWarming, "idle");
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).cacheWarming, "streaming");
 });
 
 test("a persisted change reports live sessions that still need a refresh", async (t) => {

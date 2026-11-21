@@ -9,6 +9,7 @@ import {
   writeFileSync,
   chmodSync,
   readFileSync,
+  readdirSync,
   rmdirSync,
   statSync,
 } from "node:fs";
@@ -31,7 +32,10 @@ const { SessionIndex } = await importTestBundle("src/agent-host/session-index", 
 });
 
 function writeSession(id, options = {}) {
-  const filePath = path.join(options.directory ?? path.join(sessionsRoot, "project"), `${id}.jsonl`);
+  const filePath = path.join(
+    options.directory ?? path.join(sessionsRoot, "project"),
+    options.fileName ?? `${id}.jsonl`,
+  );
   const timestamp = options.timestamp ?? "2026-08-06T00:00:00.000Z";
   const entries = [
     {
@@ -54,39 +58,60 @@ function writeSession(id, options = {}) {
   return filePath;
 }
 
-test("keeps subagent transcripts out of discovery and incremental refresh, including orphaned tasks", async (t) => {
+test("keeps bundled and installed subagent transcripts out of discovery and incremental refresh", async (t) => {
   const generatedParent = "2026-08-06T00-00-00-000Z_01a10000-0123-7abc-8000-0123456789ab";
+  const runId = "93d7c4a9-913b-4c4b-b363-45537ce84012";
   const parentDirectory = path.join(sessionsRoot, "project");
-  const tasksDirectory = path.join(parentDirectory, generatedParent, "tasks");
+  const parentRunDirectory = path.join(parentDirectory, generatedParent);
+  const taskDirectories = [
+    path.join(parentRunDirectory, "tasks"),
+    path.join(parentRunDirectory, runId, "run-0"),
+    path.join(parentRunDirectory, `async-${runId}`, "run-1"),
+    path.join(parentRunDirectory, "forks", runId),
+    path.join(parentDirectory, "subagent-artifacts"),
+    path.join(parentDirectory, "custom", runId, "run-0"),
+  ];
   const ordinaryDirectory = path.join(parentDirectory, "tasks");
-  mkdirSync(tasksDirectory, { recursive: true });
+  for (const directory of taskDirectories) mkdirSync(directory, { recursive: true });
   mkdirSync(ordinaryDirectory);
   const parent = writeSession(generatedParent);
-  const taskPaths = Array.from({ length: 4 }, (_, i) =>
-    writeSession(`subagent-${i}`, {
-      directory: tasksDirectory,
-      parentSession: generatedParent,
+  const taskIds = taskDirectories.map((_, index) => `internal-run-${index}`);
+  const taskPaths = taskDirectories.map((directory, index) =>
+    writeSession(taskIds[index], {
+      directory,
+      fileName: index === 4 ? `${runId}_delegate_transcript.jsonl` : "session.jsonl",
+      parentSession: parent,
     }),
   );
   const ordinary = writeSession("ordinary-in-tasks", { directory: ordinaryDirectory });
+  const userFork = writeSession("subagent-notes", { parentSession: parent });
   t.after(() => {
-    for (const filePath of [parent, ordinary, ...taskPaths]) rmSync(filePath, { force: true });
-    for (const directory of [tasksDirectory, path.dirname(tasksDirectory), ordinaryDirectory]) rmdirSync(directory);
+    for (const filePath of [parent, ordinary, userFork, ...taskPaths]) rmSync(filePath, { force: true });
+    for (const directory of taskDirectories) {
+      let current = directory;
+      while (current !== parentDirectory) {
+        if (readdirSync(current).length === 0) rmdirSync(current);
+        current = path.dirname(current);
+      }
+    }
+    rmdirSync(ordinaryDirectory);
   });
 
   const index = new SessionIndex();
+  for (const taskPath of taskPaths) assert.equal(await index.refreshPath(taskPath), null);
   await index.refreshAll();
+  assert.equal(index.getMetrics().filesDiscovered, 3);
   assert.equal(await index.resolvePath(generatedParent), parent);
   assert.equal(await index.resolvePath("ordinary-in-tasks"), ordinary);
-  assert.equal(await index.refreshPath(taskPaths[0]), null);
+  assert.equal(await index.resolvePath("subagent-notes"), userFork);
+  assert.equal((await index.getAll()).find(({ id }) => id === "subagent-notes").parentSessionId, generatedParent);
   unlinkSync(parent);
   await index.refreshAll();
-  assert.equal(
-    (await index.getAll()).some(({ id }) => id.startsWith("subagent-")),
-    false,
-  );
-  assert.equal(await index.resolvePath("subagent-3"), null);
-  assert.equal(readFileSync(taskPaths[3], "utf8").includes("subagent-3"), true);
+  assert.equal(index.getMetrics().filesDiscovered, 2);
+  for (const [indexInFixture, taskId] of taskIds.entries()) {
+    assert.equal(await index.resolvePath(taskId), null);
+    assert.equal(readFileSync(taskPaths[indexInFixture], "utf8").includes(taskId), true);
+  }
 });
 
 test("refreshAll reuses unchanged records and derives parent ids", async () => {

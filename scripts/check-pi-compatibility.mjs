@@ -122,7 +122,7 @@ const requiredMarkers = [
   ["src/agent-host/credential-sync.ts", "recoverCommittedCredential"],
   ["src/renderer/lib/models-config-state.ts", "samplingParams"],
   ["src/agent-host/rpc-manager.ts", "services.diagnostics"],
-  ["src/agent-host/rpc-manager.ts", "excludeTools: [...excludedPiTools(process.platform)]"],
+  ["src/agent-host/rpc-manager.ts", "excludeTools: [...excludedPiTools(process.platform)"],
   ["src/agent-host/desktop-session-tools.ts", 'platform === "win32"'],
   ["src/agent-host/toolchain-powershell.ts", '"-Command"'],
   ["src/agent-host/toolchain-powershell.ts", "[Convert]::FromBase64String("],

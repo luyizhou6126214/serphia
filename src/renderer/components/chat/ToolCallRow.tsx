@@ -4,7 +4,7 @@
  * summary; the expanded body holds the call's arguments and result.
  */
 import { memo, useMemo, type ReactNode } from "react";
-import { Code2, FileText, Pencil, Search, Terminal, Wrench } from "lucide-react";
+import { Code2, FileText, GitFork, Pencil, Search, Terminal, Wrench } from "lucide-react";
 import { scaledChatFont } from "@/lib/chat-appearance";
 import type { ToolCallContent, ToolResultMessage } from "@/lib/types";
 import { DisclosureRow } from "./DisclosureRow";
@@ -12,6 +12,7 @@ import { TextShimmer } from "./TextShimmer";
 import { ToolIoCard, PatchResultView } from "./ToolResultBody";
 import { formatToolBody, toolRowModel, type ToolRowVariant } from "./tool-row-model";
 import { ToolResultImages } from "../ToolResultImages";
+import { SubagentStatus, SubagentStep } from "./SubagentStep";
 
 const TOOL_ICONS: Record<ToolRowVariant, ReactNode> = {
   read: <FileText size={14} strokeWidth={1.6} aria-hidden="true" />,
@@ -20,8 +21,17 @@ const TOOL_ICONS: Record<ToolRowVariant, ReactNode> = {
   write: <Pencil size={14} strokeWidth={1.6} aria-hidden="true" />,
   edit: <Pencil size={14} strokeWidth={1.6} aria-hidden="true" />,
   code: <Code2 size={14} strokeWidth={1.6} aria-hidden="true" />,
+  subagent: <GitFork size={15} className="dsh-subagent-icon" aria-hidden="true" />,
   others: <Wrench size={14} strokeWidth={1.6} aria-hidden="true" />,
 };
+
+const subagentToolStatus = {
+  preparing: "queued",
+  running: "running",
+  ok: "completed",
+  error: "error",
+  stopped: "stopped",
+} as const;
 
 function firstLine(text: string): string {
   const newline = text.indexOf("\n");
@@ -98,6 +108,7 @@ export const ToolCallRow = memo(function ToolCallRow({
     [block.input, block.toolName, cwd, home, result, resultText, running, t],
   );
   const variant = model.variant;
+  const subagentStatus = variant === "subagent" ? subagentToolStatus[model.state] : undefined;
   const isError = model.state === "error";
   const isStopped = model.state === "stopped";
   const isRunning = model.state === "running" || model.state === "preparing";
@@ -131,17 +142,18 @@ export const ToolCallRow = memo(function ToolCallRow({
   );
   const ioInput = variant === "code" ? null : bodyText;
 
-  const collapsedContent = useMemo(
-    () =>
-      summaryText !== "" && (
+  const collapsedContent = (
+    <>
+      {summaryText !== "" && (
         <>
           <span className="dsh-row-separator" data-shimmer-decoration="" aria-hidden="true" />
           <span className="dsh-tool-summary" data-error={isError || undefined} data-stopped={isStopped || undefined}>
             <TextShimmer>{summaryText}</TextShimmer>
           </span>
         </>
-      ),
-    [isError, isStopped, summaryText],
+      )}
+      {subagentStatus && <SubagentStatus status={subagentStatus} />}
+    </>
   );
 
   const nestedContent = result?.nestedCalls && result.nestedCalls.calls.length > 0 && (
@@ -210,16 +222,16 @@ export const ToolCallRow = memo(function ToolCallRow({
     </div>
   ) : undefined;
 
-  return (
+  const row = (
     <div className="dsh-tool-row" data-variant={variant} data-tool={block.toolName} data-state={model.state}>
-      {statusLabel !== null && <span className="dsh-visually-hidden">{statusLabel}</span>}
+      {!subagentStatus && statusLabel !== null && <span className="dsh-visually-hidden">{statusLabel}</span>}
       <DisclosureRow
         rowClassName="dsh-tool-disclosure"
         leadingClassName="dsh-tool-leading"
         titleClassName="dsh-tool-title"
         icon={TOOL_ICONS[variant]}
         title={model.title}
-        running={isRunning}
+        running={!subagentStatus && isRunning}
         open={open}
         expandable={expandable}
         expandOnRowClick
@@ -229,8 +241,8 @@ export const ToolCallRow = memo(function ToolCallRow({
       >
         {expandedContent}
       </DisclosureRow>
-      {result?.partial && !open && nestedContent}
-      {result?.partial && isRunning && !open && outputText && (
+      {!subagentStatus && result?.partial && !open && nestedContent}
+      {!subagentStatus && result?.partial && isRunning && !open && outputText && (
         <pre className="dsh-tool-live-progress" role="status">
           {outputText}
         </pre>
@@ -240,6 +252,7 @@ export const ToolCallRow = memo(function ToolCallRow({
       {result !== undefined && <ToolResultImages content={result.content} />}
     </div>
   );
+  return subagentStatus ? <SubagentStep state={subagentStatus}>{row}</SubagentStep> : row;
 });
 
 /** Unified patch text carried by an edit result's details. */

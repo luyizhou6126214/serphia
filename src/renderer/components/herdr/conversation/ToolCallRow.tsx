@@ -4,7 +4,7 @@
  * summary; the expanded body holds the call's arguments and result.
  */
 import { memo, useMemo, type ReactNode } from "react";
-import { Code2, FileText, Pencil, Search, Terminal, Wrench } from "lucide-react";
+import { Code2, FileText, GitFork, Pencil, Search, Terminal, Wrench } from "lucide-react";
 import { scaledChatFont } from "@/lib/chat-appearance";
 import type { ToolCallContent, ToolResultMessage } from "@/lib/types";
 import { DisclosureRow } from "@/components/chat/DisclosureRow";
@@ -20,6 +20,7 @@ const TOOL_ICONS: Record<ToolRowVariant, ReactNode> = {
   write: <Pencil size={14} strokeWidth={1.6} aria-hidden="true" />,
   edit: <Pencil size={14} strokeWidth={1.6} aria-hidden="true" />,
   code: <Code2 size={14} strokeWidth={1.6} aria-hidden="true" />,
+  subagent: <GitFork size={14} strokeWidth={1.6} aria-hidden="true" />,
   others: <Wrench size={14} strokeWidth={1.6} aria-hidden="true" />,
 };
 

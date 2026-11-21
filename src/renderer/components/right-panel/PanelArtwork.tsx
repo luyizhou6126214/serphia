@@ -76,8 +76,8 @@ export function GuideArtworkBrowser({ size = 36 }: { size?: number }) {
   );
 }
 
-/** Tool-grid artwork for the more-tools entry. */
-export function GuideArtworkTools({ size = 36 }: { size?: number }) {
+/** Tool-grid artwork for the managed-processes entry. */
+export function GuideArtworkProcesses({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 36 36" fill="none" aria-hidden="true">
       <rect x="8" y="8" width="8.6" height="8.6" rx="2.2" stroke="#98A2B8" strokeWidth="2" />

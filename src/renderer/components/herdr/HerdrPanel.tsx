@@ -1,19 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import {
-  AppWindow,
-  ChevronDown,
-  Folder,
-  FolderPlus,
-  Layers2,
-  ListFilter,
-  PanelTop,
-  Pencil,
-  Plus,
-  Settings2,
-  X,
-} from "lucide-react";
+import { AppWindow, Folder, FolderPlus, Layers2, ListFilter, PanelTop, Pencil, Plus, Settings2, X } from "lucide-react";
 import type { HerdrAgentState, HerdrPane, HerdrRuntimeSnapshot, HerdrTab } from "@contract/herdr";
 import type { WorkStepDisplay } from "@shared/work-step-display";
 import { useHerdrRuntime } from "@/hooks/useHerdrRuntime";
@@ -23,6 +11,9 @@ import { call } from "@/lib/api-client";
 import { getFileName } from "@/lib/file-paths";
 import { herdrErrorLabel, herdrRuntimeStatusLabel } from "./herdr-ui-copy";
 import { HerdrPaneView } from "./HerdrPaneView";
+import { HerdrSelect } from "./HerdrSelect";
+import { HerdrTabGlow } from "./HerdrTabGlow";
+import { herdrAgentName } from "./HerdrAgentIcon";
 import "./HerdrPanel.css";
 
 gsap.registerPlugin(useGSAP);
@@ -183,7 +174,8 @@ function Desk({
     idle: t("herdrStateIdle", "Idle"),
     unknown: t("herdrStateUnknown", "Unknown"),
   };
-  const paneName = (p: HerdrPane) => p.agent?.name || p.agent?.kind || p.title || t("shellPane", "Shell pane");
+  const paneName = (p: HerdrPane) =>
+    p.agent ? herdrAgentName(p.agent.kind, p.agent.name) : p.title || t("shellPane", "Shell pane");
   const tabName = (v: HerdrTab) =>
     !v.name || /^\d+$/.test(v.name) ? t("herdrTabName", "Tab {name}").replace("{name}", v.name || v.id) : v.name;
   const matches = panes.filter((p) => filter === "all" || p.agent?.state === filter);
@@ -215,6 +207,18 @@ function Desk({
     setRenaming(undefined);
     if (ready && fleet?.focusedTabId !== v.id)
       void call("herdr.tab.focus", { tabId: v.id }).catch((e) => setIssue(herdrErrorLabel(e, t)));
+  }
+  function chooseWorkspace(id: string) {
+    const workspace = workspaces.find((w) => w.id === id);
+    if (!workspace) return;
+    const firstTab = workspace.tabs.find((tab) => tab.focused) ?? workspace.tabs[0];
+    if (firstTab) {
+      chooseTab(firstTab);
+    } else {
+      setSelection({ workspaceId: id, tabId: "", paneId: "" });
+      setZoom(undefined);
+      setRenaming(undefined);
+    }
   }
   async function chooseDirectory() {
     const cwd = await window.piBridge.selectDirectory();
@@ -286,22 +290,6 @@ function Desk({
     },
     { scope: root, dependencies: [tab?.id, zoomed?.id, group.length], revertOnUpdate: true },
   );
-  useGSAP(
-    () => {
-      const motion = gsap.matchMedia();
-      motion.add("(prefers-reduced-motion: no-preference)", () => {
-        const light = root.current?.querySelector(".hd-window[data-focused=true] .hd-focus-light");
-        if (light)
-          gsap.fromTo(
-            light,
-            { scaleX: 0.04, opacity: 1 },
-            { scaleX: 1, opacity: 0, duration: 0.8, ease: "power3.out" },
-          );
-      });
-      return () => motion.revert();
-    },
-    { scope: root, dependencies: [focused?.id], revertOnUpdate: true },
-  );
   useEffect(() => {
     root.current?.querySelector(".hd-tab[data-current=true]")?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [tab?.id]);
@@ -326,27 +314,19 @@ function Desk({
         {ws && (
           <>
             <span className="hd-divider" />
-            <label className="hd-workspace-picker">
-              <Folder size={14} />
-              <span>{ws.name || ws.id}</span>
-              <ChevronDown size={12} />
-              <select
-                aria-label={t("workspaces", "Workspaces")}
-                value={ws.id}
-                onChange={(e) => {
-                  const next = workspaces.find((w) => w.id === e.target.value);
-                  const v = next?.tabs.find((v) => v.focused) ?? next?.tabs[0];
-                  if (v) chooseTab(v);
-                  else if (next) setSelection({ workspaceId: next.id, tabId: "", paneId: "" });
-                }}
-              >
-                {workspaces.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name || w.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <HerdrSelect
+              portal={root}
+              variant="workspace"
+              label={t("workspaces", "Workspaces")}
+              value={ws.id}
+              onChange={chooseWorkspace}
+              items={workspaces.map((workspace) => ({
+                value: workspace.id,
+                label: workspace.name || workspace.id,
+                icon: <Folder className="hd-picker-folder" size={15} aria-hidden="true" />,
+                description: panes.find((pane) => pane.id === workspace.rootPaneId)?.cwd,
+              }))}
+            />
             <button
               className="hd-icon"
               disabled={!writable}
@@ -414,6 +394,7 @@ function Desk({
           <div className="hd-tabscroll">
             {ws.tabs.map((v, index) => (
               <div key={v.id} className="hd-tab" data-current={v.id === tab?.id}>
+                <HerdrTabGlow active={v.id === tab?.id} />
                 {renaming === v.id ? (
                   <form
                     onSubmit={(e) => {
@@ -561,6 +542,7 @@ function Desk({
                   key={id}
                   pane={p}
                   style={style}
+                  selectPortal={root}
                   title={paneName(p)}
                   workStepDisplay={workStepDisplay}
                   stateLabel={p.agent ? labels[p.agent.state] : undefined}

@@ -27,11 +27,12 @@ test("the terminal screen owns input, sizing, and the ended state", () => {
   assert.match(source, /onNewTerminal/);
 });
 
-test("AppShell starts, titles, and closes Host terminals instead of Herdr panes", () => {
+test("AppShell starts and closes Host terminals without exposing shell titles", () => {
   assert.match(appShell, /createTerminal\(\{/);
   assert.match(appShell, /closeTerminal\(tab\.terminalId\)/);
   assert.match(appShell, /kind === "terminal" && tab\.terminalId !== undefined/);
-  assert.match(appShell, /onTitleChange=\{\(title\) =>/);
+  assert.doesNotMatch(appShell, /onTitleChange=/);
+  assert.doesNotMatch(source, /xterm\.onTitleChange\(/);
   assert.match(appShell, /listTerminals\(\)/);
   assert.match(appShell, /terminalShells\.length > 1/);
   assert.doesNotMatch(appShell, /herdr\.workspace\.create/);

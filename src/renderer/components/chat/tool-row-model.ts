@@ -5,8 +5,9 @@
  */
 import { abbreviateHomePath } from "@/lib/display-path";
 import { getRelativeFilePath } from "@shared/file-paths";
+import { isSubagentTool } from "@/lib/subagent-steps";
 
-export type ToolRowVariant = "search" | "read" | "bash" | "write" | "edit" | "code" | "others";
+export type ToolRowVariant = "search" | "read" | "bash" | "write" | "edit" | "code" | "subagent" | "others";
 
 /** Row lifecycle state used by summary styling and accessible status text. */
 export type ToolRowState = "preparing" | "running" | "ok" | "error" | "stopped";
@@ -33,6 +34,7 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
 };
 
 export function classifyTool(toolName: string): ToolRowVariant {
+  if (isSubagentTool(toolName)) return "subagent";
   return TOOL_VARIANTS[toolName] ?? "others";
 }
 
@@ -76,6 +78,8 @@ export function toolRowTitle(toolName: string, t: Translate): string {
       return t("toolTitleEdit", "Edit");
     case "code":
       return t("toolTitleCode", "Code");
+    case "subagent":
+      return t("subagentActivityTitle", "Subagents");
     case "others":
     default:
       return t("toolTitleGeneric", "Tool call");
@@ -102,6 +106,7 @@ const SUMMARY_KEYS: Record<ToolRowVariant, readonly string[]> = {
   write: ["path", "file_path"],
   edit: ["path", "file_path"],
   code: ["description"],
+  subagent: ["description", "task", "prompt", "agent", "name", "id"],
   others: [],
 };
 

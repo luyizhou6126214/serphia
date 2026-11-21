@@ -11,17 +11,16 @@ import { stream } from "@earendil-works/pi-ai/api/openai-responses";
 import { getSupportedThinkingLevels, envApiKeyAuth } from "@earendil-works/pi-ai";
 
 test("catalogs keep chat selection separate from images and classifiers", async () => {
-  // Since 1.3.0 Codex serves a 500K window; the API-key providers keep 272K.
   for (const [provider, contextWindow] of [
     ["openai", 272_000],
-    ["azure", 272_000],
+    ["azure", 1_050_000],
     ["openai-codex", 500_000],
   ]) {
-    assert.equal(getModel(provider, "gpt-6.1-sol")?.contextWindow, contextWindow);
+    assert.equal(getModel(provider, "gpt-6.2-sol")?.contextWindow, contextWindow);
   }
-  assert.equal(getModel("azure", "gpt-6.1-sol")?.api, "azure-openai-responses");
+  assert.equal(getModel("azure", "gpt-6.2-sol")?.api, "azure-openai-responses");
   assert.equal(getModel("azure", "deepseek-v4-pro")?.api, "openai-completions");
-  assert.equal(getModel("azure-openai-responses", "gpt-6.1-sol"), undefined);
+  assert.equal(getModel("azure-openai-responses", "gpt-6.2-sol"), undefined);
   const sonnet = getModel("anthropic", "claude-sonnet-5-5");
   assert.equal(sonnet?.contextWindow, 1_000_000);
   assert.equal(sonnet?.reasoning, true);
@@ -218,7 +217,12 @@ test("runtime probe executes OpenAI OAuth and MCP lazy imports without user stor
   const piVersion = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).dependencies[
     "@earendil-works/pi-coding-agent"
   ];
-  assert.deepEqual(await probePiRuntimeModules(), { piVersion, openaiOAuthLoaded: true, mcpLoaded: true });
+  assert.deepEqual(await probePiRuntimeModules(), {
+    piVersion,
+    openaiOAuthLoaded: true,
+    mcpLoaded: true,
+    bundledSubagentsRoundTrip: undefined,
+  });
 });
 
 test("Haiku 5.5 supports max while OpenAI decision availability follows the credential type", async () => {

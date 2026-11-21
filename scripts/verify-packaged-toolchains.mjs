@@ -289,12 +289,12 @@ function verifyPiRuntimeAssets(resources, platform, arch) {
   validatePiRuntimeAssets({ graph, readPackage, exists });
   validatePiAuthoringAssets({ graph, readPackage, exists, platform, arch });
   const codingAgentRoot = resolvePackage("", "@earendil-works/pi-coding-agent", exists);
-  const grokRoot = resolvePackage(codingAgentRoot, "grok-mermaid", exists);
+  const mermaidRoot = resolvePackage(codingAgentRoot, "lovely-mermaid", exists);
   const typeboxRoot = resolvePackage("", "typebox", exists);
-  for (const entry of [`${grokRoot}/dist/index.js`, `${typeboxRoot}/build/index.mjs`]) {
+  for (const entry of [`${mermaidRoot}/dist/index.js`, `${typeboxRoot}/build/index.mjs`]) {
     if (!exists(entry)) throw new Error(`Packaged runtime asset is missing: ${entry}`);
   }
-  for (const packageRoot of new Set([...graph.keys(), grokRoot, typeboxRoot])) {
+  for (const packageRoot of new Set([...graph.keys(), mermaidRoot, typeboxRoot])) {
     assertLockedPackage(lockfile, packageRoot, readPackage(`${packageRoot}/package.json`));
   }
 }

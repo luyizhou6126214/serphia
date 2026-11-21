@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import type { AgentMessage } from "@/lib/types";
+import type { AgentMessage, SubagentActivityItem } from "@/lib/types";
 import type { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
 import { hasDisplayableProcessMessage } from "@/lib/chat-process";
 import type { WorkStepDisplay } from "@shared/work-step-display";
 import { groupsStepsForTurn, workStepDisplayPolicy } from "@shared/work-step-display";
 import { ProcessGroup } from "./chat/ProcessGroup";
+import { SubagentActivityPanel } from "./chat/SubagentActivityPanel";
 import {
   liveActivityDetail,
   messageActivity,
@@ -22,6 +23,7 @@ interface Props {
   userIdx: number;
   endIdx: number;
   entryId?: string;
+  subagents?: SubagentActivityItem[];
   expansionStore: ThinkingExpansionStore;
   workStepDisplay: WorkStepDisplay;
   renderMessage: (idx: number, options?: LiveProcessRenderOptions) => ReactNode;
@@ -37,6 +39,7 @@ export function LiveProcessRows({
   userIdx,
   endIdx,
   entryId,
+  subagents,
   expansionStore,
   workStepDisplay,
   renderMessage,
@@ -46,12 +49,24 @@ export function LiveProcessRows({
   for (let idx = userIdx + 1; idx < endIdx; idx += 1) processIndices.push(idx);
   const visibleIndices = processIndices.filter((idx) => hasDisplayableProcessMessage(messages[idx]));
   const grouped = groupsStepsForTurn(policy, false);
-  const renderRows = () => visibleIndices.map((idx) => renderMessage(idx, { attachRef: false, renderRole: "process" }));
+  const hasSubagents = !!subagents?.length;
+  const activeSubagent = subagents?.find(({ status }) => status === "running" || status === "queued");
+  const renderRows = () => (
+    <>
+      {hasSubagents && <SubagentActivityPanel subagents={subagents} />}
+      {visibleIndices.map((idx) => renderMessage(idx, { attachRef: false, renderRole: "process" }))}
+    </>
+  );
 
-  if (!grouped || visibleIndices.length === 0) return <>{renderRows()}</>;
+  if (!grouped || (!hasSubagents && visibleIndices.length === 0)) return renderRows();
 
   const lastVisible = visibleIndices.at(-1);
-  const activity: ProcessActivityKind = lastVisible === undefined ? "thinking" : messageActivity(messages[lastVisible]);
+  const activity: ProcessActivityKind =
+    activeSubagent || (hasSubagents && lastVisible === undefined)
+      ? "subagents"
+      : lastVisible === undefined
+        ? "thinking"
+        : messageActivity(messages[lastVisible]);
   return (
     <ProcessGroup
       stateKey={`process-group-live:${entryId ?? userIdx}`}
@@ -63,8 +78,13 @@ export function LiveProcessRows({
       running
       liveActivity={activity}
       livePreparing={false}
-      liveDetail={lastVisible === undefined ? "" : liveActivityDetail(messages[lastVisible])}
-      summary={summarizeActivity(visibleIndices.map((idx) => messages[idx]))}
+      liveDetail={
+        activeSubagent?.description ?? (lastVisible === undefined ? "" : liveActivityDetail(messages[lastVisible]))
+      }
+      summary={summarizeActivity(
+        visibleIndices.map((idx) => messages[idx]),
+        hasSubagents,
+      )}
     >
       {renderRows()}
     </ProcessGroup>

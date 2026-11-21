@@ -15,7 +15,7 @@
   align-items: center;
   gap: 8px;
   height: 32px;
-  padding: 0 8px;
+  padding-inline-start: 8px;
   border-bottom: 1px solid var(--border);
   background: var(--assistant-bg);
 }
@@ -98,6 +98,10 @@
   background: transparent;
   color: var(--text);
   font-size: 12px;
+}
+
+.trajectory-search input:focus-visible {
+  outline: none !important;
 }
 
 .trajectory-search input::placeholder {
@@ -816,7 +820,7 @@
 
 @media (max-width: 760px) {
   .trajectory-toolbar {
-    padding: 0 6px;
+    padding-inline-start: 6px;
   }
 
   .trajectory-search {

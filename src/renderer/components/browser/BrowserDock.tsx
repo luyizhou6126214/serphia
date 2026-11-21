@@ -327,6 +327,7 @@ export function BrowserDock({
       )}
 
       <div
+        className="rp-browser-chrome"
         style={{
           display: "flex",
           alignItems: "center",
@@ -373,22 +374,12 @@ export function BrowserDock({
           }}
         >
           <input
+            className="rp-browser-address"
+            data-insecure={activeTab?.url.startsWith("http:") || undefined}
             aria-label={t("browserAddress", "Browser address")}
             value={address}
             onChange={(event) => setAddress(event.target.value)}
             placeholder="https://example.com"
-            style={{
-              width: "100%",
-              height: 29,
-              boxSizing: "border-box",
-              padding: "0 9px",
-              border: `1px solid ${activeTab?.url.startsWith("http:") ? "#d9872f" : "var(--border)"}`,
-              borderRadius: 6,
-              background: "var(--bg)",
-              color: "var(--text)",
-              fontSize: 11,
-              outline: "none",
-            }}
           />
         </form>
         <button
@@ -500,6 +491,7 @@ export function BrowserDock({
 
       {activeTab && (
         <div
+          className="rp-browser-chrome rp-browser-chrome-footer"
           style={{
             minHeight: 22,
             display: "flex",

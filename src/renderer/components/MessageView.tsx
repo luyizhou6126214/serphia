@@ -17,6 +17,7 @@ import { useI18n } from "@/i18n";
 import { useTheme } from "@/hooks/useTheme";
 import { ThinkingExpansionStore } from "@/lib/thinking-expansion-store";
 import { workStepDisplayPolicy, type WorkStepDisplay } from "@shared/work-step-display";
+import { isSubagentNotice, readSubagentNotice } from "@/lib/subagent-steps";
 import type {
   AgentMessage,
   UserMessage,
@@ -31,6 +32,7 @@ import type {
 } from "@/lib/types";
 import { ReasoningRow } from "./chat/ReasoningRow";
 import { ToolCallRow, browserResultSummary, browserTabIdFromResult, isBrowserToolName } from "./chat/ToolCallRow";
+import { SubagentStatus, SubagentStep } from "./chat/SubagentStep";
 
 interface Props {
   message: AgentMessage;
@@ -119,7 +121,17 @@ export const MessageView = memo(function MessageView({
     return null;
   }
   if (message.role === "custom") {
-    if ((message as CustomMessage).customType === "compaction") {
+    if (isSubagentNotice(message)) {
+      return (
+        <SubagentNotice
+          message={message}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+          onLoadDeferredContent={onLoadDeferredContent}
+        />
+      );
+    }
+    if (message.customType === "compaction") {
       return (
         <>
           <CompactionMessageView message={message as CustomMessage} />
@@ -865,6 +877,44 @@ function CustomMessageView({
         {hasDetails && detailsExpanded && <pre className="dsh-custom-details">{detailsText}</pre>}
       </div>
     </div>
+  );
+}
+
+function SubagentNotice({
+  message,
+  cwd,
+  onOpenFile,
+  onLoadDeferredContent,
+}: {
+  message: CustomMessage;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
+  onLoadDeferredContent?: (entryId: string, blockIndex?: number) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const notice = readSubagentNotice(message);
+  const [open, setOpen] = useState(false);
+  return (
+    <SubagentStep state={notice.status}>
+      <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+        <summary className="dsh-subagent-heading">
+          <GitFork className="dsh-subagent-icon" size={15} aria-hidden="true" />
+          <span className="dsh-subagent-title" title={notice.description}>
+            {notice.description ?? t("subagentActivityTitle", "Subagents")}
+          </span>
+          {notice.status && <SubagentStatus status={notice.status} />}
+          <ChevronDown className="dsh-subagent-chevron" size={14} aria-hidden="true" />
+        </summary>
+        {open && (
+          <div className="dsh-subagent-detail">
+            <MarkdownBody variant="compact" cwd={cwd} onOpenFile={onOpenFile}>
+              {notice.body}
+            </MarkdownBody>
+            <DeferredContentActions content={message.content} onLoad={onLoadDeferredContent} />
+          </div>
+        )}
+      </details>
+    </SubagentStep>
   );
 }
 

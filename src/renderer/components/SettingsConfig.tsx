@@ -924,7 +924,7 @@ function GeneralSettings({
   const [managedProcessesError, setManagedProcessesError] = useState<"load" | "save" | null>(null);
   const [managedProcessCapability, setManagedProcessCapability] = useState<ManagedProcessCapability | null>(null);
   const [autoSessionTitle, setAutoSessionTitle] = useState(() => isAutoSessionTitleEnabled());
-  const [cacheWarmingMode, setCacheWarmingModeState] = useState<"off" | "streaming" | "idle">("streaming");
+  const [cacheWarmingMode, setCacheWarmingModeState] = useState<"off" | "streaming" | "idle">("idle");
   const [cacheWarmingLoading, setCacheWarmingLoading] = useState(true);
   const [cacheWarmingSaving, setCacheWarmingSaving] = useState(false);
   const [cacheWarmingError, setCacheWarmingError] = useState<"load" | "save" | "partial" | null>(null);

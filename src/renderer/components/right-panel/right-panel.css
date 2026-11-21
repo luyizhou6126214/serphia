@@ -1,6 +1,6 @@
 /*
  * The right panel's own chrome, following the DeepSeek Harness sidebar:
- * a 38px tab strip whose chips sit in the bottom 28px band, a guide page with
+ * a 38px tab strip with 28px chips, a guide page with
  * one centred column of entry capsules, and the two strip-end panel controls.
  * Tokens only, so both themes come from globals.css.
  */
@@ -11,15 +11,12 @@
   gap: 4px;
   align-items: center;
   height: 38px;
-  padding: 10px 6px 0 10px;
+  padding: 6px 6px 0 10px;
   box-sizing: border-box;
 }
 
 .rp-tabs {
-  display: flex;
   flex: 0 1 auto;
-  align-items: center;
-  gap: 2px;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -28,6 +25,35 @@
 
 .rp-tabs::-webkit-scrollbar {
   display: none;
+}
+
+.rp-tab-track {
+  --rp-tab-selected: var(--bg-selected);
+  --rp-tab-halo: color-mix(in srgb, var(--accent) 42%, transparent);
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  gap: 2px;
+  width: max-content;
+  padding-block: 2px;
+}
+
+.rp-tab-selection-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.rp-tab-selection {
+  position: absolute;
+  inset-block: 2px;
+  left: 0;
+  width: 100px;
+  background: var(--rp-tab-selected);
+  transform-origin: left center;
 }
 
 .rp-tab {
@@ -41,7 +67,7 @@
   height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: 10% / 35%;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
@@ -50,6 +76,7 @@
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
+  transition: color 140ms ease;
 }
 
 .rp-tab:hover {
@@ -58,10 +85,42 @@
 
 .rp-tab.is-active {
   color: var(--dsw-alias-label-primary);
-  background: var(--bg-hover);
+  background: var(--rp-tab-selected);
 }
 
-/* A pane's lone guide chip is a label, not a choice: no hover fill. */
+.rp-tab::before,
+.rp-tab-selection::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px var(--rp-tab-halo),
+    inset 0 0 8px var(--rp-tab-halo),
+    0 0 5px var(--rp-tab-halo);
+  content: "";
+  pointer-events: none;
+}
+
+.rp-tab::before {
+  opacity: 0;
+}
+
+.rp-tab-selection::before {
+  opacity: var(--rp-tab-selection-halo, 0);
+}
+
+.rp-tab-track:not([data-selection-moving]) .rp-tab.is-active:not(.is-quiet, :focus-visible)::before {
+  opacity: 0.42;
+}
+
+.rp-tab-track[data-selection-moving] .rp-tab-selection-layer {
+  visibility: visible;
+}
+
+.rp-tab-track[data-selection-moving] .rp-tab.is-active {
+  background: transparent;
+}
+
 .rp-tab.is-quiet,
 .rp-tab.is-quiet:hover {
   color: var(--dsw-alias-label-primary);
@@ -70,8 +129,25 @@
 }
 
 .rp-tab:focus-visible {
-  outline: 2px solid var(--dsw-focus-ring-color) !important;
-  outline-offset: -2px;
+  outline: 1px solid var(--dsw-focus-ring-color) !important;
+  outline-offset: -1px;
+}
+
+.rp-tab:focus-visible::before {
+  opacity: 0.7;
+  animation: rp-tab-focus-halo 360ms ease-out;
+}
+
+@keyframes rp-tab-focus-halo {
+  0% {
+    opacity: 0.25;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.7;
+  }
 }
 
 .rp-tab-glyph {
@@ -82,6 +158,7 @@
   width: 15px;
   height: 15px;
   color: var(--dsw-alias-label-tertiary);
+  transition: color 140ms ease;
 }
 
 .rp-tab.is-active .rp-tab-glyph,
@@ -98,9 +175,9 @@
   white-space: nowrap;
 }
 
-/* A closable chip keeps its title clear of the close control's 20px inset. */
-.rp-tab[data-closable] .rp-tab-title {
-  padding-right: 12px;
+/* Leave a slot for the close control after both the title and the badge. */
+.rp-tab[data-closable] {
+  padding-inline-end: 24px;
 }
 
 /* A count or attention marker after the title, inside the chip's own band. */
@@ -127,7 +204,7 @@
 .rp-tab-close {
   position: absolute;
   top: 4px;
-  right: 4px;
+  inset-inline-end: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,6 +218,9 @@
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    color 140ms ease;
 }
 
 .rp-tab:hover .rp-tab-close,
@@ -197,34 +277,14 @@
   cursor: default;
 }
 
-/* ── Guide page ─────────────────────────────────────────────────────────── */
-
-.rp-guide {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-height: 100%;
-  padding: 0 24px;
+.rp-new-tab-button[data-popup-open] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--bg-selected);
 }
 
-/* The lift: the centred column rises 10% of the pane, and a short pane gives
-   that space up before the capsules clip. */
-.rp-guide::after {
-  content: "";
-  flex: 0 1 10%;
-}
-
-.rp-guide-hero {
-  display: flex;
-  margin-bottom: 16px;
-  color: var(--dsw-alias-label-tertiary);
-}
+/* ── Workspace tools shared by the guide and the new-tab menu ──────────── */
 
 .rp-guide-notice {
-  max-width: 380px;
   padding: 10px 14px;
   border: 0.5px solid var(--dsw-alias-state-error-primary);
   border-radius: var(--dsw-radius-md);
@@ -233,32 +293,44 @@
   line-height: 1.5;
 }
 
-.rp-guide-entry {
-  display: flex;
-  align-items: stretch;
-  box-sizing: border-box;
-  width: 380px;
-  max-width: 100%;
-  min-height: 56px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-xl);
-  background: var(--bg-panel);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  overflow: hidden;
+.rp-guide-actions {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-panel) 64%, var(--bg));
 }
 
-.rp-guide-entry:hover {
+.rp-guide-entry {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-height: 64px;
+  min-width: 0;
+  border-radius: 11px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  transition: background-color 140ms ease-out;
+}
+
+.rp-guide-entry:is(:hover, :focus-within),
+.rp-guide-entry:has(> [data-highlighted]) {
   background: var(--bg-hover);
+}
+
+.rp-guide-entry:has(.rp-guide-entry-main:active) {
+  background: var(--bg-selected);
 }
 
 .rp-guide-entry-main {
   display: flex;
   flex: 1 1 auto;
-  gap: 14px;
+  gap: 12px;
   align-items: center;
   min-width: 0;
-  padding: 14px 20px;
+  padding: 6px 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -273,7 +345,7 @@
   outline-offset: -2px;
 }
 
-.rp-guide-entry-main:disabled {
+.rp-guide-entry-main:is(:disabled, [data-disabled]) {
   opacity: 0.55;
   cursor: default;
 }
@@ -284,17 +356,19 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 36px;
+  width: 32px;
+  margin-block: 8px;
   padding: 0;
   border: 0;
-  border-left: 0.5px solid var(--dsw-alias-border-l3);
+  border-inline-start: 1px solid var(--border);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
 
-.rp-guide-entry-menu:hover {
+.rp-guide-entry-menu:is(:hover, [aria-expanded="true"]) {
   color: var(--dsw-alias-label-primary);
+  background: var(--bg-selected);
 }
 
 .rp-guide-entry-icon {
@@ -302,44 +376,53 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  color: var(--dsw-alias-label-secondary);
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  transition: transform 140ms ease-out;
 }
 
 .rp-guide-entry-text {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
 }
 
 .rp-guide-entry-title {
   overflow: hidden;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .rp-guide-entry-description {
+  display: -webkit-box;
   overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   line-height: 1.4;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-/* Keycaps at the capsule's right edge, in the strip's tertiary ink. */
-.rp-keys {
-  display: inline-flex;
+.rp-guide-entry-arrow {
   flex: none;
-  gap: 3px;
-  align-items: center;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  transition: transform 140ms ease-out;
+}
+
+.rp-guide-entry-main:is(:hover, :focus-visible) .rp-guide-entry-arrow {
+  transform: translateX(2px);
+}
+
+.rp-guide-entry-main:active .rp-guide-entry-icon {
+  transform: scale(0.93);
 }
 
 /* Shell menu opened from a capsule's secondary control. */
@@ -389,7 +472,8 @@
 }
 
 .rp-guide-menu-item:hover,
-.rp-guide-menu-item:focus-visible {
+.rp-guide-menu-item:focus-visible,
+.rp-guide-menu-item[data-highlighted] {
   background: var(--rp-menu-hover);
 }
 
@@ -408,6 +492,74 @@
   white-space: nowrap;
 }
 
+.rp-new-tab-menu-positioner {
+  z-index: 1200;
+}
+
+.rp-new-tab-popup {
+  --rp-popup-offset-x: 0;
+  --rp-popup-offset-y: -4px;
+  --rp-popup-duration: 140ms;
+  --rp-menu-hover: var(--bg-hover);
+  --rp-menu-current: var(--bg-selected);
+
+  width: min(328px, var(--available-width));
+  max-height: var(--available-height);
+  overflow: auto;
+  color: var(--text);
+  box-shadow:
+    0 8px 28px rgb(0 0 0 / 17%),
+    0 2px 6px rgb(0 0 0 / 7%);
+  translate: 0 0;
+  transition:
+    opacity var(--rp-popup-duration) ease-out,
+    translate var(--rp-popup-duration) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rp-new-tab-popup[data-side="top"] {
+  --rp-popup-offset-y: 4px;
+}
+
+.rp-new-tab-popup[data-side="left"] {
+  --rp-popup-offset-x: 4px;
+  --rp-popup-offset-y: 0;
+}
+
+.rp-new-tab-popup[data-side="right"] {
+  --rp-popup-offset-x: -4px;
+  --rp-popup-offset-y: 0;
+}
+
+.rp-new-tab-popup:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+  translate: var(--rp-popup-offset-x) var(--rp-popup-offset-y);
+}
+
+.rp-new-tab-popup[data-ending-style] {
+  --rp-popup-duration: 100ms;
+
+  pointer-events: none;
+}
+
+.rp-new-tab-popup .rp-guide-entry {
+  min-height: 52px;
+}
+
+.rp-new-tab-item {
+  gap: 8px;
+  padding-inline: 8px;
+}
+
+.rp-new-tab-popup .rp-guide-entry-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.rp-new-tab-shell-popup {
+  width: min(200px, var(--available-width));
+}
+
 .dark .rp-guide-menu {
   border-color: #413d45;
   background: #2c292e;
@@ -419,19 +571,62 @@
   --rp-menu-current: #423c48;
 }
 
-.rp-keys kbd {
-  padding: 1px 5px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-xs);
-  background: var(--bg);
-  font: inherit;
-}
-
-.rp-keys-plus {
-  opacity: 0.6;
-}
-
 /* ── Bodies ─────────────────────────────────────────────────────────────── */
+
+.rp-panel-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rp-panel-notice {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.rp-panel-content .rp-browser-chrome {
+  --rp-chrome-entry-offset: -4px;
+  animation: rp-browser-chrome-enter 230ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rp-panel-content .rp-browser-chrome-footer {
+  --rp-chrome-entry-offset: 4px;
+}
+
+.rp-browser-address {
+  width: 100%;
+  height: 29px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.rp-browser-address:focus {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  outline: none !important;
+  box-shadow: none;
+}
+
+.rp-browser-address[data-insecure] {
+  border-color: #d9872f;
+}
+
+@keyframes rp-browser-chrome-enter {
+  from {
+    opacity: 0.82;
+    transform: translateY(var(--rp-chrome-entry-offset));
+  }
+}
 
 .rp-body {
   display: flex;
@@ -498,10 +693,50 @@
   background: var(--bg);
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .rp-panel-content .rp-browser-chrome,
+  .rp-tab:focus-visible::before {
+    animation: none;
+  }
+
   .rp-tab,
+  .rp-tab-glyph,
+  .rp-tab-close,
+  .rp-new-tab-popup,
   .rp-guide-entry,
+  .rp-guide-entry-icon,
+  .rp-guide-entry-arrow,
   .rp-icon-button {
     transition: none;
+  }
+
+  .rp-tab-track[data-selection-moving] .rp-tab-selection-layer {
+    visibility: hidden;
+  }
+
+  .rp-tab-track[data-selection-moving] .rp-tab.is-active:not(.is-quiet) {
+    background: var(--rp-tab-selected);
+  }
+
+  .rp-guide-entry-main:is(:hover, :focus-visible) .rp-guide-entry-arrow,
+  .rp-guide-entry-main:active .rp-guide-entry-icon {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .rp-tab::before,
+  .rp-tab-selection::before {
+    display: none;
+  }
+
+  .rp-tab.is-active:not(.is-quiet) {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  .rp-browser-address:focus {
+    outline: 1px solid Highlight !important;
+    outline-offset: -1px;
   }
 }

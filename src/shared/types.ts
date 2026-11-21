@@ -165,7 +165,8 @@ export type ExtensionUiConfirmLocalization =
   | { id: "herdr.closeAgentPane"; paneId: string; agentKind: string }
   | { id: "mcp.authorize"; servers: string; tools: string; toolCount: number };
 
-export type SubagentActivityStatus = "queued" | "running" | "completed" | "aborted" | "stopped" | "error";
+export type SubagentActivityStatus =
+  "queued" | "running" | "completed" | "aborted" | "stopped" | "paused" | "partial" | "error";
 
 export interface SubagentActivityItem {
   id: string;

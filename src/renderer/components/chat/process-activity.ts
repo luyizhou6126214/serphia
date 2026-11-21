@@ -4,6 +4,7 @@
  * top three activity kinds, and a live group names the activity in flight.
  */
 import type { AgentMessage, AssistantContentBlock, ToolCallContent } from "@/lib/types";
+import { isSubagentNotice, isSubagentTool } from "@/lib/subagent-steps";
 
 export type ProcessActivityKind =
   | "thinking"
@@ -48,8 +49,6 @@ const TOOL_ACTIVITY: Record<string, ProcessActivityKind> = {
   web_fetch: "webFetch",
   codemode: "code",
   run_code: "code",
-  bg_wait: "subagents",
-  contact_supervisor: "subagents",
   ask_user_question: "questions",
   todo: "plan",
   todowrite: "plan",
@@ -58,7 +57,7 @@ const TOOL_ACTIVITY: Record<string, ProcessActivityKind> = {
 
 /** Classify one tool name into the activity vocabulary group titles use. */
 export function toolActivity(toolName: string): ProcessActivityKind {
-  if (toolName.startsWith("subagent") || toolName === "list_agents" || toolName === "send_message") {
+  if (isSubagentTool(toolName) || toolName === "list_agents" || toolName === "send_message") {
     return "subagents";
   }
   return TOOL_ACTIVITY[toolName] ?? "tools";
@@ -73,6 +72,7 @@ export function blockActivity(block: AssistantContentBlock): ProcessActivityKind
 
 /** The first activity a message reports, used for the live group title. */
 export function messageActivity(message: AgentMessage): ProcessActivityKind {
+  if (isSubagentNotice(message)) return "subagents";
   if (message.role !== "assistant") return "thinking";
   const content = (message as { content?: readonly AssistantContentBlock[] }).content;
   if (!Array.isArray(content)) return "thinking";
@@ -84,9 +84,10 @@ export function messageActivity(message: AgentMessage): ProcessActivityKind {
 }
 
 /** Rank the activities of a set of process messages without counts in the title. */
-export function summarizeActivity(messages: readonly AgentMessage[]): ProcessActivitySummary {
+export function summarizeActivity(messages: readonly AgentMessage[], hasSubagents = false): ProcessActivitySummary {
   const counts = new Map<ProcessActivityKind, number>();
   for (const message of messages) {
+    if (isSubagentNotice(message)) counts.set("subagents", (counts.get("subagents") ?? 0) + 1);
     if (message.role !== "assistant") continue;
     const content = (message as { content?: readonly AssistantContentBlock[] }).content;
     if (!Array.isArray(content)) continue;
@@ -95,6 +96,7 @@ export function summarizeActivity(messages: readonly AgentMessage[]): ProcessAct
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
   }
+  if (hasSubagents && !counts.has("subagents")) counts.set("subagents", 1);
   const ranked = [...counts.entries()]
     .map(([kind, count]) => ({ kind, count }))
     .sort((left, right) => right.count - left.count);

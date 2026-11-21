@@ -214,9 +214,24 @@ test("session watcher refreshes exact session files and rejects traversal", () =
   });
   assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, "../outside.jsonl"), { kind: "ignore" });
   assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, "other/id.jsonl"), { kind: "ignore" });
-  const tasks = "sessions/project/2026-08-06T00-00-00-000Z_01a10000-0123-7abc-8000-0123456789ab/tasks";
-  assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, tasks), { kind: "ignore" });
-  assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, `${tasks}/child.jsonl`), { kind: "ignore" });
+  const parent = "sessions/project/2026-08-06T00-00-00-000Z_01a10000-0123-7abc-8000-0123456789ab";
+  const run = "93d7c4a9-913b-4c4b-b363-45537ce84012";
+  for (const internal of [
+    `${parent}/tasks`,
+    `${parent}/tasks/child.jsonl`,
+    `${parent}/${run}/run-0/session.jsonl`,
+    `${parent}/async-${run}/run-1`,
+    `${parent}/forks/${run}/child.jsonl`,
+    `sessions/project/subagent-artifacts/${run}_delegate_transcript.jsonl`,
+    `sessions/project/subagent-artifacts/${run}_delegate_meta.json`,
+    `sessions/project/custom/${run}/run-0/session.jsonl`,
+  ]) {
+    assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, internal), { kind: "ignore" }, internal);
+  }
+  assert.deepEqual(classifySessionWatchChange(agentDir, sessionsRoot, `${parent}.jsonl`), {
+    kind: "refresh-path",
+    path: path.resolve(agentDir, `${parent}.jsonl`),
+  });
 });
 
 test("ambiguous session metadata requests a full refresh while unrelated files are ignored", () => {

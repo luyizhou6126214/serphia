@@ -3,11 +3,7 @@ import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
 import { Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
 import { ArrowLeftOutlined, ArrowRightOutlined } from "@ant-design/icons/es";
-import {
-  initialRightPanelPreferredWidth,
-  persistRightPanelPreferredWidth,
-  loadBrowserPanelPreferredWidth,
-} from "@/lib/panel-preferences";
+import { initialRightPanelPreferredWidth, persistRightPanelPreferredWidth } from "@/lib/panel-preferences";
 import { useSessionList } from "@/hooks/useSessionList";
 import { recordNavigation } from "@/lib/navigation-history";
 import { call, subscribe } from "@/lib/api-client";
@@ -36,13 +32,14 @@ import { BrowserAuthorizationDialog } from "./browser/BrowserAuthorizationDialog
 import { ProcessPanel } from "./ProcessPanel";
 import { SessionBackgroundTasks } from "./SessionBackgroundTasks";
 import { RightPanelStrip } from "./right-panel/RightPanelStrip";
+import { RightPanelNewTabMenu } from "./right-panel/RightPanelNewTabMenu";
 import { RightPanelGuide, type RightPanelGuideEntry } from "./right-panel/RightPanelGuide";
 import { FilesPanelBody } from "./right-panel/FilesPanelBody";
 import {
   GuideArtworkBrowser,
   GuideArtworkFiles,
   GuideArtworkTerminal,
-  GuideArtworkTools,
+  GuideArtworkProcesses,
 } from "./right-panel/PanelArtwork";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -59,7 +56,6 @@ import {
   createRightPanelState,
   fileTabId,
   reduceRightPanelState,
-  rightPanelWidthKind,
   terminalTabId,
   type RightPanelTab,
 } from "@/lib/right-panel-tabs";
@@ -98,7 +94,7 @@ import type { TerminalShellInfo } from "@contract/terminal";
 const SIDEBAR_DEFAULT_WIDTH = SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH;
 const SIDEBAR_MIN_WIDTH = 208;
 const SIDEBAR_MAX_WIDTH = 420;
-const TERMINAL_PANEL_RATIO = 0.55;
+const RIGHT_PANEL_MAX_RATIO = 0.55;
 gsap.registerPlugin(useGSAP);
 
 type PrimaryView = "sessions" | "schedule" | "herdr";
@@ -230,25 +226,27 @@ export function AppShell({
   // Right panel — one strip over every panel kind, with the guide as its home tab.
   const [rightPanel, dispatchRightPanel] = useReducer(reduceRightPanelState, undefined, createRightPanelState);
   const activePanelTab = activeRightPanelTab(rightPanel);
-  const panelWidthKind = rightPanelWidthKind(activePanelTab);
+  const rightPanelContentRef = useRef<HTMLDivElement>(null);
+  const previousPanelTabId = useRef(activePanelTab.id);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
+  const [newTabMenuOpen, setNewTabMenuOpen] = useState(false);
+  // The native browser surface stays hidden while the popup fades out.
+  const [newTabMenuPresent, setNewTabMenuPresent] = useState(false);
   const rightPanelVisible = rightPanelOpen && sessionsOpen;
   const showRightPanelContent = rightPanelOpen && !settingsOpen && !browserAuthorization && sessionsOpen;
   const canResizeRightPanel = showRightPanelContent && rightPanelExpanded && !isMobile && !rightPanelFullscreen;
   const [guideNotice, setGuideNotice] = useState<string | null>(null);
   const rightPanelPreferredWidthRef = useRef(RIGHT_PANEL_DEFAULT_WIDTH);
-  const rightPanelKindRef = useRef<"files" | "browser" | "processes" | "terminal">("files");
   const [managedProcessCount, setManagedProcessCount] = useState(0);
   const [managedProcessAttention, setManagedProcessAttention] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(() => {
     const preferredWidth = initialRightPanelPreferredWidth();
     rightPanelPreferredWidthRef.current = preferredWidth;
-    return clampRightPanelWidth(preferredWidth, window.innerWidth, sidebarOpen, undefined, sidebarWidth);
+    return clampRightPanelWidth(preferredWidth, window.innerWidth, sidebarOpen, RIGHT_PANEL_MAX_RATIO, sidebarWidth);
   });
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
-  const rightPanelMaxRatio = panelWidthKind === "terminal" ? TERMINAL_PANEL_RATIO : undefined;
   const browserPanelTabs = useBrowserPanelTabs(selectedSession?.id ?? null);
   // Shells the Host discovered, plus the remembered choice a new terminal uses.
   const [terminalShells, setTerminalShells] = useState<readonly TerminalShellInfo[]>([]);
@@ -305,21 +303,30 @@ export function AppShell({
   }, [isMobile]);
 
   useEffect(() => {
-    if (isMobile) return;
-    const nextKind = panelWidthKind;
-    if (rightPanelKindRef.current === nextKind) return;
-    persistRightPanelPreferredWidth(rightPanelPreferredWidthRef.current, rightPanelKindRef.current === "browser");
-    rightPanelKindRef.current = nextKind;
-    const preferred =
-      nextKind === "browser"
-        ? loadBrowserPanelPreferredWidth()
-        : nextKind === "terminal"
-          ? Math.max(520, initialRightPanelPreferredWidth())
-          : initialRightPanelPreferredWidth();
-    rightPanelPreferredWidthRef.current = preferred;
-    const maxRatio = nextKind === "terminal" ? TERMINAL_PANEL_RATIO : undefined;
-    setRightPanelWidth(clampRightPanelWidth(preferred, window.innerWidth, sidebarOpen, maxRatio, sidebarWidth));
-  }, [isMobile, panelWidthKind, sidebarOpen, sidebarWidth]);
+    setNewTabMenuOpen(false);
+  }, [activePanelTab.id, showRightPanelContent]);
+
+  useGSAP(
+    () => {
+      const content = rightPanelContentRef.current;
+      const switched = previousPanelTabId.current !== activePanelTab.id;
+      previousPanelTabId.current = activePanelTab.id;
+      // BrowserDock moves its HTML chrome independently of the native WebContentsView.
+      if (!content || !switched || !showRightPanelContent || activePanelTab.kind === "browser") return;
+      if (window.matchMedia("(prefers-reduced-motion: reduce), (forced-colors: active)").matches) return;
+
+      gsap.fromTo(
+        content,
+        { y: 5, opacity: 0.82 },
+        { y: 0, opacity: 1, duration: 0.23, ease: "power2.out", clearProps: "transform,opacity" },
+      );
+    },
+    {
+      scope: rightPanelContentRef,
+      dependencies: [activePanelTab.id, activePanelTab.kind, showRightPanelContent],
+      revertOnUpdate: true,
+    },
+  );
 
   useEffect(() => {
     if (isMobile) return;
@@ -329,7 +336,7 @@ export function AppShell({
           rightPanelPreferredWidthRef.current,
           window.innerWidth,
           sidebarOpen,
-          rightPanelMaxRatio,
+          RIGHT_PANEL_MAX_RATIO,
           sidebarWidth,
         ),
       );
@@ -337,7 +344,7 @@ export function AppShell({
     fitToWindow();
     window.addEventListener("resize", fitToWindow);
     return () => window.removeEventListener("resize", fitToWindow);
-  }, [isMobile, rightPanelMaxRatio, sidebarOpen, sidebarWidth]);
+  }, [isMobile, sidebarOpen, sidebarWidth]);
 
   const openRightPanel = useCallback(() => {
     const closeSidebar = isMobile || shouldCollapseSidebarForRightPanel(window.innerWidth, sidebarWidth);
@@ -349,13 +356,13 @@ export function AppShell({
           rightPanelPreferredWidthRef.current,
           window.innerWidth,
           nextSidebarOpen,
-          rightPanelMaxRatio,
+          RIGHT_PANEL_MAX_RATIO,
           sidebarWidth,
         ),
       );
     }
     setRightPanelOpen(true);
-  }, [isMobile, rightPanelMaxRatio, sidebarOpen, sidebarWidth]);
+  }, [isMobile, sidebarOpen, sidebarWidth]);
 
   const handleRightPanelToggle = useCallback(() => {
     if (rightPanelOpen) setRightPanelOpen(false);
@@ -852,7 +859,7 @@ export function AppShell({
         showRightPanelTab({
           id: terminalTabId(terminal.id),
           kind: "terminal",
-          title: terminal.title || t("rightPanelNewTerminal", "New terminal"),
+          title: "",
           terminalId: terminal.id,
         });
       } catch (error) {
@@ -906,15 +913,12 @@ export function AppShell({
     chatInputRef.current?.insertText(formatBrowserElementReference(element));
   };
 
-  // The guide's keycaps and the panel's global bindings share one modifier label.
-  const modifierKey = window.piBridge?.platform === "darwin" ? "⌘" : "Ctrl";
   const guideEntries: RightPanelGuideEntry[] = [
     {
       id: "workspace-files",
       title: t("rightPanelWorkspaceFiles", "Workspace files"),
       description: t("rightPanelWorkspaceFilesHint", "Browse the Session workspace files"),
       artwork: <GuideArtworkFiles size={26} />,
-      shortcut: [modifierKey, "P"],
       onPick: openFilesTab,
     },
     {
@@ -922,7 +926,6 @@ export function AppShell({
       title: t("rightPanelNewTerminal", "New terminal"),
       description: t("rightPanelNewTerminalHint", "Run commands in the Session workspace"),
       artwork: <GuideArtworkTerminal size={26} />,
-      shortcut: [modifierKey, "Shift", "T"],
       ...(terminalShells.length > 1
         ? {
             menu: {
@@ -944,39 +947,18 @@ export function AppShell({
       title: t("browser", "Browser"),
       description: t("rightPanelBrowserHint", "Browse the web"),
       artwork: <GuideArtworkBrowser size={26} />,
-      shortcut: [modifierKey, "T"],
       onPick: () => {
         void startBrowserTab();
       },
     },
     {
-      id: "more-tools",
-      title: t("rightPanelMoreTools", "More tools"),
-      description: t("rightPanelMoreToolsHint", "Managed processes and background tasks"),
-      artwork: <GuideArtworkTools size={26} />,
+      id: "managed-processes",
+      title: t("rightPanelProcesses", "Managed processes"),
+      description: t("rightPanelProcessesHint", "View process status and logs"),
+      artwork: <GuideArtworkProcesses size={26} />,
       onPick: openProcessesTab,
     },
   ];
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-      if (settingsOpen || !sessionsOpen || browserAuthorization !== null) return;
-      const key = event.key.toLowerCase();
-      if (key === "p" && !event.shiftKey) {
-        event.preventDefault();
-        openFilesTab();
-      } else if (key === "t" && event.shiftKey) {
-        event.preventDefault();
-        void startTerminalTab();
-      } else if (key === "t") {
-        event.preventDefault();
-        void startBrowserTab();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [browserAuthorization, openFilesTab, sessionsOpen, settingsOpen, startBrowserTab, startTerminalTab]);
 
   const openSidebarSettings = (tab: SettingsTab) => {
     setSettingsInitialTab(tab);
@@ -1069,24 +1051,21 @@ export function AppShell({
   );
   const rightBounds = useCallback(
     (workspaceWidth: number) =>
-      getRightPanelWidthBounds(workspaceWidth, sidebarVisible, rightPanelMaxRatio, sidebarWidth),
-    [sidebarVisible, rightPanelMaxRatio, sidebarWidth],
+      getRightPanelWidthBounds(workspaceWidth, sidebarVisible, RIGHT_PANEL_MAX_RATIO, sidebarWidth),
+    [sidebarVisible, sidebarWidth],
   );
   const formatPanelWidth = useCallback(
     (width: number) =>
       t("rightPanelWidthPixels", "{width} pixels").replace("{width}", formatNumber(Math.round(width), language)),
     [language, t],
   );
-  const commitRightPanelWidth = useCallback(
-    (width: number) => {
-      setRightPanelWidth(width);
-      if (width >= RIGHT_PANEL_MIN_WIDTH) {
-        rightPanelPreferredWidthRef.current = width;
-        persistRightPanelPreferredWidth(width, panelWidthKind === "browser");
-      }
-    },
-    [panelWidthKind],
-  );
+  const commitRightPanelWidth = useCallback((width: number) => {
+    setRightPanelWidth(width);
+    if (width >= RIGHT_PANEL_MIN_WIDTH) {
+      rightPanelPreferredWidthRef.current = width;
+      persistRightPanelPreferredWidth(width);
+    }
+  }, []);
   const sessionHeader = (
     <>
       <div
@@ -1363,13 +1342,10 @@ export function AppShell({
 
           {canResizeRightPanel && (
             <SessionPanelResize
-              key={panelWidthKind}
               side="right"
               panelRef={rightPanelRef}
               width={rightPanelWidth}
-              defaultWidth={
-                panelWidthKind === "browser" || panelWidthKind === "terminal" ? 520 : RIGHT_PANEL_DEFAULT_WIDTH
-              }
+              defaultWidth={RIGHT_PANEL_DEFAULT_WIDTH}
               bounds={rightBounds}
               label={t("resizeRightPanel", "Resize right panel")}
               formatWidth={formatPanelWidth}
@@ -1398,6 +1374,14 @@ export function AppShell({
               tabs={rightPanel.tabs}
               activeTabId={rightPanel.activeTabId}
               fullscreen={rightPanelFullscreen}
+              newTabAction={
+                <RightPanelNewTabMenu
+                  entries={guideEntries}
+                  open={newTabMenuOpen && showRightPanelContent}
+                  onOpenChange={setNewTabMenuOpen}
+                  onPresenceChange={setNewTabMenuPresent}
+                />
+              }
               onSelect={(tabId) => {
                 dispatchRightPanel({ type: "select", tabId });
                 setGuideNotice(null);
@@ -1417,9 +1401,14 @@ export function AppShell({
                   : null
               }
             />
-            <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+            <div ref={rightPanelContentRef} className="rp-panel-content">
+              {activePanelTab.kind !== "guide" && guideNotice && (
+                <div className="rp-panel-notice" role="status">
+                  {guideNotice}
+                </div>
+              )}
               {activePanelTab.kind === "guide" ? (
-                <RightPanelGuide entries={guideEntries} notice={guideNotice} />
+                <RightPanelGuide entries={guideEntries} notice={guideNotice} visible={showRightPanelContent} />
               ) : activePanelTab.kind === "files" ? (
                 <FilesPanelBody
                   cwd={explorerCwd ?? null}
@@ -1433,9 +1422,6 @@ export function AppShell({
                   key={activePanelTab.terminalId}
                   terminalId={activePanelTab.terminalId}
                   visible={showRightPanelContent}
-                  onTitleChange={(title) => {
-                    dispatchRightPanel({ type: "title", tabId: activePanelTab.id, title });
-                  }}
                   onNewTerminal={() => {
                     closeRightPanelTab(activePanelTab.id);
                     void startTerminalTab();
@@ -1448,7 +1434,7 @@ export function AppShell({
                 <BrowserDock
                   key={activePanelTab.browserTabId}
                   visible={showRightPanelContent}
-                  suspendSurface={rightPanelResizing || !rightPanelExpanded}
+                  suspendSurface={rightPanelResizing || !rightPanelExpanded || newTabMenuOpen || newTabMenuPresent}
                   ownerSessionId={selectedSession?.id ?? null}
                   tabId={activePanelTab.browserTabId ?? null}
                   onReference={showChat && sessionsOpen ? handleBrowserElement : undefined}

@@ -12,7 +12,6 @@ import {
   isClosableRightPanelTab,
   reduceRightPanelState,
   rightPanelTabTitle,
-  rightPanelWidthKind,
   terminalTabId,
 } from "./right-panel-tabs.ts";
 
@@ -81,13 +80,14 @@ test("closing a tab activates its neighbour, and closing the last one returns to
 });
 
 test("titles update in place and a resource id never duplicates", () => {
+  const browser = { id: browserTabId("b1"), kind: "browser", title: "New tab", browserTabId: "b1" };
   let state = createRightPanelState();
-  state = reduceRightPanelState(state, { type: "open", tab: { ...TERMINAL_TAB, title: "bash" } });
-  state = reduceRightPanelState(state, { type: "title", tabId: TERMINAL_TAB.id, title: "npm run dev" });
-  assert.equal(activeRightPanelTab(state).title, "npm run dev");
+  state = reduceRightPanelState(state, { type: "open", tab: browser });
+  state = reduceRightPanelState(state, { type: "title", tabId: browser.id, title: "Docs" });
+  assert.equal(activeRightPanelTab(state).title, "Docs");
   assert.equal(state.tabs.length, 2);
 
-  const same = reduceRightPanelState(state, { type: "title", tabId: TERMINAL_TAB.id, title: "npm run dev" });
+  const same = reduceRightPanelState(state, { type: "title", tabId: browser.id, title: "Docs" });
   assert.equal(same, state, "an unchanged title leaves the state identical");
   const missing = reduceRightPanelState(state, { type: "title", tabId: "nope", title: "x" });
   assert.equal(missing, state);
@@ -103,20 +103,13 @@ test("resetting returns the panel to the guide alone", () => {
   assert.equal(state.activeTabId, GUIDE_TAB_ID);
 });
 
-test("page labels come from copy while resource tabs keep their captured title", () => {
-  const t = (key, fallback) => (key === "rightPanelStart" ? "开始" : key === "rightPanelFiles" ? "文件" : fallback);
+test("fixed labels use translations and only browser and file labels use captured titles", () => {
+  const labels = { rightPanelStart: "开始", rightPanelFiles: "文件", rightPanelTerminal: "终端" };
+  const t = (key, fallback) => labels[key] ?? fallback;
   assert.equal(rightPanelTabTitle({ id: GUIDE_TAB_ID, kind: "guide", title: "" }, t), "开始");
   assert.equal(rightPanelTabTitle({ id: FILES_TAB_ID, kind: "files", title: "" }, t), "文件");
   assert.equal(rightPanelTabTitle({ id: PROCESSES_TAB_ID, kind: "processes", title: "" }, t), "Managed processes");
+  assert.equal(rightPanelTabTitle({ ...TERMINAL_TAB, title: "C:/Program Files/PowerShell/7/pwsh.exe" }, t), "终端");
   assert.equal(rightPanelTabTitle(FILE_TAB, t), "a.ts");
   assert.equal(rightPanelTabTitle({ id: browserTabId("b1"), kind: "browser", title: "Docs" }, t), "Docs");
-});
-
-test("panel width preferences follow the active kind", () => {
-  assert.equal(rightPanelWidthKind({ id: GUIDE_TAB_ID, kind: "guide", title: "" }), "files");
-  assert.equal(rightPanelWidthKind(FILE_TAB), "files");
-  assert.equal(rightPanelWidthKind({ id: FILES_TAB_ID, kind: "files", title: "" }), "files");
-  assert.equal(rightPanelWidthKind(TERMINAL_TAB), "terminal");
-  assert.equal(rightPanelWidthKind({ id: browserTabId("b1"), kind: "browser", title: "" }), "browser");
-  assert.equal(rightPanelWidthKind({ id: PROCESSES_TAB_ID, kind: "processes", title: "" }), "processes");
 });

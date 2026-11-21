@@ -20,8 +20,8 @@ import { sessionIndex } from "./session-index";
 import { readSessionSnapshot } from "./session-readonly.ts";
 import { abortedAssistantEntryIds } from "./agent-settlement";
 import { isDefaultSessionDirectory } from "../shared/session-workspace";
-import { dirname } from "node:path";
-import { isSubagentSessionDirectory } from "./subagent-session-path";
+import { resolve } from "node:path";
+import { isSubagentSessionPath } from "./subagent-session-path";
 
 export { getAgentDir };
 
@@ -36,8 +36,9 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 }
 
 async function listAllSessionsFallback(): Promise<SessionInfo[]> {
+  const sessionsRoot = resolve(process.env.PI_CODING_AGENT_SESSION_DIR || resolve(getAgentDir(), "sessions"));
   const piSessions: PiSessionInfo[] = (await SessionManager.listAll()).filter(
-    (session) => !isSubagentSessionDirectory(dirname(session.path)),
+    (session) => !isSubagentSessionPath(session.path, sessionsRoot),
   );
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(s.path, s.id);

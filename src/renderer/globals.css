@@ -3324,7 +3324,8 @@ html.dark .open-in-app-chevron:focus-visible {
   border-radius: 12px 0 0 12px;
 }
 .app-chat,
-.right-panel-container {
+.right-panel-container,
+.rp-new-tab-popup {
   --bg: #ffffff;
   --bg-panel: #f8f7f9;
   --bg-hover: #efedf0;
@@ -3336,7 +3337,8 @@ html.dark .open-in-app-chevron:focus-visible {
   --assistant-bg: #ffffff;
 }
 html.dark .app-chat,
-html.dark .right-panel-container {
+html.dark .right-panel-container,
+html.dark .rp-new-tab-popup {
   --bg: #1c1b1e;
   --bg-panel: #28262a;
   --bg-hover: #38363b;
@@ -4476,6 +4478,184 @@ html.dark .composer-menu {
   min-width: 0;
 }
 
+.dsh-subagent-step {
+  --subagent-accent: var(--accent);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid color-mix(in oklab, var(--subagent-accent) 19%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--subagent-accent) 4%, var(--bg-panel));
+}
+
+.dsh-subagent-step[data-state="error"] {
+  --subagent-accent: var(--danger);
+}
+
+.dsh-subagent-step[data-state="running"] {
+  border-color: color-mix(in oklab, var(--subagent-accent) 39%, var(--border));
+}
+
+.dsh-subagent-glow {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  inset: -30px auto auto -18px;
+  width: min(65%, 320px);
+  height: 105px;
+  opacity: 0.45;
+  transform-origin: left top;
+  background: radial-gradient(
+    ellipse at top left,
+    color-mix(in oklab, var(--subagent-accent) 35%, transparent),
+    transparent 72%
+  );
+}
+
+.dsh-subagent-heading,
+.dsh-subagent-step .dsh-tool-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  min-height: 34px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+summary.dsh-subagent-heading {
+  cursor: pointer;
+  list-style: none;
+}
+
+summary.dsh-subagent-heading::-webkit-details-marker {
+  display: none;
+}
+
+.dsh-subagent-heading:focus-visible,
+.dsh-subagent-step .dsh-tool-disclosure:focus-visible {
+  outline-offset: -2px;
+}
+
+.dsh-subagent-icon {
+  flex: none;
+  color: var(--subagent-accent);
+}
+
+.dsh-subagent-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-subagent-step .dsh-tool-title {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.dsh-subagent-step .dsh-tool-disclosure > .dsh-shimmer {
+  flex: 1;
+}
+
+.dsh-subagent-chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.dsh-subagent-step details[open] > summary .dsh-subagent-chevron {
+  transform: rotate(180deg);
+}
+
+.dsh-subagent-meta,
+.dsh-subagent-update,
+.dsh-subagent-status {
+  color: var(--text-muted);
+  font-size: var(--dsh-content-font-size-tertiary, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.dsh-subagent-status {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--subagent-status-tone, var(--text-muted));
+  background: color-mix(in oklab, var(--subagent-status-tone, var(--text-muted)) 10%, transparent);
+  white-space: nowrap;
+}
+
+:is(.dsh-subagent-status, .dsh-subagent-worker)[data-state="running"] {
+  --subagent-status-tone: var(--accent);
+}
+
+:is(.dsh-subagent-status, .dsh-subagent-worker)[data-state="completed"] {
+  --subagent-status-tone: var(--success);
+}
+
+:is(.dsh-subagent-status, .dsh-subagent-worker)[data-state="error"] {
+  --subagent-status-tone: var(--danger);
+}
+
+.dsh-subagent-roster {
+  display: grid;
+  margin: 0;
+  padding: 2px 10px 5px;
+  list-style: none;
+}
+
+.dsh-subagent-worker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+.dsh-subagent-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-inline: 4px;
+  border-radius: 50%;
+  background: var(--subagent-status-tone, var(--text-muted));
+}
+
+.dsh-subagent-worker-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.dsh-subagent-worker .dsh-subagent-title {
+  font-weight: 400;
+}
+
+.dsh-subagent-update {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-subagent-detail {
+  padding: 7px 12px 10px;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.dsh-subagent-step .dsh-tool-body-wrap {
+  padding: 0 10px 6px;
+}
+
+@media (max-width: 480px) {
+  .dsh-subagent-duration {
+    display: none;
+  }
+}
+
 .dsh-tool-leading {
   flex-shrink: 0;
 }
@@ -4856,6 +5036,18 @@ html.dark .composer-menu {
   overflow-y: auto;
   overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
+}
+
+.dsh-process-group-body::-webkit-scrollbar {
+  width: var(--dsh-scrollbar-width);
+}
+
+:root .dsh-process-group-body::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--text-dim) 22%, transparent);
+}
+
+:root .dsh-process-group-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--text-dim) 36%, transparent);
 }
 
 .dsh-process-group-body.is-faded-top {

@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  Bot,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { CharacterMark } from "@aora-bot/react";
+import "@aora-bot/react/styles.css";
+import {
   Columns2,
   Keyboard,
   Maximize2,
@@ -13,7 +23,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  HERDR_STARTABLE_AGENT_KINDS,
   type HerdrConversation,
   type HerdrPane,
   type HerdrRuntimeSnapshot,
@@ -23,8 +32,11 @@ import { call } from "@/lib/api-client";
 import { useI18n } from "@/i18n";
 import { HerdrChatInput } from "./conversation/HerdrChatInput";
 import { HerdrConversationView } from "./conversation/HerdrConversationView";
+import { HerdrConversationWelcome } from "./conversation/HerdrConversationWelcome";
 import type { WorkStepDisplay } from "@shared/work-step-display";
 import { HerdrTerminal } from "./HerdrTerminal";
+import { HerdrAgentSelect } from "./HerdrAgentSelect";
+import { HerdrAgentIcon } from "./HerdrAgentIcon";
 import { herdrErrorLabel } from "./herdr-ui-copy";
 
 interface Props {
@@ -42,6 +54,7 @@ interface Props {
   onZoom: () => void;
   onSplit: (direction: "horizontal" | "vertical") => void;
   style?: CSSProperties;
+  selectPortal: RefObject<HTMLDivElement | null>;
   mode: "chat" | "terminal";
   setMode: (mode: "chat" | "terminal") => void;
   draft: string;
@@ -63,6 +76,7 @@ export function HerdrPaneView({
   onZoom,
   onSplit,
   style,
+  selectPortal,
   mode,
   setMode,
   draft,
@@ -169,9 +183,8 @@ export function HerdrPaneView({
         onFocusCapture={onFocus}
         aria-label={name}
       >
-        <div className="hd-focus-light" aria-hidden="true" />
         <header className="hd-pane-head">
-          {pane.agent ? <Bot size={15} /> : <TerminalSquare size={15} />}
+          {pane.agent ? <HerdrAgentIcon kind={pane.agent.kind} size={15} /> : <TerminalSquare size={15} />}
           <strong title={pane.foregroundCwd || pane.cwd}>{name}</strong>
           {pane.agent && (
             <span className="hd-state" title={displayedState}>
@@ -277,23 +290,18 @@ export function HerdrPaneView({
           </>
         ) : !pane.agent ? (
           <div className="hd-launch">
-            <div className="hd-agent-mark">
-              <Bot size={23} strokeWidth={1.45} />
+            <div className="hd-agent-mark" aria-hidden="true">
+              <CharacterMark shape="circle" color="violet" state="happy" face="capsule" sizePx={96} autoPause />
             </div>
             <h2>{t("hdStartChat", "Start an agent conversation")}</h2>
             <div className="hd-launch-controls">
-              <select
+              <HerdrAgentSelect
                 value={kind}
-                onChange={(e) => setKind(e.target.value as HerdrStartableAgentKind)}
+                onChange={setKind}
                 disabled={!writable}
-                aria-label={t("hdAgentType", "Agent type")}
-              >
-                {HERDR_STARTABLE_AGENT_KINDS.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
+                label={t("hdAgentType", "Agent type")}
+                portal={selectPortal}
+              />
               <button
                 className="hd-primary"
                 disabled={!writable}
@@ -317,6 +325,7 @@ export function HerdrPaneView({
               enabled={active}
               version={version}
               name={name}
+              emptyState={<HerdrConversationWelcome kind={pane.agent.kind} name={name} />}
               working={working}
               cwd={pane.foregroundCwd ?? pane.cwd}
               workStepDisplay={workStepDisplay}
@@ -373,7 +382,8 @@ export function HerdrPaneView({
               onSend={send}
               canSend={canSend}
               agent={pane.agent.kind}
-              state={pane.agent.state}
+              agentName={name}
+              state={blocked ? "blocked" : pane.agent.state}
               working={working}
               hint={hint}
               canInterrupt={writable}
@@ -396,6 +406,7 @@ function Transcript({
   enabled,
   version,
   name,
+  emptyState,
   screen = false,
   compact = false,
   working = false,
@@ -410,6 +421,7 @@ function Transcript({
   enabled: boolean;
   version: number;
   name: string;
+  emptyState?: ReactNode;
   screen?: boolean;
   compact?: boolean;
   working?: boolean;
@@ -497,12 +509,7 @@ function Transcript({
       ) : (
         <div className="hd-thread">
           {history?.truncated && <p className="hd-note">{t("hdTail", "Showing recent output")}</p>}
-          {!history?.messages.length && !pending && !working && (
-            <div className="hd-first-message">
-              <MessageSquare size={23} strokeWidth={1.35} />
-              <h2>{t("hdTalkTo", "Message {agent}").replace("{agent}", () => name)}</h2>
-            </div>
-          )}
+          {!history?.messages.length && !pending && !working && emptyState}
           <HerdrConversationView
             rows={history?.messages ?? []}
             name={name}

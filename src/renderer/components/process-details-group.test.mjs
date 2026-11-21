@@ -5,6 +5,7 @@ import test, { after } from "node:test";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { workStepDisplayPolicy } from "../../shared/work-step-display.ts";
+import { isSubagentWidget, readSubagentWidget } from "../lib/subagent-steps.ts";
 
 const previousActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -195,4 +196,53 @@ test("grouping modes decide whether the running Turn folds into a live header", 
     assert.equal(inline.root.findAllByProps({ children: "row-2" }).length, 1);
     await act(async () => inline.unmount());
   }
+});
+
+test("the plugin's async workflow snapshot becomes a roster inside the live process fold", async () => {
+  const snapshot = {
+    kind: "pi-subagents.async-status-snapshot",
+    version: 1,
+    runs: [
+      {
+        id: "workflow",
+        state: "running",
+        startedAt: 1000,
+        children: [
+          { id: "research", label: "Source review", state: "running", progressText: "Reading sources" },
+          { id: "verify", label: "Cross-check", state: "failed", startedAt: 2000, endedAt: 3000 },
+        ],
+      },
+    ],
+  };
+  const widget = { key: "subagent-async", lines: [`PI_SUBAGENT_ASYNC_JSON:${JSON.stringify(snapshot)}`] };
+  assert.equal(isSubagentWidget(widget), true);
+  assert.equal(isSubagentWidget({ ...widget, key: "other" }), false);
+  assert.deepEqual(readSubagentWidget({ ...widget, lines: ["PI_SUBAGENT_ASYNC_JSON:{"] }), []);
+  const roster = readSubagentWidget(widget);
+  assert.deepEqual(
+    roster.map(({ id, status, durationMs }) => [id, status, durationMs]),
+    [
+      ["workflow/research", "running", undefined],
+      ["workflow/verify", "error", 1000],
+    ],
+  );
+  const view = await act(async () =>
+    create(
+      createElement(LiveProcessRows, {
+        messages: [{ role: "user", content: "Research" }],
+        subagents: roster,
+        userIdx: 0,
+        endIdx: 1,
+        expansionStore: new ThinkingExpansionStore(),
+        workStepDisplay: "standard",
+        renderMessage: () => null,
+      }),
+    ),
+  );
+  const body = groupBody(view);
+  assert.equal(body.props.hidden, true);
+  assert.equal(body.findAllByType("li").length, 2);
+  assert.match(JSON.stringify(body.findByType("section").props["aria-label"]), /Subagents/);
+  assert.equal(view.root.findAllByProps({ "data-process-activity": "subagents" }).length, 2);
+  await act(async () => view.unmount());
 });

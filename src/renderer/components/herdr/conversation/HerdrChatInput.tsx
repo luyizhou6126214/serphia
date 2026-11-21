@@ -1,7 +1,9 @@
 import { ArrowUp, Square } from "lucide-react";
 import { useLayoutEffect, useRef, type KeyboardEvent } from "react";
+import type { HerdrAgentKindDisplay, HerdrAgentState } from "@contract/herdr";
 import { useI18n } from "@/i18n";
 import { scaledChatFont } from "@/lib/chat-appearance";
+import { HerdrAgentIcon } from "../HerdrAgentIcon";
 import { ReferenceText } from "./ReferenceText";
 import { HerdrComposerSurface } from "./HerdrComposerSurface";
 
@@ -13,8 +15,9 @@ interface Props {
   canSend: boolean;
   canInterrupt: boolean;
   working: boolean;
-  agent: string;
-  state: string;
+  agent: HerdrAgentKindDisplay;
+  agentName: string;
+  state: HerdrAgentState;
   hint?: string;
 }
 
@@ -27,6 +30,7 @@ export function HerdrChatInput({
   canInterrupt,
   working,
   agent,
+  agentName,
   state,
   hint,
 }: Props) {
@@ -95,16 +99,21 @@ export function HerdrChatInput({
             />
           </div>
         </div>
+        {hint && (
+          <div className="hd-compose-hint" role="status">
+            {hint}
+          </div>
+        )}
         <div className="hd-compose-foot">
-          <span>
-            <i className="hd-dot" data-state={state} />
-            {agent}
+          <span className="hd-compose-identity" title={agentName}>
+            <HerdrAgentIcon kind={agent} size={17} />
+            <span className="hd-compose-agent-name">{agentName}</span>
+            <i className="hd-dot" data-state={state} aria-hidden="true" />
           </span>
-          {hint && <small role="status">{hint}</small>}
           {stop ? (
             <button
               type="button"
-              className="hd-send"
+              className="chat-composer-stop"
               disabled={!canInterrupt}
               aria-label={t("hdInterrupt", "Interrupt agent")}
               title={t("hdInterrupt", "Interrupt agent")}
@@ -115,7 +124,7 @@ export function HerdrChatInput({
           ) : (
             <button
               type="submit"
-              className="hd-send"
+              className="chat-composer-send"
               disabled={!value.trim() || !canSend}
               aria-label={t("hdSend", "Send reply")}
               title={hint || t("hdSend", "Send reply")}

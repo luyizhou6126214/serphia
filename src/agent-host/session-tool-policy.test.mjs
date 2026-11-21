@@ -273,6 +273,7 @@ test("actual SDK nested calls respect grants, source changes, no-tools and immed
   setAgentSessionSource(manager, "local");
   const policy = new SessionToolPolicy(manager, ["read"]);
   let executed = 0;
+  let launches = 0;
   const services = await createAgentSessionServices({
     cwd,
     agentDir: cwd,
@@ -282,7 +283,36 @@ test("actual SDK nested calls respect grants, source changes, no-tools and immed
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      extensionFactories: [policy.extension()],
+      extensionFactories: [
+        policy.extension(),
+        {
+          name: "workflow-launch-fixture",
+          factory(pi) {
+            pi.registerTool({
+              name: "subagent",
+              label: "Subagent",
+              description: "Fixture workflow tool",
+              exposure: "model-only",
+              parameters: Type.Object({}),
+              async execute(_id, _params, _signal, _update, ctx) {
+                const outcome = await ctx.executeTool("subagent_launch", {});
+                return { ...outcome.result, isError: outcome.isError };
+              },
+            });
+            pi.registerTool({
+              name: "subagent_launch",
+              label: "Subagent launch",
+              description: "Fixture workflow approval hook",
+              exposure: "deferred",
+              parameters: Type.Object({}),
+              async execute() {
+                launches++;
+                return { content: [], details: {} };
+              },
+            });
+          },
+        },
+      ],
     },
   });
   const target = (name, exposure) => ({
@@ -319,12 +349,15 @@ test("actual SDK nested calls respect grants, source changes, no-tools and immed
   });
   t.after(() => session.dispose());
   policy.bind(session);
-  session.setActiveToolsByName(["read", "caller", "process_read", "herdr_agent_prompt"]);
+  session.setActiveToolsByName(["read", "caller", "subagent", "process_read", "herdr_agent_prompt"]);
   await session.bindExtensions({ mode: "rpc" });
   const model = session.model;
   session.agent.state.messages.push({
     role: "assistant",
-    content: [{ type: "toolCall", id: "caller", name: "caller", arguments: {} }],
+    content: [
+      { type: "toolCall", id: "caller", name: "caller", arguments: {} },
+      { type: "toolCall", id: "workflow", name: "subagent", arguments: {} },
+    ],
     api: model.api,
     provider: model.provider,
     model: model.id,
@@ -341,10 +374,18 @@ test("actual SDK nested calls respect grants, source changes, no-tools and immed
   });
   const caller = session.agent.state.tools.find((tool) => tool.name === "caller");
   const call = (name) => caller.execute("caller", { target: name }, new globalThis.AbortController().signal);
+  const workflow = session.agent.state.tools.find((tool) => tool.name === "subagent");
+  const launch = (id = "workflow") => workflow.execute(id, {}, new globalThis.AbortController().signal);
+  assert.equal((await launch()).isError, false);
+  assert.equal((await launch("unrecorded-workflow")).isError, true);
+  assert.equal((await call("subagent_launch")).isError, true);
+  assert.equal(policy.isAllowed("subagent_launch"), false);
+  assert.equal(launches, 1);
   assert.ok(session.getCallableToolNames().includes("target"));
   assert.equal((await call("target")).isError, true);
   assert.equal(executed, 0);
   policy.setExecution(["target", "process_read", "herdr_agent_prompt"]);
+  assert.equal((await launch()).isError, true);
   assert.equal((await call("target")).isError, false);
   assert.equal(executed, 1);
   setAgentSessionSource(manager, "channel");
@@ -354,6 +395,7 @@ test("actual SDK nested calls respect grants, source changes, no-tools and immed
   assert.equal((await call("target")).isError, true);
   policy.setExecution(["target"]);
   policy.setRequested([]);
+  assert.equal((await launch()).isError, true);
   assert.equal((await call("target")).isError, true);
   assert.equal((await call("hidden_target")).isError, true);
   assert.equal((await call("powershell")).isError, true);

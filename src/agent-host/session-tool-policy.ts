@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ToolInfo } from "../shared/pi-types";
 import { excludedPiTools, filterDesktopToolNames } from "../shared/pi-tool-policy";
 import { getAgentSessionSource } from "./session-source";
@@ -134,6 +135,42 @@ export class SessionToolPolicy {
       (explicit || this.session.getToolDefinition?.(name)?.defaultActive !== false)
     );
   }
+
+  private isSubagentLaunchAllowed(event: ToolCallEvent, pi: ExtensionAPI): boolean {
+    if (
+      event.toolName !== "subagent_launch" ||
+      !event.parentToolCallId ||
+      getAgentSessionSource(this.manager) !== "local" ||
+      !this.isAllowed("subagent")
+    )
+      return false;
+
+    // The installed Pi Subagents workflow uses a deferred call to run the
+    // approval hooks. Only inherit permission from its own authorized call.
+    const tools = pi.getAllTools();
+    const parent = tools.find((tool) => tool.name === "subagent");
+    const hook = tools.find((tool) => tool.name === event.toolName);
+    if (
+      parent?.exposure !== "model-only" ||
+      hook?.exposure !== "deferred" ||
+      !parent.sourceInfo?.path ||
+      parent.sourceInfo.path !== hook.sourceInfo?.path
+    )
+      return false;
+
+    const messages = this.session?.agent.state?.messages;
+    return (
+      messages?.some((value) => {
+        const message = value as AssistantMessage;
+        return (
+          message.role === "assistant" &&
+          message.content.some(
+            (block) => block.type === "toolCall" && block.name === parent.name && block.id === event.parentToolCallId,
+          )
+        );
+      }) === true
+    );
+  }
   describe(): ToolInfo[] {
     if (!this.session) return [];
     const active = new Set(this.session.getActiveToolNames());
@@ -179,7 +216,7 @@ export class SessionToolPolicy {
       factory: (pi: ExtensionAPI) => {
         pi.on("tool_call", async (event, ctx) => {
           if (!this.isEmpty()) await this.mcpPreparation?.(event.toolName, event.input, ctx, event.toolCallId);
-          if (this.isAllowed(event.toolName)) return;
+          if (this.isAllowed(event.toolName) || this.isSubagentLaunchAllowed(event, pi)) return;
           const tool = this.session?.getAllTools().find((entry) => entry.name === event.toolName);
           if (
             !this.isEmpty() &&

@@ -155,7 +155,16 @@ test("current production lock includes the complete pinned Pi graph in the Windo
   input.packageLock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const sbom = createWindowsSbom(input);
   assert.doesNotThrow(() => assertWindowsSbomDocument(sbom, input));
-  for (const name of ["pi-ai", "pi-coding-agent", "pi-agent-core", "pi-telemetry", "pi-tui", "pi-codemode", "pi-mcp"]) {
+  for (const name of [
+    "pi-ai",
+    "pi-coding-agent",
+    "pi-agent-core",
+    "pi-telemetry",
+    "pi-tui",
+    "pi-codemode",
+    "pi-mcp",
+    "pi-schema",
+  ]) {
     const matches = sbom.components.filter((entry) => entry.name === `@earendil-works/${name}`);
     assert.ok(matches.length > 0, name);
     assert.ok(
@@ -165,7 +174,7 @@ test("current production lock includes the complete pinned Pi graph in the Windo
   }
   assert.ok(sbom.components.some((entry) => entry.name === "typebox" && entry.version === "1.3.27"));
   assert.ok(sbom.components.some((entry) => entry.name === "quickjs-wasi" && entry.version === "3.6.2"));
-  assert.ok(sbom.components.some((entry) => entry.name === "openai" && entry.version === "7.19.0"));
+  assert.ok(sbom.components.some((entry) => entry.name === "openai" && entry.version === "7.59.0"));
   for (const name of ["pi-server", "pi-client", "pi-protocol", "chord"]) {
     assert.equal(
       sbom.components.some((entry) => entry.name === "@earendil-works/" + name),

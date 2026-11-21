@@ -10,7 +10,7 @@ export type RightPanelTabKind = "guide" | "files" | "file" | "terminal" | "brows
 export interface RightPanelTab {
   id: string;
   kind: RightPanelTabKind;
-  /** Captured chip title; page kinds without a resource derive theirs from copy. */
+  /** Captured browser or file title. Other kinds use localized labels. */
   title: string;
   /** File tabs: absolute path the viewer reads. */
   filePath?: string;
@@ -39,7 +39,7 @@ export const GUIDE_TAB_ID = "panel:guide";
 export const FILES_TAB_ID = "panel:files";
 export const PROCESSES_TAB_ID = "panel:processes";
 
-/** Chip title for the panel's fixed pages; resource tabs carry their own. */
+/** Lookup for localized chip labels. */
 export type RightPanelTranslator = (key: string, fallback: string) => string;
 
 /**
@@ -83,24 +83,6 @@ export function activeRightPanelTab(state: RightPanelState): RightPanelTab {
 }
 
 /**
- * The width preference a tab's body wants, matching the panel's saved widths.
- * @param tab - the active tab.
- * @returns the width kind; file previews read at the files width.
- */
-export function rightPanelWidthKind(tab: RightPanelTab): "files" | "browser" | "processes" | "terminal" {
-  switch (tab.kind) {
-    case "browser":
-      return "browser";
-    case "terminal":
-      return "terminal";
-    case "processes":
-      return "processes";
-    default:
-      return "files";
-  }
-}
-
-/**
  * Chip label for a tab.
  * @param tab - the tab to label.
  * @param t - active dictionary lookup.
@@ -112,6 +94,8 @@ export function rightPanelTabTitle(tab: RightPanelTab, t: RightPanelTranslator):
       return t("rightPanelStart", "Start");
     case "files":
       return t("rightPanelFiles", "Files");
+    case "terminal":
+      return t("rightPanelTerminal", "Terminal");
     case "processes":
       return t("rightPanelProcesses", "Managed processes");
     default:

@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown } from "lucide-react";
 import { AnimatedDropdown } from "@/components/sidebar/WorkspaceDropdown";
-import { CompassGlyph } from "./PanelArtwork";
+import { GuideGlass } from "./GuideGlass";
 import "./right-panel.css";
+import "./right-panel-guide.css";
 
 /** A secondary choice a capsule offers beside its main action (e.g. the shell list). */
 export interface RightPanelGuideMenu {
@@ -19,41 +20,50 @@ export interface RightPanelGuideEntry {
   title: string;
   description: string;
   artwork: ReactNode;
-  /** Effective binding, shown as keycaps at the capsule's right edge. */
-  shortcut?: readonly string[];
   menu?: RightPanelGuideMenu;
   disabled?: boolean;
   onPick: () => void;
 }
 
-/** Keycaps for one binding, matching the guide capsule's quiet ink. */
-function ShortcutKeys({ keys }: { keys: readonly string[] }) {
+export function RightPanelEntryContent({ entry, described }: { entry: RightPanelGuideEntry; described: boolean }) {
   return (
-    <span className="rp-keys" aria-hidden="true">
-      {keys.map((key, index) => (
-        <span key={`${key}-${String(index)}`} className="rp-keys-part">
-          {index > 0 && <span className="rp-keys-plus">+</span>}
-          <kbd>{key}</kbd>
-        </span>
-      ))}
-    </span>
+    <>
+      <span className="rp-guide-entry-icon" aria-hidden="true">
+        {entry.artwork}
+      </span>
+      <span className="rp-guide-entry-text">
+        <span className="rp-guide-entry-title">{entry.title}</span>
+        {described && <span className="rp-guide-entry-description">{entry.description}</span>}
+      </span>
+      {!entry.menu && <ArrowUpRight className="rp-guide-entry-arrow" size={15} aria-hidden="true" />}
+    </>
   );
 }
 
 const MENU_WIDTH = 200;
 
 /**
- * The guide page: the compass over one centred column of entry capsules. A
- * short guide keeps each capsule's description; a longer one drops them so the
- * column stays light.
+ * Workspace tools sharing one liquid-glass hover and focus surface.
  */
-export function RightPanelGuide({ entries, notice }: { entries: RightPanelGuideEntry[]; notice?: string | null }) {
+export function RightPanelGuide({
+  entries,
+  notice,
+  visible = true,
+}: {
+  entries: RightPanelGuideEntry[];
+  notice?: string | null;
+  visible?: boolean;
+}) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const described = entries.length <= 4;
-  const menuEntry = entries.find((entry) => entry.id === openMenu && entry.menu !== undefined);
+  const menuEntry = visible ? entries.find((entry) => entry.id === openMenu && entry.menu !== undefined) : undefined;
+
+  useEffect(() => {
+    if (!visible) setOpenMenu(null);
+  }, [visible]);
 
   useLayoutEffect(() => {
     if (openMenu === null) {
@@ -70,7 +80,11 @@ export function RightPanelGuide({ entries, notice }: { entries: RightPanelGuideE
     };
     update();
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
   }, [openMenu]);
 
   useEffect(() => {
@@ -81,7 +95,10 @@ export function RightPanelGuide({ entries, notice }: { entries: RightPanelGuideE
       setOpenMenu(null);
     };
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setOpenMenu(null);
+      if (event.key === "Escape") {
+        triggerRef.current?.focus();
+        setOpenMenu(null);
+      }
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -95,51 +112,46 @@ export function RightPanelGuide({ entries, notice }: { entries: RightPanelGuideE
 
   return (
     <div className="rp-guide" data-right-panel-guide>
-      <span className="rp-guide-hero" aria-hidden="true">
-        <CompassGlyph size={56} />
-      </span>
-      {notice != null && notice !== "" && (
-        <div className="rp-guide-notice" role="status">
-          {notice}
+      <div className="rp-guide-content">
+        {notice != null && notice !== "" && (
+          <div className="rp-guide-notice" role="status">
+            {notice}
+          </div>
+        )}
+        <div className="rp-guide-actions">
+          <GuideGlass visible={visible} />
+          {entries.map((entry) => (
+            <div key={entry.id} className="rp-guide-entry" data-right-panel-guide-entry={entry.id}>
+              <button
+                type="button"
+                className="rp-guide-entry-main"
+                onClick={entry.onPick}
+                disabled={entry.disabled}
+                title={entry.description}
+              >
+                <RightPanelEntryContent entry={entry} described={described} />
+              </button>
+              {entry.menu !== undefined && (
+                <button
+                  type="button"
+                  ref={entry.id === openMenu ? triggerRef : undefined}
+                  className="rp-guide-entry-menu"
+                  disabled={entry.disabled}
+                  aria-label={entry.menu.label}
+                  title={entry.menu.label}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenu === entry.id}
+                  onClick={() => {
+                    setOpenMenu((current) => (current === entry.id ? null : entry.id));
+                  }}
+                >
+                  <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
-      )}
-      {entries.map((entry) => (
-        <div key={entry.id} className="rp-guide-entry" data-right-panel-guide-entry={entry.id}>
-          <button
-            type="button"
-            className="rp-guide-entry-main"
-            onClick={entry.onPick}
-            disabled={entry.disabled}
-            aria-keyshortcuts={entry.shortcut?.join("+")}
-            title={entry.description}
-          >
-            <span className="rp-guide-entry-icon" aria-hidden="true">
-              {entry.artwork}
-            </span>
-            <span className="rp-guide-entry-text">
-              <span className="rp-guide-entry-title">{entry.title}</span>
-              {described && <span className="rp-guide-entry-description">{entry.description}</span>}
-            </span>
-            {entry.shortcut !== undefined && entry.shortcut.length > 0 && <ShortcutKeys keys={entry.shortcut} />}
-          </button>
-          {entry.menu !== undefined && (
-            <button
-              type="button"
-              ref={entry.id === openMenu ? triggerRef : undefined}
-              className="rp-guide-entry-menu"
-              aria-label={entry.menu.label}
-              title={entry.menu.label}
-              aria-haspopup="menu"
-              aria-expanded={openMenu === entry.id}
-              onClick={() => {
-                setOpenMenu((current) => (current === entry.id ? null : entry.id));
-              }}
-            >
-              <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      ))}
+      </div>
       {typeof document === "undefined"
         ? null
         : createPortal(

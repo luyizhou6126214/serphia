@@ -14,6 +14,7 @@ import type {
 } from "@/lib/types";
 import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
 import { hasDisplayableProcessMessage } from "@/lib/chat-process";
+import { isSubagentNotice, isSubagentWidget, readSubagentWidget } from "@/lib/subagent-steps";
 import { contextUsageFromMessages } from "@/lib/context-usage";
 import { scaledChatFont } from "@/lib/chat-appearance";
 import { CHAT_COLUMN_PADDING, CHAT_INPUT_RIGHT_PADDING, CHAT_MINIMAP_WIDTH } from "@/lib/chat-layout";
@@ -432,8 +433,13 @@ export function ChatWindow({
     />
   );
 
-  const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
-  const belowEditorWidgets = extensionWidgets.filter((widget) => widget.placement === "belowEditor");
+  const legacySubagents = useMemo(
+    () => readSubagentWidget(extensionWidgets.find(isSubagentWidget)),
+    [extensionWidgets],
+  );
+  const ordinaryWidgets = extensionWidgets.filter((widget) => !isSubagentWidget(widget));
+  const aboveEditorWidgets = ordinaryWidgets.filter((widget) => widget.placement !== "belowEditor");
+  const belowEditorWidgets = ordinaryWidgets.filter((widget) => widget.placement === "belowEditor");
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-text-muted">Loading session...</div>;
@@ -443,14 +449,13 @@ export function ChatWindow({
     return <div className="flex h-full items-center justify-center text-red-400">{error}</div>;
   }
 
-  const chatTopOverlays = (notices.length > 0 || (!isEmptyNew && subagents.length > 0)) && (
+  const chatTopOverlays = notices.length > 0 && (
     <div
       className="chat-top-overlays"
       style={{ right: isMobile || isEmptyNew ? 0 : CHAT_MINIMAP_WIDTH, paddingInline: CHAT_COLUMN_PADDING }}
     >
       <div className="chat-content-column flex flex-col items-end gap-2">
         <NoticeShelf notices={notices} />
-        {!isEmptyNew && subagents.length > 0 && <SubagentActivityPanel subagents={subagents} />}
       </div>
     </div>
   );
@@ -724,16 +729,17 @@ export function ChatWindow({
                         let endIdx = userIdx + 1;
                         while (endIdx < messages.length && messages[endIdx].role !== "user") endIdx += 1;
 
-                        const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
-
-                        if (finalAssistantIdx === -1) {
-                          for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
-                            rendered.push(renderMessage(renderIdx));
-                          }
-                          idx = endIdx;
-                          continue;
-                        }
-
+                        const turnStart = msg.timestamp;
+                        const nextTurnStart = messages[endIdx]?.timestamp;
+                        const turnSubagents = [
+                          ...(userIdx === lastUserIdx ? subagents : []),
+                          ...legacySubagents.filter(({ runStartedAt, status }) =>
+                            runStartedAt !== undefined && turnStart !== undefined
+                              ? runStartedAt >= turnStart &&
+                                (nextTurnStart === undefined || runStartedAt < nextTurnStart)
+                              : userIdx === lastUserIdx && (status === "queued" || status === "running"),
+                          ),
+                        ];
                         const isLiveTail =
                           (agentRunning || streamState.isStreaming) &&
                           endIdx === messages.length &&
@@ -747,6 +753,7 @@ export function ChatWindow({
                               userIdx={userIdx}
                               endIdx={endIdx}
                               entryId={entryIds[userIdx]}
+                              subagents={turnSubagents}
                               expansionStore={processDetailsExpansionStore}
                               workStepDisplay={workStepDisplay}
                               renderMessage={renderMessage}
@@ -756,11 +763,22 @@ export function ChatWindow({
                           continue;
                         }
 
+                        const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
+                        if (finalAssistantIdx === -1) {
+                          for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
+                            rendered.push(renderMessage(renderIdx));
+                          }
+                          idx = endIdx;
+                          continue;
+                        }
+
                         rendered.push(renderMessage(userIdx));
 
                         const processIndices: number[] = [];
-                        for (let processIdx = userIdx + 1; processIdx < finalAssistantIdx; processIdx++) {
-                          processIndices.push(processIdx);
+                        for (let processIdx = userIdx + 1; processIdx < endIdx; processIdx++) {
+                          if (processIdx < finalAssistantIdx || isSubagentNotice(messages[processIdx])) {
+                            processIndices.push(processIdx);
+                          }
                         }
                         const visibleProcessIndices = processIndices.filter((processIdx) =>
                           hasDisplayableProcessMessage(messages[processIdx]),
@@ -777,7 +795,7 @@ export function ChatWindow({
                         );
 
                         const processCount = visibleProcessIndices.length + (finalProcessMessage ? 1 : 0);
-                        if (processCount > 0) {
+                        if (processCount > 0 || turnSubagents.length > 0) {
                           const processGroupKey = `process-group:${messageRenderKeys.keyFor(
                             messages[userIdx],
                             entryIds[userIdx],
@@ -802,6 +820,7 @@ export function ChatWindow({
                                 finalProcessMessage === undefined || finalProcessMessage === null
                                   ? activityMessages
                                   : [...activityMessages, finalProcessMessage],
+                                turnSubagents.length > 0,
                               )}
                               startedAt={(messages[userIdx] as AgentMessage & { timestamp?: number }).timestamp}
                               endedAt={finalAssistant.timestamp}
@@ -813,6 +832,7 @@ export function ChatWindow({
                                     : "completed"
                               }
                             >
+                              {turnSubagents.length > 0 && <SubagentActivityPanel subagents={turnSubagents} />}
                               {visibleProcessIndices.map((processIdx) =>
                                 renderMessage(processIdx, { attachRef: false, renderRole: "process" }),
                               )}
@@ -853,7 +873,7 @@ export function ChatWindow({
                           );
                         }
                         for (let renderIdx = finalAssistantIdx + 1; renderIdx < endIdx; renderIdx++) {
-                          rendered.push(renderMessage(renderIdx));
+                          if (!isSubagentNotice(messages[renderIdx])) rendered.push(renderMessage(renderIdx));
                         }
                         idx = endIdx;
                       }
@@ -904,7 +924,7 @@ export function ChatWindow({
       {showSessionViews && (
         <div
           id="session-view-trajectory"
-          className="session-view-panel session-view-inspector"
+          className="session-view-panel session-view-inspector session-view-trajectory"
           role="tabpanel"
           aria-labelledby="session-view-tab-trajectory"
           hidden={activeSessionView !== "trajectory"}

@@ -23,8 +23,17 @@ test("Browser remains a fixed right-panel resource and hides its native surface 
   assert.match(appShell, /kind: "browser"/);
   assert.match(appShell, /t\("browser", "Browser"\)/);
   assert.match(appShell, /rightPanelOpen && !settingsOpen && !browserAuthorization/);
-  assert.match(appShell, /persistRightPanelPreferredWidth\(finalWidth, panelWidthKind === "browser"\)/);
   assert.match(appShell, /tabId=\{activePanelTab\.browserTabId \?\? null\}/);
+  assert.match(
+    appShell,
+    /suspendSurface=\{rightPanelResizing \|\| !rightPanelExpanded \|\| newTabMenuOpen \|\| newTabMenuPresent\}/,
+  );
+});
+
+test("right-panel resize commits use the same width preference for every tab", () => {
+  assert.match(appShell, /persistRightPanelPreferredWidth\(width\)/);
+  assert.doesNotMatch(appShell, /panelWidthKind|loadBrowserPanelPreferredWidth/);
+  assert.match(appShell, /side="right"\s+panelRef=\{rightPanelRef\}\s+width=\{rightPanelWidth\}/);
 });
 
 test("BrowserDock synchronizes native bounds, visibility, session ownership, and tool-result navigation", () => {

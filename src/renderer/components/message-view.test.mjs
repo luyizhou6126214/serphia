@@ -58,6 +58,35 @@ test("a historical tool without a canonical result is not displayed as still run
   assert.doesNotMatch(html, /stream-caret/);
 });
 
+test("workflow notices and tool calls have compact, distinct subagent steps", () => {
+  const notice = renderToStaticMarkup(
+    createElement(MessageView, {
+      message: {
+        role: "custom",
+        customType: "subagent-incremental-child-notify",
+        content: "Workflow child failed: **sources**\nError: Launch failed\n\nParent action: Resume work.",
+        display: true,
+        details: { childKey: "sources", outcome: "failed" },
+      },
+    }),
+  );
+  assert.match(notice, /dsh-subagent-step.*data-state="error".*<details><summary/s);
+  assert.match(notice, /sources/);
+  assert.doesNotMatch(notice, /Launch failed|Parent action|dsh-custom-row/);
+
+  const tool = renderToStaticMarkup(
+    createElement(MessageView, {
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", toolCallId: "workflow", toolName: "subagent", input: { task: "Research" } }],
+      },
+      runningToolCallIds: new Set(["workflow"]),
+    }),
+  );
+  assert.match(tool, /dsh-subagent-step.*data-state="running".*dsh-subagent-glow/s);
+  assert.match(tool, /dsh-subagent-status[^>]*data-state="running"/);
+});
+
 test("work-step modes control settled reasoning previews but never auto-expand rows", () => {
   const message = {
     role: "assistant",

@@ -132,7 +132,7 @@ test("a lone guide chip is a quiet label with no close", async () => {
   );
 });
 
-test("the guide shows its entries with keycaps and opens the picked door", async () => {
+test("the guide shows workspace tools without shortcut hints and opens the chosen tool", async () => {
   const picked = [];
   const entries = [
     {
@@ -140,7 +140,6 @@ test("the guide shows its entries with keycaps and opens the picked door", async
       title: "Workspace files",
       description: "Browse the Session workspace files",
       artwork: createElement("svg", { "data-art": "files" }),
-      shortcut: ["Ctrl", "P"],
       onPick: () => picked.push("files"),
     },
     {
@@ -148,7 +147,6 @@ test("the guide shows its entries with keycaps and opens the picked door", async
       title: "New terminal",
       description: "Run commands in the Session workspace",
       artwork: createElement("svg", { "data-art": "terminal" }),
-      shortcut: ["Ctrl", "Shift", "T"],
       onPick: () => picked.push("terminal"),
     },
   ];
@@ -162,12 +160,8 @@ test("the guide shows its entries with keycaps and opens the picked door", async
     (node) => node.type === "button" && node.props.className === "rp-guide-entry-main",
   );
   assert.equal(capsules.length, 2);
-  assert.equal(capsules[0].props["aria-keyshortcuts"], "Ctrl+P");
-  const keycaps = root.root.findAll((node) => node.type === "kbd");
-  assert.deepEqual(
-    keycaps.map((cap) => cap.children.join("")),
-    ["Ctrl", "P", "Ctrl", "Shift", "T"],
-  );
+  assert.equal(capsules[0].props["aria-keyshortcuts"], undefined);
+  assert.equal(root.root.findAllByType("kbd").length, 0);
   await act(async () => capsules[1].props.onClick());
   assert.deepEqual(picked, ["terminal"]);
 });

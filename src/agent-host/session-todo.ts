@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { readBranchTodoState, SESSION_TODO_TOOL, type SessionTodoState } from "../shared/session-todo";
@@ -17,7 +16,7 @@ export function createSessionTodoExtension(): InlineExtension {
           "For multi-step work, use todo to track concrete tasks when it helps the user follow progress. Check the existing list before changing it and toggle items as they are completed.",
         ],
         parameters: Type.Object({
-          action: StringEnum(["list", "add", "toggle", "clear"] as const),
+          action: Type.Enum(["list", "add", "toggle", "clear"], { type: "string" }),
           text: Type.Optional(Type.String({ description: "Task text for add" })),
           id: Type.Optional(Type.Integer({ minimum: 1, description: "Task ID for toggle" })),
         }),

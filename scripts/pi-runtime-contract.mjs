@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const runtimePackages =
-  /^@earendil-works\/(?:pi-(?:ai|coding-agent|codemode|mcp|server|agent-core|client|protocol|telemetry|tui)|chord)$/;
+  /^@earendil-works\/(?:pi-(?:ai|coding-agent|codemode|mcp|server|agent-core|client|protocol|schema|telemetry|tui)|chord)$/;
 
 export const PI_RUNTIME_ROOTS = Object.freeze(["pi-ai", "pi-coding-agent", "pi-mcp", "pi-telemetry"]);
 
